@@ -807,8 +807,11 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     h += '<div class="cups">' + TROPHIES.map(function (tr, i) { return cupSvg(i < lvl ? tr.c : "#d8d2e6", i >= lvl); }).join("") + '</div></div>';
     return h;
   }
+  function recapRow(label, value) {
+    var v = (value || "").trim();
+    return '<div class="field"><label>' + label + '</label><div class="locked">' + (v ? esc(v) : '<span style="color:var(--muted);font-weight:500">Non renseigné</span>') + '</div></div>';
+  }
   function profileHTML() {
-    var welcome = !S.onboarded;
     var pk = picker
       ? '<div class="picker"><label class="btn ghost block drop">Choisir une photo<input type="file" id="photoin" accept="image/*"></label>' +
         (S.photo ? '<button class="btn ghost block" id="photodel">Retirer la photo</button>' : "") +
@@ -816,22 +819,12 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         ICONS.map(function (ic, i) { return '<button data-ic="' + i + '" aria-label="Icône ' + (i + 1) + '" aria-pressed="' + (!S.photo && S.icon === i) + '" style="background:' + ic.bg + ';color:' + ic.fg + '"><svg viewBox="0 0 24 24">' + ic.d + '</svg></button>'; }).join("") +
         '</div></div>'
       : "";
-    return '<h2 class="drawer-title">' + (welcome ? "Crée ton profil" : "Mon profil") + '</h2>' +
+    return '<h2 class="drawer-title">' + "Mon profil" + '</h2>' +
       '<button class="avatar big" id="avatarBtn" aria-label="Changer ma photo ou mon icône"></button>' +
       '<div class="caption">Touche l’image pour la modifier</div>' + pk +
-      (welcome
-        ? '<div class="field"><label for="pname">Pseudo</label><input type="text" id="pname" value="' + esc(S.name) + '" maxlength="24" placeholder="Ton pseudo" autocomplete="nickname"></div>' +
-          '<div class="field"><label for="pcity">Ville</label><input type="text" id="pcity" value="' + esc(S.city) + '" maxlength="40" placeholder="Ta ville" autocomplete="address-level2"></div>' +
-          '<div class="field"><label for="pdept">Département</label><input type="text" id="pdept" value="' + esc(S.dept) + '" maxlength="40" placeholder="Ton département"></div>' +
-          '<p class="note" style="margin:0 0 6px">Attention : le pseudo, la ville et le département ne pourront plus être modifiés après l’inscription.</p>'
-        : '<div class="field"><label>Pseudo</label><div class="locked">' + esc(S.name) + '</div></div>' +
-          '<div class="field"><label>Ville</label><div class="locked">' + esc(S.city) + '</div></div>' +
-          '<div class="field"><label>Département</label><div class="locked">' + esc(S.dept) + '</div></div>' +
-          '<p class="note" style="margin:0 0 6px">Ces informations ont été choisies à l’inscription et ne sont plus modifiables.</p>') +
+      recapRow("Pseudo", S.name) + recapRow("Ville", S.city) + recapRow("Département", S.dept) +
       '<h3>Mon trophée</h3>' + trophyHTML() +
-      '<div class="drawer-sec">' + (welcome
-        ? '<button class="btn block" id="done">C’est parti !</button>'
-        : '<button class="btn ghost block" id="gosettings">Réglages</button><button class="btn ghost block" id="dclose">Fermer</button>') + '</div>';
+      '<div class="drawer-sec"><button class="btn ghost block" id="gosettings">Réglages</button><button class="btn ghost block" id="dclose">Fermer</button></div>';
   }
   function settingsHTML() {
     var bm = [["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
@@ -870,11 +863,6 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   function bindProfile() {
     paintAvatar($("avatarBtn"));
     $("avatarBtn").addEventListener("click", function () { picker = !picker; renderDrawer(); });
-    if (!S.onboarded) {
-      $("pname").addEventListener("input", function (e) { S.name = e.target.value; save(); });
-      $("pcity").addEventListener("input", function (e) { S.city = e.target.value; save(); });
-      $("pdept").addEventListener("input", function (e) { S.dept = e.target.value; save(); });
-    }
     var pi = $("photoin");
     if (pi) pi.addEventListener("change", function (e) {
       var f = e.target.files && e.target.files[0]; if (!f) return;
@@ -887,7 +875,6 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     document.querySelectorAll("[data-ic]").forEach(function (b) {
       b.addEventListener("click", function () { S.icon = parseInt(b.dataset.ic, 10); S.photo = ""; save(); picker = false; paintAvatar($("avatarMini")); renderDrawer(); });
     });
-    var dn = $("done"); if (dn) dn.addEventListener("click", closeDrawer);
     var dc = $("dclose"); if (dc) dc.addEventListener("click", closeDrawer);
     var gs = $("gosettings"); if (gs) gs.addEventListener("click", function () { drawerView = "settings"; renderDrawer(); });
   }
@@ -923,11 +910,6 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   }
   function openDrawer() { closeSheet(); drawerView = "profile"; picker = false; renderDrawer(); $("drawer").classList.add("open"); $("drawer").setAttribute("aria-hidden", "false"); $("scrim").hidden = false; }
   function closeDrawer() {
-    if (!S.onboarded) {
-      S.name = S.name.trim(); S.city = S.city.trim(); S.dept = S.dept.trim();
-      if (!S.name || !S.city || !S.dept) { toast("Renseigne ton pseudo, ta ville et ton département pour continuer."); return; }
-      S.onboarded = true; save();
-    }
     $("drawer").classList.remove("open"); $("drawer").setAttribute("aria-hidden", "true"); $("scrim").hidden = true;
   }
   $("profileBtn").addEventListener("click", openDrawer);
@@ -942,7 +924,6 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     AREA_M2 = h3.getHexagonAreaAvg(RES, "m2");
     loadState(); resize(); rebuild();
     if (S.activities.length) fitAll(); else draw();
-    if (!S.onboarded) openDrawer();
   }
 })();
 </script>
