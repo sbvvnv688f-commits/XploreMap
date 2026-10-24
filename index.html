@@ -247,7 +247,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 
 <div class="float" id="hint" hidden>
   <h2>Ta carte est toute vide !</h2>
-  <p>Ajoute une course GPX et regarde ton territoire se colorier.</p>
+  <p>Ajoute une course (GPX, TCX ou FIT) et regarde ton territoire se colorier.</p>
   <button class="btn" id="hintBtn">Ajouter une course</button>
 </div>
 <div class="float" id="toast" hidden role="status"></div>
@@ -291,7 +291,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "esri", nextId: 1, activities: [] };
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "none", nextId: 1, activities: [] };
   var cells = new Map();                 // hexagone -> 1 (territoire découvert)
   var boundaryCache = new Map(), tileCache = new Map();
   var tilesLoaded = 0, tilesFailed = 0;
@@ -356,6 +356,104 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
     return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime };
   }
+  /* ================= TCX -> lignes ================= */
+  function parseTCX(text) {
+    var doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("fichier TCX illisible");
+    var nodes = doc.getElementsByTagName("Trackpoint"), pts = [];
+    function val(n, tag) { var e = n.getElementsByTagName(tag)[0]; return e ? parseFloat(e.textContent) : NaN; }
+    for (var i = 0; i < nodes.length; i++) {
+      var pos = nodes[i].getElementsByTagName("Position")[0];
+      if (!pos) continue;
+      var lat = val(pos, "LatitudeDegrees"), lng = val(pos, "LongitudeDegrees");
+      if (isNaN(lat) || isNaN(lng)) continue;
+      var tEl = nodes[i].getElementsByTagName("Time")[0], t = tEl ? Date.parse(tEl.textContent) : NaN;
+      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000 });
+    }
+    var act = doc.getElementsByTagName("Activity")[0], course = doc.getElementsByTagName("Course")[0];
+    var nEl = course && course.getElementsByTagName("Name")[0];
+    var firstTime = null;
+    for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
+    return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime, sport: act ? guessSport(act.getAttribute("Sport") || "", null) : null };
+  }
+
+  /* ================= FIT -> lignes ================= */
+  function fitSport(sport, sub) {
+    if (sport === 1) return sub === 3 ? "trail" : "course";
+    if (sport === 2) return "velo";
+    if (sport === 11 || sport === 16 || sport === 17) return "rando";
+    if (sport === 12 || sport === 13) return "ski";
+    return null;
+  }
+  function parseFIT(buf) {
+    var dv = new DataView(buf), len = buf.byteLength, pos = 0, pts = [], sport = null, sub = null, startT = null, lastTs = null;
+    var FIT_EPOCH = 631065600, INVALID = 0x7FFFFFFF, SEMI = 180 / 2147483648;
+    try {
+      while (pos + 12 <= len) {
+        var hs = dv.getUint8(pos);
+        if (hs < 12 || dv.getUint32(pos + 8, false) !== 0x2E464954) break;      // signature « .FIT »
+        var end = Math.min(pos + hs + dv.getUint32(pos + 4, true), len), p = pos + hs, defs = {};
+        while (p < end) {
+          var h = dv.getUint8(p++), lt, d, compressed = false;
+          if (h & 0x80) { compressed = true; lt = (h >> 5) & 3; }
+          else if (h & 0x40) {                                                  // définition de message
+            lt = h & 15;
+            var le = dv.getUint8(p + 1) === 0, msg = dv.getUint16(p + 2, le), nf = dv.getUint8(p + 4), fields = [], dev = 0;
+            p += 5;
+            for (var i = 0; i < nf; i++) { fields.push({ num: dv.getUint8(p), size: dv.getUint8(p + 1) }); p += 3; }
+            if (h & 0x20) { var nd = dv.getUint8(p++); for (var j = 0; j < nd; j++) { dev += dv.getUint8(p + 1); p += 3; } }
+            defs[lt] = { msg: msg, le: le, fields: fields, dev: dev };
+            continue;
+          } else lt = h & 15;
+          d = defs[lt];
+          if (!d) throw new Error("fichier FIT illisible");
+          var lat = null, lng = null, ts = null, q = p;
+          for (var f = 0; f < d.fields.length; f++) {
+            var fd = d.fields[f];
+            if (d.msg === 20) {
+              if (fd.num === 0 && fd.size === 4) lat = dv.getInt32(q, d.le);
+              else if (fd.num === 1 && fd.size === 4) lng = dv.getInt32(q, d.le);
+              else if (fd.num === 253 && fd.size === 4) ts = dv.getUint32(q, d.le);
+            } else if (d.msg === 18) {
+              if (fd.num === 5 && fd.size >= 1) sport = dv.getUint8(q);
+              else if (fd.num === 6 && fd.size >= 1) sub = dv.getUint8(q);
+              else if (fd.num === 2 && fd.size === 4 && startT === null) startT = dv.getUint32(q, d.le);
+            }
+            q += fd.size;
+          }
+          p = q + d.dev;
+          if (d.msg === 20) {
+            if (ts === null && compressed && lastTs !== null) { var off = h & 31; ts = (lastTs & ~31) + off; if (off < (lastTs & 31)) ts += 32; }
+            if (ts !== null) lastTs = ts;
+            if (lat !== null && lng !== null && lat !== INVALID && lng !== INVALID) pts.push({ p: [lat * SEMI, lng * SEMI], t: ts !== null ? ts + FIT_EPOCH : null });
+          }
+        }
+        pos = end + 2;                                                          // CRC, puis fichier FIT chaîné éventuel
+      }
+    } catch (e) {
+      if (pts.length < 2) throw new Error("fichier FIT illisible");
+    }
+    var firstTime = null;
+    for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
+    if (firstTime === null && startT !== null) firstTime = startT + FIT_EPOCH;
+    return { pts: pts, name: "", firstTime: firstTime, sport: fitSport(sport, sub) };
+  }
+
+  /* ================= détection du format ================= */
+  function gunzip(buf) {
+    if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("décompression .gz non prise en charge par ce navigateur"));
+    return new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).arrayBuffer();
+  }
+  function parseAny(buf) {
+    var u = new Uint8Array(buf);
+    if (u.length > 2 && u[0] === 0x1F && u[1] === 0x8B) return gunzip(buf).then(parseAny);   // .fit.gz, .gpx.gz, .tcx.gz
+    if (u.length >= 12 && u[8] === 0x2E && u[9] === 0x46 && u[10] === 0x49 && u[11] === 0x54) return parseFIT(buf);
+    var txt = new TextDecoder("utf-8").decode(buf);
+    if (/<TrainingCenterDatabase/i.test(txt)) return parseTCX(txt);
+    if (/<gpx[\s>]/i.test(txt)) return parseGPX(txt);
+    throw new Error("format non reconnu (GPX, TCX ou FIT attendu)");
+  }
+
   function buildLines(pts, vmaxKmh) {
     var vmax = vmaxKmh / 3.6, lines = [], cur = [], dist = 0, skipped = 0, last = null;
     function r5(p) { return [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]; }
@@ -585,16 +683,15 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     return fallback;
   }
   function readFile(f) {
-    return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(String(r.result)); }; r.onerror = function () { rej(new Error("lecture impossible")); }; r.readAsText(f); });
+    return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { rej(new Error("lecture impossible")); }; r.readAsArrayBuffer(f); });
   }
   function importFiles(files, sportChoice, dateChoice) {
     var chain = Promise.resolve(), lines = [], lastAdded = null;
     files.forEach(function (f) {
-      chain = chain.then(function () { return readFile(f); }).then(function (txt) {
-        var g = parseGPX(txt);
+      chain = chain.then(function () { return readFile(f); }).then(parseAny).then(function (g) {
         if (g.pts.length < 2) throw new Error("aucun point de trace");
-        var base = f.name.replace(/\.gpx$/i, "");
-        var sport = guessSport(base + " " + g.name, sportChoice);
+        var base = f.name.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit)$/i, "");
+        var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
         var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
         var date = g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice);
         var b = buildLines(g.pts, SPORTS[sport].vmax);
@@ -645,13 +742,13 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var opts = Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '">' + SPORTS[k].label + '</option>'; }).join("");
     return '<div class="field"><label for="sp">Sport (utilisé si le fichier ne l’indique pas)</label><select id="sp">' + opts + '</select></div>' +
       '<div class="field"><label for="dt">Date (utilisée si le fichier n’en contient pas)</label><input type="date" id="dt" value="' + todayISO() + '"></div>' +
-      '<label class="btn block drop">Choisir des fichiers GPX<input type="file" id="gpxin" multiple accept=".gpx,application/gpx+xml,text/xml"></label>' +
+      '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
       '<div id="addres">' + lastResult + '</div>' +
       (lastResult ? '<button class="btn block" id="validate" style="margin-top:14px">Validé !</button>' : '') +
-      '<p class="note">Les traces et itinéraires GPX exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>';
+      '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>';
   }
   function viewList() {
-    if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier GPX depuis l’onglet Ajouter.</div>';
+    if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX ou FIT) depuis l’onglet Ajouter.</div>';
     return sortedActs().reverse().map(function (a) {
       return '<div class="row"><button class="row main" style="border:0;padding:0" data-act="' + a.id + '"><span class="main"><span class="t" style="display:block">' + esc(a.name) + '</span><span class="s" style="display:block">' +
         fmtDate(a.date) + ' · ' + SPORTS[a.sport].label + ' · ' + fmt(a.dist / 1000, 1) + ' km</span></span></button>' +
@@ -922,7 +1019,18 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     toast("La bibliothèque H3 n’a pas pu se charger : vérifie ta connexion.");
   } else {
     AREA_M2 = h3.getHexagonAreaAvg(RES, "m2");
-    loadState(); resize(); rebuild();
+    loadState();
+    if (!S.activities.length) {
+      var demo = [], seed = 7, i;
+      var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
+      for (i = 0; i <= 700; i++) {
+        var a = i / 700 * 2 * Math.PI, r = 0.011 + 0.003 * Math.sin(3 * a) + 0.0015 * Math.cos(5 * a);
+        demo.push({ p: [45.9 + r * 0.72 * Math.sin(a) + rnd() * 0.00006, 6.13 + r * Math.cos(a) + rnd() * 0.00008], t: null });
+      }
+      var b = buildLines(demo, 60);
+      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines });
+    }
+    resize(); rebuild();
     if (S.activities.length) fitAll(); else draw();
   }
 })();
