@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hexplore – territoire découvert</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bg: #eef0e6;
+  --panel: #f8f9f3;
+  --ink: #17261f;
+  --muted: #5d6b63;
+  --line: #cfd5c6;
+  --cell: #12906f;
+  --cell-edge: #0b6a52;
+  --track: #17261f;
+  --accent: #e2a21a;
+  --contour: #dfe3d3;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0d1512; --panel: #141f1b; --ink: #e6efe9; --muted: #8fa399;
+    --line: #26372f; --cell: #35d6ae; --cell-edge: #7ff0cf; --track: #f3f6f2;
+    --accent: #f1b93a; --contour: #16231e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1512; --panel: #141f1b; --ink: #e6efe9; --muted: #8fa399;
+  --line: #26372f; --cell: #35d6ae; --cell-edge: #7ff0cf; --track: #f3f6f2;
+  --accent: #f1b93a; --contour: #16231e;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+header { padding: 14px 16px 10px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.score { line-height: 1; }
+.score .big { font-size: clamp(44px, 12vw, 76px); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.score .unit { font-size: 20px; font-weight: 600; color: var(--muted); margin-left: 6px; }
+.score .sub { margin-top: 6px; font-size: 14px; color: var(--muted); }
+.facts { display: flex; gap: 18px; font-size: 14px; color: var(--muted); }
+.facts b { display: block; font-size: 22px; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+main { position: relative; flex: 1; min-height: 0; margin: 0 12px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg); }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#bgGray { filter: grayscale(1) contrast(0.7) brightness(1.1); opacity: 0.38; pointer-events: none; }
+#bgColor { pointer-events: none; }
+#cv { touch-action: none; cursor: grab; }
+#cv:active { cursor: grabbing; }
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; color: var(--muted); pointer-events: none; font-size: 15px; }
+.empty[hidden] { display: none; }
+.tag { position: absolute; bottom: 10px; font-size: 12px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; pointer-events: none; }
+#scalebar { left: 10px; }
+#attr { right: 10px; max-width: 55%; text-align: right; }
+.tag i { display: block; height: 5px; border: 1.5px solid var(--ink); border-top: 0; margin-bottom: 2px; }
+footer { padding: 10px 12px 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+button, .btn {
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  padding: 9px 16px; cursor: pointer;
+}
+button.primary, .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible, .btn:focus-within, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+label.opt { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+label.opt input, label.opt select { font: inherit; font-size: 13px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+label.opt input { width: 58px; }
+#msg { font-size: 13px; color: var(--muted); width: 100%; min-height: 1.2em; }
+</style>
+</head>
+<body>
+<header>
+  <div class="score">
+    <div><span class="big" id="km2">0,000</span><span class="unit">km²</span></div>
+    <div class="sub" id="sub">Aucun territoire découvert pour l’instant</div>
+  </div>
+  <div class="facts">
+    <div><b id="nCells">0</b>hexagones</div>
+    <div><b id="nAct">0</b>activités</div>
+  </div>
+</header>
+
+<main id="stage">
+  <canvas id="bgGray"></canvas>
+  <canvas id="bgColor"></canvas>
+  <canvas id="cv" aria-label="Carte des hexagones découverts"></canvas>
+  <div class="empty" id="empty">Importe une ou plusieurs traces GPX pour valider tes premiers hexagones, ou lance la trace de démonstration.</div>
+  <div class="tag" id="scalebar"></div>
+  <div class="tag" id="attr"></div>
+</main>
+
+<footer>
+  <label class="btn primary">Importer des GPX<input type="file" id="file" accept=".gpx,application/gpx+xml,text/xml" multiple></label>
+  <button id="demo">Trace de démo</button>
+  <button id="reset">Réinitialiser</button>
+  <label class="opt">Fond
+    <select id="basemap">
+      <option value="esri">Satellite (monde)</option>
+      <option value="ign">Satellite IGN (France)</option>
+      <option value="none">Aucun</option>
+    </select>
+  </label>
+  <label class="opt">Rayon
+    <select id="rad">
+      <option value="0">trace seule</option>
+      <option value="1" selected>1 hexagone (~45 m)</option>
+      <option value="2">2 hexagones (~90 m)</option>
+    </select>
+  </label>
+  <label class="opt">Vitesse max <input type="number" id="vmax" value="60" min="5" max="200"> km/h</label>
+  <div id="msg" role="status"></div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+<script>
+(function () {
+  "use strict";
+  var RES = 11;                 // hexagones d’environ 2 000 m², soit ~50 m d’un sommet à l’autre
+  var STEP_M = 5;               // pas d’interpolation le long de la trace
+  var STORE_KEY = "hexplore:v2";
+
+  var SOURCES = {
+    esri: {
+      id: "esri", maxZ: 18,
+      attr: "Imagerie © Esri, Maxar, Earthstar Geographics",
+      url: function (z, x, y) { return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/" + z + "/" + y + "/" + x; }
+    },
+    ign: {
+      id: "ign", maxZ: 18,
+      attr: "© IGN – Géoplateforme (France uniquement)",
+      url: function (z, x, y) {
+        return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS" +
+               "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX=" + z + "&TILEROW=" + y + "&TILECOL=" + x + "&FORMAT=image/jpeg";
+      }
+    }
+  };
+
+  var cells = new Set();
+  var tracks = [];
+  var nActivities = 0;
+  var boundaryCache = new Map();
+  var tileCache = new Map();
+  var tilesLoaded = 0, tilesFailed = 0;
+
+  var cv = document.getElementById("cv");
+  var ctx = cv.getContext("2d");
+  var gray = document.getElementById("bgGray"), gctx = gray.getContext("2d");
+  var color = document.getElementById("bgColor"), cctx = color.getContext("2d");
+  var stage = document.getElementById("stage");
+  var msg = document.getElementById("msg");
+  var bmSel = document.getElementById("basemap");
+  var view = { cx: 0.5, cy: 0.5, z: 2 };
+  var W = 0, H = 0, dpr = 1, raf = 0;
+
+  /* ---------- géométrie ---------- */
+  function haversine(a, b) {
+    var R = 6371008.8, toR = Math.PI / 180;
+    var dLat = (b[0] - a[0]) * toR, dLng = (b[1] - a[1]) * toR;
+    var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(a[0] * toR) * Math.cos(b[0] * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    return 2 * R * Math.asin(Math.sqrt(s));
+  }
+  function mercX(lng) { return (lng + 180) / 360; }
+  function mercY(lat) {
+    var s = Math.sin(lat * Math.PI / 180);
+    return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+  }
+  function worldScale() { return 256 * Math.pow(2, view.z); }
+  function toScreen(lat, lng) {
+    var k = worldScale();
+    return [(mercX(lng) - view.cx) * k + W / 2, (mercY(lat) - view.cy) * k + H / 2];
+  }
+  function unproject(px, py) {
+    var k = worldScale();
+    var nx = (px - W / 2) / k + view.cx, ny = (py - H / 2) / k + view.cy;
+    var lng = nx * 360 - 180;
+    var n = Math.PI - 2 * Math.PI * ny;
+    var lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return [lat, lng];
+  }
+
+  /* ---------- lecture GPX (trk ou rte) ---------- */
+  function parseGPX(text) {
+    var doc = new DOMParser().parseFromString(text, "application/xml");
+    if (doc.getElementsByTagName("parsererror").length) throw new Error("Fichier GPX illisible");
+    var nodes = doc.getElementsByTagName("trkpt");
+    if (!nodes.length) nodes = doc.getElementsByTagName("rtept");
+    var pts = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var lat = parseFloat(nodes[i].getAttribute("lat"));
+      var lng = parseFloat(nodes[i].getAttribute("lon"));
+      if (isNaN(lat) || isNaN(lng)) continue;
+      var tEl = nodes[i].getElementsByTagName("time")[0];
+      var t = tEl ? Date.parse(tEl.textContent) : NaN;
+      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000 });
+    }
+    return pts;
+  }
+
+  /* ---------- trace -> hexagones ---------- */
+  function addTrack(pts, vmaxKmh) {
+    var vmax = vmaxKmh / 3.6;
+    var added = 0, skipped = 0;
+    var line = [], lastKept = null, prevCell = null;
+    var rad = parseInt(document.getElementById("rad").value, 10) || 0;
+    function put(c) {
+      var around = rad > 0 ? h3.gridDisk(c, rad) : [c];
+      for (var k = 0; k < around.length; k++) {
+        if (!cells.has(around[k])) { cells.add(around[k]); added++; }
+      }
+    }
+    function add(lat, lng) {
+      var c = h3.latLngToCell(lat, lng, RES);
+      if (prevCell && c !== prevCell && !h3.areNeighborCells(prevCell, c)) {
+        try { h3.gridPathCells(prevCell, c).forEach(put); } catch (e) { /* proximité d’un pentagone */ }
+      }
+      put(c);
+      prevCell = c;
+    }
+    if (pts.length) add(pts[0].p[0], pts[0].p[1]);
+    for (var i = 1; i < pts.length; i++) {
+      var a = pts[i - 1], b = pts[i];
+      var d = haversine(a.p, b.p);
+      var ok = true;
+      if (a.t !== null && b.t !== null) {
+        var dt = b.t - a.t;
+        if (dt > 0 && d / dt > vmax) ok = false;
+        if (dt <= 0 && d > 60) ok = false;
+      } else if (d > 500) ok = false;
+      if (!ok) { skipped++; prevCell = null; if (line.length > 1) tracks.push(line); line = []; continue; }
+      var n = Math.max(1, Math.ceil(d / STEP_M));
+      for (var s = 1; s <= n; s++) {
+        var f = s / n;
+        add(a.p[0] + (b.p[0] - a.p[0]) * f, a.p[1] + (b.p[1] - a.p[1]) * f);
+      }
+      if (!line.length) line.push(a.p);
+      if (!lastKept || haversine(lastKept, b.p) > 15 || i === pts.length - 1) { line.push(b.p); lastKept = b.p; }
+    }
+    if (line.length > 1) tracks.push(line);
+    return { added: added, skipped: skipped };
+  }
+
+  /* ---------- stats ---------- */
+  function fmt(n, d) { return n.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function updateStats() {
+    var cellAreaM2 = h3.getHexagonAreaAvg(RES, "m2");
+    var km2 = cells.size * cellAreaM2 / 1e6;
+    document.getElementById("km2").textContent = fmt(km2, km2 < 10 ? 3 : 2);
+    document.getElementById("nCells").textContent = fmt(cells.size, 0);
+    document.getElementById("nAct").textContent = fmt(nActivities, 0);
+    document.getElementById("sub").textContent = cells.size
+      ? "Chaque hexagone vaut environ " + fmt(cellAreaM2, 0) + " m²"
+      : "Aucun territoire découvert pour l’instant";
+    document.getElementById("empty").hidden = cells.size > 0;
+  }
+
+  /* ---------- stockage local ---------- */
+  function save() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({ cells: Array.from(cells), tracks: tracks, n: nActivities }));
+    } catch (e) { /* stockage indisponible */ }
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return false;
+      var o = JSON.parse(raw);
+      if (!o || !Array.isArray(o.cells)) return false;
+      cells = new Set(o.cells); tracks = o.tracks || []; nActivities = o.n || 0;
+      return cells.size > 0;
+    } catch (e) { return false; }
+  }
+
+  /* ---------- fond de carte ---------- */
+  function requestDraw() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; draw(); }); }
+
+  function getTile(src, z, x, y) {
+    var key = src.id + "/" + z + "/" + x + "/" + y;
+    var im = tileCache.get(key);
+    if (im) return im;
+    im = new Image();
+    im.onload = function () { tilesLoaded++; requestDraw(); };
+    im.onerror = function () {
+      tilesFailed++;
+      if (!tilesLoaded && tilesFailed > 6) {
+        msg.textContent = "Fond de carte indisponible : vérifie ta connexion ou choisis l’autre source.";
+      }
+    };
+    im.src = src.url(z, x, y);
+    tileCache.set(key, im);
+    if (tileCache.size > 700) {
+      var it = tileCache.keys();
+      for (var i = 0; i < 200; i++) tileCache.delete(it.next().value);
+    }
+    return im;
+  }
+
+  function buildCellsPath(c) {
+    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20);
+    c.beginPath();
+    cells.forEach(function (id) {
+      var b = boundary(id);
+      var lat = b[0][0], lng = b[0][1];
+      if (lat < br[0] - 0.01 || lat > tl[0] + 0.01 || lng < tl[1] - 0.01 || lng > br[1] + 0.01) return;
+      for (var i = 0; i < b.length; i++) {
+        var p = toScreen(b[i][0], b[i][1]);
+        if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]);
+      }
+      c.closePath();
+    });
+  }
+
+  // Dessine le fond : tout en gris pâle, et en couleur uniquement sous les hexagones découverts.
+  function drawTiles() {
+    gctx.setTransform(dpr, 0, 0, dpr, 0, 0); gctx.clearRect(0, 0, W, H);
+    cctx.setTransform(dpr, 0, 0, dpr, 0, 0); cctx.clearRect(0, 0, W, H);
+    var src = SOURCES[bmSel.value];
+    document.getElementById("attr").textContent = src ? src.attr : "";
+    document.getElementById("attr").style.display = src ? "block" : "none";
+    if (!src) return false;
+
+    var k = worldScale();
+    var tz = Math.max(1, Math.min(src.maxZ, Math.round(view.z)));
+    var n = Math.pow(2, tz), size = k / n;
+    var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n));
+    var x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
+    var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n));
+    var y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
+
+    cctx.save();
+    buildCellsPath(cctx);
+    cctx.clip();
+    var drawn = 0;
+    for (var x = x0; x <= x1; x++) {
+      for (var y = y0; y <= y1; y++) {
+        var im = getTile(src, tz, x, y);
+        if (!im.complete || !im.naturalWidth) continue;
+        var left = Math.floor((x / n - view.cx) * k + W / 2);
+        var top = Math.floor((y / n - view.cy) * k + H / 2);
+        var s = Math.ceil(size) + 1;
+        gctx.drawImage(im, left, top, s, s);
+        cctx.drawImage(im, left, top, s, s);
+        drawn++;
+      }
+    }
+    cctx.restore();
+    return drawn > 0;
+  }
+
+  /* ---------- rendu ---------- */
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = stage.clientWidth; H = stage.clientHeight;
+    [cv, gray, color].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
+    draw();
+  }
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function drawGraticule() {
+    var k = worldScale();
+    var span = (360 / k) * Math.max(W, H);
+    var steps = [10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001];
+    var step = steps[steps.length - 1];
+    for (var i = 0; i < steps.length; i++) { if (span / steps[i] >= 5) { step = steps[i]; break; } }
+    var tl = unproject(0, 0), br = unproject(W, H);
+    ctx.strokeStyle = css("--contour"); ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var lng = Math.floor(tl[1] / step) * step; lng <= br[1]; lng += step) {
+      var x = toScreen(0, lng)[0]; ctx.moveTo(x, 0); ctx.lineTo(x, H);
+    }
+    for (var lat = Math.floor(br[0] / step) * step; lat <= tl[0]; lat += step) {
+      var y = toScreen(lat, 0)[1]; ctx.moveTo(0, y); ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+  }
+  function boundary(c) {
+    var b = boundaryCache.get(c);
+    if (!b) { b = h3.cellToBoundary(c, false); boundaryCache.set(c, b); }
+    return b;
+  }
+
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    var onImagery = drawTiles();
+    if (!onImagery) drawGraticule();
+
+    var pxPerCell = worldScale() * (50 / 40075016.7);
+    buildCellsPath(ctx);
+    // Sur l’imagerie, la couleur du sol suffit : on ne garde qu’un voile léger et un liseré.
+    ctx.globalAlpha = onImagery ? 0.12 : 0.55;
+    ctx.fillStyle = css("--cell");
+    ctx.fill();
+    ctx.globalAlpha = pxPerCell > 3 ? 0.95 : 0;
+    ctx.strokeStyle = onImagery ? css("--accent") : css("--cell-edge");
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    ctx.strokeStyle = onImagery ? "#ffffff" : css("--track");
+    ctx.lineWidth = 1.4; ctx.lineJoin = "round"; ctx.globalAlpha = 0.9;
+    for (var t = 0; t < tracks.length; t++) {
+      var tr = tracks[t];
+      ctx.beginPath();
+      for (var j = 0; j < tr.length; j++) {
+        var q = toScreen(tr[j][0], tr[j][1]);
+        if (j === 0) ctx.moveTo(q[0], q[1]); else ctx.lineTo(q[0], q[1]);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    drawScaleBar();
+  }
+  function drawScaleBar() {
+    var mid = unproject(W / 2, H / 2);
+    var mPerPx = 40075016.7 * Math.cos(mid[0] * Math.PI / 180) / worldScale();
+    var nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000];
+    var target = mPerPx * 90, m = nice[0];
+    for (var i = 0; i < nice.length; i++) { if (nice[i] <= target) m = nice[i]; }
+    var w = m / mPerPx;
+    document.getElementById("scalebar").innerHTML = '<i style="width:' + w.toFixed(0) + 'px"></i>' + (m >= 1000 ? (m / 1000) + " km" : m + " m");
+  }
+
+  function fitToData() {
+    var minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, any = false;
+    tracks.forEach(function (tr) { tr.forEach(function (p) {
+      any = true;
+      if (p[0] < minLat) minLat = p[0]; if (p[0] > maxLat) maxLat = p[0];
+      if (p[1] < minLng) minLng = p[1]; if (p[1] > maxLng) maxLng = p[1];
+    }); });
+    if (!any) {
+      var first = cells.values().next().value;
+      if (!first) return;
+      var ll = h3.cellToLatLng(first);
+      minLat = maxLat = ll[0]; minLng = maxLng = ll[1];
+    }
+    view.cx = (mercX(minLng) + mercX(maxLng)) / 2;
+    view.cy = (mercY(minLat) + mercY(maxLat)) / 2;
+    var dx = Math.max(mercX(maxLng) - mercX(minLng), 1e-7);
+    var dy = Math.max(Math.abs(mercY(minLat) - mercY(maxLat)), 1e-7);
+    var zx = Math.log2(W * 0.85 / (256 * dx)), zy = Math.log2(H * 0.85 / (256 * dy));
+    view.z = Math.max(1, Math.min(18, Math.min(zx, zy)));
+  }
+
+  /* ---------- import ---------- */
+  function ingest(pts, label) {
+    var r = addTrack(pts, parseFloat(document.getElementById("vmax").value) || 60);
+    nActivities++;
+    msg.textContent = label + " : " + fmt(r.added, 0) + " nouveaux hexagones" +
+      (r.skipped ? " · " + r.skipped + " segments ignorés (vitesse ou saut GPS)" : "");
+  }
+  document.getElementById("file").addEventListener("change", function (e) {
+    var files = Array.prototype.slice.call(e.target.files || []);
+    var pending = files.length;
+    if (!pending) return;
+    files.forEach(function (f) {
+      var rd = new FileReader();
+      rd.onload = function () {
+        try {
+          var pts = parseGPX(String(rd.result));
+          if (pts.length < 2) throw new Error("aucun point de trace");
+          ingest(pts, f.name);
+        } catch (err) { msg.textContent = f.name + " : " + err.message; }
+        if (--pending === 0) { finish(); e.target.value = ""; }
+      };
+      rd.readAsText(f);
+    });
+  });
+  function finish() { updateStats(); fitToData(); draw(); save(); }
+
+  document.getElementById("demo").addEventListener("click", function () {
+    var pts = [], lat0 = 45.9, lng0 = 6.13, t0 = Date.UTC(2026, 9, 24, 8, 0, 0) / 1000;
+    var seed = 7; function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; }
+    var N = 700;
+    for (var i = 0; i <= N; i++) {
+      var a = i / N * 2 * Math.PI;
+      var r = 0.011 + 0.003 * Math.sin(3 * a) + 0.0015 * Math.cos(5 * a);
+      pts.push({ p: [lat0 + r * 0.72 * Math.sin(a) + rnd() * 0.00006, lng0 + r * Math.cos(a) + rnd() * 0.00008], t: t0 + i * 3 });
+    }
+    ingest(pts, "Trace de démonstration");
+    finish();
+  });
+  document.getElementById("reset").addEventListener("click", function () {
+    cells = new Set(); tracks = []; nActivities = 0; boundaryCache.clear();
+    try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    msg.textContent = "Territoire réinitialisé";
+    updateStats(); draw();
+  });
+  bmSel.addEventListener("change", function () { msg.textContent = ""; tilesLoaded = 0; tilesFailed = 0; draw(); });
+
+  /* ---------- interactions ---------- */
+  var pointers = new Map(), lastDist = 0;
+  cv.addEventListener("pointerdown", function (e) { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); lastDist = 0; });
+  cv.addEventListener("pointerup", function (e) { pointers.delete(e.pointerId); });
+  cv.addEventListener("pointercancel", function (e) { pointers.delete(e.pointerId); });
+  cv.addEventListener("pointermove", function (e) {
+    if (!pointers.has(e.pointerId)) return;
+    var prev = pointers.get(e.pointerId);
+    pointers.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pointers.size === 1) {
+      var k = worldScale();
+      view.cx -= (e.clientX - prev[0]) / k; view.cy -= (e.clientY - prev[1]) / k;
+    } else if (pointers.size === 2) {
+      var ps = Array.from(pointers.values());
+      var d = Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]);
+      if (lastDist) zoomBy(Math.log2(d / lastDist), (ps[0][0] + ps[1][0]) / 2, (ps[0][1] + ps[1][1]) / 2);
+      lastDist = d;
+    }
+    requestDraw();
+  });
+  function zoomBy(dz, clientX, clientY) {
+    var rect = cv.getBoundingClientRect();
+    var px = clientX - rect.left, py = clientY - rect.top;
+    var before = unproject(px, py);
+    view.z = Math.max(1, Math.min(19, view.z + dz));
+    var after = toScreen(before[0], before[1]);
+    var k = worldScale();
+    view.cx += (after[0] - px) / k; view.cy += (after[1] - py) / k;
+  }
+  cv.addEventListener("wheel", function (e) { e.preventDefault(); zoomBy(-e.deltaY * 0.0015, e.clientX, e.clientY); requestDraw(); }, { passive: false });
+
+  window.addEventListener("resize", resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+
+  /* ---------- démarrage ---------- */
+  if (typeof h3 === "undefined") {
+    msg.textContent = "La bibliothèque H3 n’a pas pu se charger.";
+  } else {
+    var had = load();
+    resize(); updateStats();
+    if (had) { fitToData(); draw(); }
+  }
+})();
+</script>
+</body>
+</html>
