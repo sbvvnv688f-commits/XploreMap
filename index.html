@@ -276,12 +276,16 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   var RES = 11, STEP_M = 5, KEY = "hexplore:app:v1";
 
   var SPORTS = {
-    trail:  { label: "Trail", vmax: 25 },
-    course: { label: "Course à pied", vmax: 30 },
-    rando:  { label: "Randonnée", vmax: 15 },
-    velo:   { label: "Vélo", vmax: 70 },
-    ski:    { label: "Ski de rando", vmax: 90 },
-    autre:  { label: "Autre", vmax: 60 }
+    trail:    { label: "Trail", vmax: 25 },
+    course:   { label: "Course à pied", vmax: 30 },
+    rando:    { label: "Marche et randonnée", vmax: 15 },
+    velo:     { label: "Vélo et VTT", vmax: 70 },
+    ski:      { label: "Ski et snowboard", vmax: 120 },
+    natation: { label: "Natation", vmax: 10 },
+    pagaie:   { label: "Kayak, aviron, paddle", vmax: 25 },
+    voile:    { label: "Voile, planche, kite", vmax: 70 },
+    roller:   { label: "Roller et patin", vmax: 50 },
+    autre:    { label: "Autre sport sans moteur", vmax: 60 }
   };
   var SOURCES = {
     esri: { id: "esri", maxZ: 18, attr: "Imagerie © Esri, Maxar, Earthstar Geographics",
@@ -297,7 +301,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
   var selected = null, current = null, lastResult = "";
-  var rankScope = "monde", rankPeriod = "all";
+  var rankScope = "monde", rankPeriod = "all", rankSport = "all";
 
   function loadState() {
     try {
@@ -305,7 +309,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       if (!raw) return;
       var o = JSON.parse(raw);
       if (o && Array.isArray(o.activities)) {
-        S.name = o.name || S.name; S.rad = o.rad === 0 || o.rad === 2 ? o.rad : 1;
+        S.name = o.name || S.name; S.rad = 1;   // rayon de découverte fixe (1 hexagone, environ 50 m)
         S.basemap = SOURCES[o.basemap] || o.basemap === "none" ? o.basemap : "esri";
         S.activities = o.activities; S.nextId = o.nextId || (o.activities.length + 1);
         S.city = typeof o.city === "string" ? o.city : ""; S.dept = typeof o.dept === "string" ? o.dept : "";
@@ -342,7 +346,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.getElementsByTagName("parsererror").length) throw new Error("fichier GPX illisible");
     var nodes = doc.getElementsByTagName("trkpt");
-    if (!nodes.length) nodes = doc.getElementsByTagName("rtept");
+    var route = !nodes.length && doc.getElementsByTagName("rtept").length > 0;   // itinéraire dessiné, pas une trace enregistrée
     var pts = [];
     for (var i = 0; i < nodes.length; i++) {
       var lat = parseFloat(nodes[i].getAttribute("lat")), lng = parseFloat(nodes[i].getAttribute("lon"));
@@ -354,7 +358,8 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var nEl = holder && holder.getElementsByTagName("name")[0];
     var firstTime = null;
     for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
-    return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime };
+    var sensor = !!(doc.getElementsByTagName("gpxtpx:hr").length || doc.getElementsByTagNameNS("*", "hr").length || doc.getElementsByTagNameNS("*", "cad").length);
+    return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime, route: route, sensor: sensor };
   }
   /* ================= TCX -> lignes ================= */
   function parseTCX(text) {
@@ -374,19 +379,25 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var nEl = course && course.getElementsByTagName("Name")[0];
     var firstTime = null;
     for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
-    return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime, sport: act ? guessSport(act.getAttribute("Sport") || "", null) : null };
+    var sensor = doc.getElementsByTagName("HeartRateBpm").length > 0 || doc.getElementsByTagName("Cadence").length > 0 || doc.getElementsByTagName("RunCadence").length > 0;
+    return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime, sensor: sensor, sport: act ? guessSport(act.getAttribute("Sport") || "", null) : null };
   }
 
   /* ================= FIT -> lignes ================= */
   function fitSport(sport, sub) {
+    if (sport === 22 || sport === 24 || sport === 36) return "moteur";      // moto, conduite, motoneige
     if (sport === 1) return sub === 3 ? "trail" : "course";
     if (sport === 2) return "velo";
-    if (sport === 11 || sport === 16 || sport === 17) return "rando";
-    if (sport === 12 || sport === 13) return "ski";
+    if (sport === 5) return "natation";
+    if (sport === 11 || sport === 16 || sport === 17 || sport === 31 || sport === 35) return "rando";
+    if (sport === 12 || sport === 13 || sport === 14) return "ski";
+    if (sport === 15 || sport === 37 || sport === 41 || sport === 42) return "pagaie";
+    if (sport === 32 || sport === 43 || sport === 44) return "voile";
+    if (sport === 30) return "roller";
     return null;
   }
   function parseFIT(buf) {
-    var dv = new DataView(buf), len = buf.byteLength, pos = 0, pts = [], sport = null, sub = null, startT = null, lastTs = null;
+    var dv = new DataView(buf), len = buf.byteLength, pos = 0, pts = [], sport = null, sub = null, startT = null, lastTs = null, sensor = false;
     var FIT_EPOCH = 631065600, INVALID = 0x7FFFFFFF, SEMI = 180 / 2147483648;
     try {
       while (pos + 12 <= len) {
@@ -414,6 +425,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
               if (fd.num === 0 && fd.size === 4) lat = dv.getInt32(q, d.le);
               else if (fd.num === 1 && fd.size === 4) lng = dv.getInt32(q, d.le);
               else if (fd.num === 253 && fd.size === 4) ts = dv.getUint32(q, d.le);
+              else if ((fd.num === 3 || fd.num === 4) && fd.size === 1) { var sv = dv.getUint8(q); if (sv > 0 && sv !== 255) sensor = true; }   // fréquence cardiaque, cadence
             } else if (d.msg === 18) {
               if (fd.num === 5 && fd.size >= 1) sport = dv.getUint8(q);
               else if (fd.num === 6 && fd.size >= 1) sub = dv.getUint8(q);
@@ -436,7 +448,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var firstTime = null;
     for (var k = 0; k < pts.length; k++) { if (pts[k].t !== null) { firstTime = pts[k].t; break; } }
     if (firstTime === null && startT !== null) firstTime = startT + FIT_EPOCH;
-    return { pts: pts, name: "", firstTime: firstTime, sport: fitSport(sport, sub) };
+    return { pts: pts, name: "", firstTime: firstTime, sensor: sensor, sport: fitSport(sport, sub) };
   }
 
   /* ================= détection du format ================= */
@@ -464,6 +476,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         var dt = b.t - a.t;
         if (dt > 0 && d / dt > vmax) ok = false;
         if (dt <= 0 && d > 60) ok = false;
+        if (dt > 600 && d > 300) ok = false;               // saut de temps : déplacement sans enregistrement
       } else if (d > 500) ok = false;
       if (!ok) { skipped++; if (cur.length > 1) lines.push(cur); cur = [r5(b.p)]; last = b.p; continue; }
       dist += d;
@@ -626,11 +639,11 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     ctx.globalAlpha = onImg ? 0.22 : 0.6; ctx.fillStyle = css("--cell"); ctx.fill();
     ctx.globalAlpha = pxPerCell > 3 ? (onImg ? 0.3 : 0.4) : 0; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     ctx.globalAlpha = 1;
-        strokeLines(allLines(), css("--outline"), 4.6, 0.9);
-    strokeLines(allLines(), css("--accent"), 2.4, 1);
+        strokeLines(allLines(), css("--outline"), 3, 0.9);
+    strokeLines(allLines(), css("--accent"), 1.4, 1);
     if (selected !== null) {
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
-      if (a) { strokeLines(a.lines, css("--outline"), 7, 1); strokeLines(a.lines, css("--pink"), 4, 1); }
+      if (a) { strokeLines(a.lines, css("--outline"), 4.4, 1); strokeLines(a.lines, css("--pink"), 2.4, 1); }
     }
     drawScaleBar();
   }
@@ -676,12 +689,18 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   /* ================= import de courses ================= */
   function guessSport(name, fallback) {
     if (/trail/i.test(name)) return "trail";
-    if (/run/i.test(name)) return "course";
-    if (/cycl|bik|ride/i.test(name)) return "velo";
-    if (/hik|walk|mountaineer/i.test(name)) return "rando";
-    if (/ski/i.test(name)) return "ski";
+    if (/run|course à pied|footing/i.test(name)) return "course";
+    if (/swim|natation|nage\b/i.test(name)) return "natation";
+    if (/kayak|cano[eë]|rowing|aviron|paddle|pagaie|\bsup\b|rafting/i.test(name)) return "pagaie";
+    if (/sail|voile|windsurf|kite/i.test(name)) return "voile";
+    if (/skate|roller|patin|trottinette/i.test(name)) return "roller";
+    if (/ski|snowboard|splitboard/i.test(name)) return "ski";
+    if (/horse|equest|cheval/i.test(name)) return "autre";
+    if (/cycl|bik|ride|vtt|mtb|gravel/i.test(name)) return "velo";
+    if (/hik|walk|mountaineer|climb|snowshoe|marche|rando|raquette|escalade/i.test(name)) return "rando";
     return fallback;
   }
+  function isMotor(name) { return /motorcycl|\bmoto\b|motard|\bcar\b|\bdriv|voiture|snowmobile|motoneige|scooter|e-?bike|\bvae\b|\bquad\b|\bkart/i.test(name); }
   function readFile(f) {
     return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { rej(new Error("lecture impossible")); }; r.readAsArrayBuffer(f); });
   }
@@ -689,17 +708,24 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var chain = Promise.resolve(), lines = [], lastAdded = null;
     files.forEach(function (f) {
       chain = chain.then(function () { return readFile(f); }).then(parseAny).then(function (g) {
+        if (g.sport === "moteur" || isMotor(f.name + " " + g.name)) throw new Error("sport motorisé : seuls les sports sans moteur sont acceptés");
+        if (g.route) throw new Error("itinéraire sans horodatage : seules les traces enregistrées sont acceptées");
         if (g.pts.length < 2) throw new Error("aucun point de trace");
+        var timed = 0, back = 0;
+        g.pts.forEach(function (x, i) { if (x.t !== null) { timed++; if (i && g.pts[i - 1].t !== null && x.t < g.pts[i - 1].t) back++; } });
+        if (timed < g.pts.length * 0.95) throw new Error("trace sans horodatage : impossible à contrôler");
+        if (back > g.pts.length * 0.02) throw new Error("horodatage incohérent (retours dans le temps)");
         var base = f.name.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit)$/i, "");
         var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
         var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
         var date = g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice);
         var b = buildLines(g.pts, SPORTS[sport].vmax);
         if (!b.lines.length) throw new Error("trace entièrement filtrée (vitesse ou sauts GPS)");
+        if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents : trace refusée");
         var name = g.name && !/^suuntoapp-/i.test(g.name) ? g.name : SPORTS[sport].label + " du " + fmtDate(date);
         var dup = S.activities.some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
         if (dup) throw new Error("déjà importée");
-        var act = { id: S.nextId++, name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines };
+        var act = { id: S.nextId++, name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non" };
         S.activities.push(act); lastAdded = act;
         lines.push({ ok: true, act: act, file: f.name });
       }).catch(function (err) { lines.push({ ok: false, file: f.name, msg: err.message }); });
@@ -710,6 +736,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         if (!l.ok) return '<div class="result"><b>' + esc(l.file) + '</b> — ignorée : ' + esc(l.msg) + '</div>';
         var a = S.activities.filter(function (x) { return x.id === l.act.id; })[0];
         return '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km<br><span class="gain">+' + fmtKm2(actArea(a)) + ' km² · ' + fmt(a.newCells, 0) + ' nouveaux hexagones</span>' +
+          (a.trust === "non" ? '<br><span style="color:var(--muted);font-size:13px">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>' : '') +
           (a.skipped ? '<br><span style="color:var(--muted);font-size:13px">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>' : '') + '</div>';
       }).join("");
       if (lastAdded) { selected = lastAdded.id; fitLines(lastAdded.lines); }
@@ -745,13 +772,14 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
       '<div id="addres">' + lastResult + '</div>' +
       (lastResult ? '<button class="btn block" id="validate" style="margin-top:14px">Validé !</button>' : '') +
-      '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>';
+      '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
+      '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur restent dans ton territoire mais sont exclues du classement.</p>';
   }
   function viewList() {
     if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX ou FIT) depuis l’onglet Ajouter.</div>';
     return sortedActs().reverse().map(function (a) {
       return '<div class="row"><button class="row main" style="border:0;padding:0" data-act="' + a.id + '"><span class="main"><span class="t" style="display:block">' + esc(a.name) + '</span><span class="s" style="display:block">' +
-        fmtDate(a.date) + ' · ' + SPORTS[a.sport].label + ' · ' + fmt(a.dist / 1000, 1) + ' km</span></span></button>' +
+        fmtDate(a.date) + ' · ' + SPORTS[a.sport].label + ' · ' + fmt(a.dist / 1000, 1) + ' km' + (a.trust === "non" ? ' · sans capteur' : '') + '</span></span></button>' +
         '<span class="v">+' + fmtKm2(actArea(a)) + '<small>km² nouveaux</small></span><button class="del" data-del="' + a.id + '" aria-label="Supprimer ' + esc(a.name) + '">Supprimer</button></div>';
     }).join("");
   }
@@ -798,26 +826,32 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 
   /* ---- classement : aperçu avec joueurs fictifs ---- */
   var FAKE = ["Camille R.", "Noé B.", "Inès L.", "Hugo M.", "Léa D.", "Tom V.", "Manon P.", "Jules F.", "Chloé G.", "Lucas T.", "Sarah K.", "Axel C.", "Zoé H.", "Enzo A.", "Alix N.", "Maé S.", "Louis E.", "Jade O.", "Nils W.", "Eva Q."];
-  function fakeBoard(scope, period) {
-    var base = { monde: 160, france: 70, region: 22 }[scope] * (period === "month" ? 0.14 : 1), seed = scope.length * 97 + (period === "month" ? 13 : 5);
+  var SPORT_WEIGHT = { all: 1, trail: 0.35, course: 0.3, rando: 0.45, velo: 0.6, ski: 0.15, natation: 0.04, pagaie: 0.06, voile: 0.05, roller: 0.08, autre: 0.1 };
+  function fakeBoard(scope, period, sport) {
+    var sp = sport || "all", base = { monde: 160, france: 70, region: 22 }[scope] * (period === "month" ? 0.14 : 1) * (SPORT_WEIGHT[sp] || 0.1), seed = scope.length * 97 + (period === "month" ? 13 : 5);
+    for (var c = 0; c < sp.length; c++) seed += sp.charCodeAt(c) * 31;
     function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
     return FAKE.map(function (nm, i) { return { name: nm, v: base * Math.pow(0.8, i) * (0.9 + 0.2 * rnd()) }; });
   }
-  function userScore(period) {
-    if (period === "all") return totalKm2();
-    var ym = todayISO().slice(0, 7), s = 0;
-    S.activities.forEach(function (a) { if (a.date.slice(0, 7) === ym) s += actArea(a); });
+  function userScore(period, sport) {
+    var ym = todayISO().slice(0, 7), seen = new Set(), s = 0;
+    sortedActs().filter(function (a) { return a.trust !== "non" && (!sport || sport === "all" || a.sport === sport); }).forEach(function (a) {   // classement : courses avec capteur
+      var n = 0;
+      cellsOfLines(a.lines, S.rad).forEach(function (c) { if (!seen.has(c)) { seen.add(c); n++; } });
+      if (period === "all" || a.date.slice(0, 7) === ym) s += n * AREA_M2 / 1e6;
+    });
     return s;
   }
   function viewRank() {
-    var me = userScore(rankPeriod), board = fakeBoard(rankScope, rankPeriod), rank = 1 + board.filter(function (b) { return b.v > me; }).length;
+    var me = userScore(rankPeriod, rankSport), board = fakeBoard(rankScope, rankPeriod, rankSport), rank = 1 + board.filter(function (b) { return b.v > me; }).length;
     var rows = board.map(function (b, i) { return { r: i + 1, name: b.name, v: b.v, me: false }; });
     rows.splice(rank - 1, 0, { r: rank, name: S.name || "Moi", v: me, me: true });
     rows.forEach(function (x, i) { x.r = i + 1; });
     var top = rows.slice(0, 8), meRow = rows.filter(function (x) { return x.me; })[0], extra = meRow.r > 8;
     function seg(group, items, cur) { return '<div class="seg">' + items.map(function (it) { return '<button data-' + group + '="' + it[0] + '" aria-pressed="' + (cur === it[0]) + '">' + it[1] + '</button>'; }).join("") + '</div>'; }
     function row(x) { return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + x.r + '</span><span class="main"><span class="t">' + esc(x.name) + (x.me ? " (toi)" : "") + '</span></span><span class="v">' + fmtKm2(x.v) + '<small>km²</small></span></div>'; }
-    return '<div class="banner">Aperçu avec des joueurs fictifs. Un vrai classement mondial ou régional demande des comptes et un serveur ; ton score ci-dessous est réel.</div>' +
+    return '<div class="banner">Aperçu avec des joueurs fictifs. Un vrai classement mondial ou régional demande des comptes et un serveur ; ton score ci-dessous est réel et ne compte que les courses avec données de capteur.</div>' +
+      seg("sport", [["all", "Tous sports"]].concat(Object.keys(SPORTS).map(function (k) { return [k, SPORTS[k].label]; })), rankSport) +
       seg("scope", [["monde", "Monde"], ["france", "Pays"], ["region", "Région"]], rankScope) +
       seg("period", [["all", "Total"], ["month", "Ce mois-ci"]], rankPeriod) +
       top.map(row).join("") + (extra ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(meRow) : "");
@@ -849,6 +883,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       });
     });
     document.querySelectorAll("[data-scope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.scope; render(); }); });
+    document.querySelectorAll("[data-sport]").forEach(function (b) { b.addEventListener("click", function () { rankSport = b.dataset.sport; render(); }); });
     document.querySelectorAll("[data-period]").forEach(function (b) { b.addEventListener("click", function () { rankPeriod = b.dataset.period; render(); }); });
   }
   document.querySelectorAll(".tab").forEach(function (t) { t.addEventListener("click", function () { openTab(t.dataset.tab); }); });
@@ -925,10 +960,8 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   }
   function settingsHTML() {
     var bm = [["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
-    var rd = [[0, "Trace seule"], [1, "1 hexagone (~45 m)"], [2, "2 hexagones (~90 m)"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.rad === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
-      '<div class="field"><label for="radsel">Rayon de découverte autour de la trace</label><select id="radsel">' + rd + '</select></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
@@ -977,7 +1010,6 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
-    $("radsel").addEventListener("change", function (e) { S.rad = parseInt(e.target.value, 10); rebuild(); save(); draw(); renderDrawer(); });
     $("exp").addEventListener("click", function () {
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-sauvegarde.json"; document.body.appendChild(a); a.click();
