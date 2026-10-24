@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Hexplore</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#bfe6ff">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -133,7 +137,7 @@ body.sheet-open #ctrl, body.sheet-open .tag { display: none; }
 
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 14px; font-weight: 500; color: var(--muted); margin-bottom: 4px; }
-.field select, .field input[type="date"], .field input[type="text"] {
+.field select, .field input[type="date"], .field input[type="text"], .field input[type="number"] {
   width: 100%; padding: 10px 12px; background: var(--panel); border: 3px solid var(--outline); border-radius: 14px; font-size: 16px; font-weight: 500;
 }
 .btn {
@@ -223,6 +227,36 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .cups { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 12px; }
 .cups .cup { width: 100%; height: auto; }
 .locked { padding: 10px 12px; background: var(--panel); border: 3px dashed var(--outline); border-radius: 14px; font-size: 16px; font-weight: 600; min-height: 46px; word-break: break-word; }
+/* ---- barre de la carte, recherche, glisser-déposer ---- */
+#mapbar { top: calc(env(safe-area-inset-top, 0px) + 80px); left: 12px; right: 12px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; pointer-events: none; }
+#mapbar::-webkit-scrollbar { display: none; }
+#mapbar .pill { pointer-events: auto; }
+.pill { flex: none; padding: 6px 14px; border-radius: 999px; border: 3px solid var(--outline); background: var(--panel); color: var(--ink); font-size: 14px; font-weight: 600; box-shadow: 2px 2px 0 var(--outline); }
+.pill[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+body.sheet-open #mapbar { display: none; }
+#searchbar { top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; right: 12px; display: flex; gap: 8px; z-index: 7; }
+#searchbar[hidden] { display: none; }
+#searchbar input { flex: 1; min-width: 0; padding: 10px 14px; border: 3px solid var(--outline); border-radius: 999px; background: var(--panel); font-size: 16px; box-shadow: 3px 3px 0 var(--outline); }
+#searchbar .btn { width: auto; padding: 8px 18px; }
+#dropzone { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(43, 31, 74, 0.6); color: #fff; font-size: 24px; font-weight: 700; text-align: center; padding: 24px; }
+#dropzone[hidden] { display: none; }
+#tlabel { top: calc(env(safe-area-inset-top, 0px) + 84px); left: 50%; transform: translateX(-50%); padding: 6px 18px; background: var(--accent); color: var(--on-accent); border: 3px solid var(--outline); border-radius: 999px; font-weight: 700; font-size: 20px; box-shadow: 3px 3px 0 var(--outline); }
+#tlabel[hidden] { display: none; }
+/* ---- défis, succès, sommets ---- */
+.goal { padding: 10px 0; border-top: 2px dashed color-mix(in srgb, var(--outline) 28%, transparent); }
+.goal:first-of-type { border-top: 0; }
+.goal-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.goal .t { font-weight: 600; font-size: 16px; }
+.goal .del { font-size: 12px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
+.goal .s { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.badge { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 3px solid var(--outline); border-radius: 16px; background: var(--panel); box-shadow: 2px 2px 0 var(--outline); }
+.badge .ic { font-size: 24px; }
+.badge b { font-size: 14px; }
+.badge small { font-size: 12px; color: var(--muted); line-height: 1.25; }
+.badge.off { opacity: 0.45; filter: grayscale(1); border-style: dashed; box-shadow: none; }
+.peak { font-weight: 600; }
+.warn { font-size: 13px; color: var(--muted); }
 </style>
 </head>
 <body>
@@ -238,12 +272,24 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 <div class="float" id="chip" aria-live="polite"><b id="chipKm2">0,000</b> <span>km²</span><small id="chipCells">0 hexagone</small></div>
 
 <div class="float" id="ctrl">
+  <button id="searchBtn" aria-label="Rechercher un lieu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5"/></svg></button>
+  <button id="locBtn" aria-label="Ma position"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></button>
   <button id="zin" aria-label="Zoom avant">+</button>
   <button id="zout" aria-label="Zoom arrière">−</button>
   <button id="fit" aria-label="Recentrer sur mon territoire"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg></button>
 </div>
 <div class="float tag" id="scalebar"></div>
 <div class="float tag" id="attr"></div>
+<div class="float" id="mapbar" role="toolbar" aria-label="Filtres de la carte">
+  <button class="pill" data-per="all" aria-pressed="true">Tout</button>
+  <button class="pill" data-per="year" aria-pressed="false">Année</button>
+  <button class="pill" data-per="month" aria-pressed="false">Mois</button>
+  <button class="pill" data-per="week" aria-pressed="false">Semaine</button>
+  <button class="pill" id="exploreBtn" aria-pressed="false">Explorer</button>
+</div>
+<div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
+<div class="float" id="tlabel" hidden></div>
+<div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
 
 <div class="float" id="hint" hidden>
   <h2>Ta carte est toute vide !</h2>
@@ -263,6 +309,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   <button class="tab" data-tab="add" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>Ajouter</span></button>
   <button class="tab" data-tab="list" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>Courses</span></button>
   <button class="tab" data-tab="stats" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Stats</span></button>
+  <button class="tab" data-tab="goals" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></svg><span>Défis</span></button>
   <button class="tab" data-tab="rank" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 14v4M8 20h8"/></svg><span>Classement</span></button>
 </nav>
 
@@ -276,32 +323,35 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   var RES = 11, STEP_M = 5, KEY = "hexplore:app:v1";
 
   var SPORTS = {
-    trail:    { label: "Trail", vmax: 25 },
-    course:   { label: "Course à pied", vmax: 30 },
-    rando:    { label: "Marche et randonnée", vmax: 15 },
-    velo:     { label: "Vélo et VTT", vmax: 70 },
-    ski:      { label: "Ski et snowboard", vmax: 120 },
-    natation: { label: "Natation", vmax: 10 },
-    pagaie:   { label: "Kayak, aviron, paddle", vmax: 25 },
-    voile:    { label: "Voile, planche, kite", vmax: 70 },
-    roller:   { label: "Roller et patin", vmax: 50 },
-    autre:    { label: "Autre sport sans moteur", vmax: 60 }
+    trail:    { label: "Trail", vmax: 25, ic: "⛰️" },
+    course:   { label: "Course à pied", vmax: 30, ic: "🏃" },
+    rando:    { label: "Marche et randonnée", vmax: 15, ic: "🥾" },
+    velo:     { label: "Vélo et VTT", vmax: 70, ic: "🚴" },
+    ski:      { label: "Ski et snowboard", vmax: 120, ic: "⛷️" },
+    natation: { label: "Natation", vmax: 10, ic: "🏊" },
+    pagaie:   { label: "Kayak, aviron, paddle", vmax: 25, ic: "🛶" },
+    voile:    { label: "Voile, planche, kite", vmax: 70, ic: "⛵" },
+    roller:   { label: "Roller et patin", vmax: 50, ic: "🛼" },
+    autre:    { label: "Autre sport sans moteur", vmax: 60, ic: "🧭" }
   };
   var SOURCES = {
     esri: { id: "esri", maxZ: 18, attr: "Imagerie © Esri, Maxar, Earthstar Geographics",
       url: function (z, x, y) { return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/" + z + "/" + y + "/" + x; } },
+    relief: { id: "relief", maxZ: 16, attr: "Relief © Esri, USGS, NOAA",
+      url: function (z, x, y) { return "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/" + z + "/" + y + "/" + x; } },
     ign: { id: "ign", maxZ: 18, attr: "© IGN – Géoplateforme (France uniquement)",
       url: function (z, x, y) { return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX=" + z + "&TILEROW=" + y + "&TILECOL=" + x + "&FORMAT=image/jpeg"; } }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "none", nextId: 1, activities: [] };
-  var cells = new Map();                 // hexagone -> 1 (territoire découvert)
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {} };
+  var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
+  var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], revealTimer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
   var selected = null, current = null, lastResult = "";
-  var rankScope = "monde", rankPeriod = "all", rankSport = "all";
+  var rankScope = "monde", rankPeriod = "all", rankSport = "all", listSport = "all";
 
   function loadState() {
     try {
@@ -316,6 +366,11 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
         S.onboarded = !!o.onboarded;
+        S.goals = Array.isArray(o.goals) ? o.goals.filter(function (g) { return g && GOAL_TYPES[g.type] && GOAL_PERIODS[g.period] && g.target > 0; }) : [];
+        S.unlocked = Array.isArray(o.unlocked) ? o.unlocked : null;
+        S.colorMode = o.colorMode === "sport" || o.colorMode === "age" ? o.colorMode : "uniform";
+        S.lastBackup = +o.lastBackup || 0;
+        S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
   }
@@ -332,7 +387,14 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   function fmtDate(iso) { var p = iso.split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
   function todayISO() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
   var toastTimer = 0;
-  function toast(t) { var el = $("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.hidden = true; }, 4500); }
+  var toastQ = [], toastBusy = false;
+  function nextToast() {
+    var t = toastQ.shift(), el = $("toast");
+    if (t === undefined) { toastBusy = false; el.hidden = true; return; }
+    toastBusy = true; el.textContent = t; el.hidden = false; clearTimeout(toastTimer);
+    toastTimer = setTimeout(nextToast, toastQ.length ? 2800 : 4500);
+  }
+  function toast(t) { toastQ.push(t); if (toastQ.length > 4) toastQ.shift(); if (!toastBusy) nextToast(); }
   function haversine(a, b) {
     var R = 6371008.8, r = Math.PI / 180, dLat = (b[0] - a[0]) * r, dLng = (b[1] - a[1]) * r;
     var s = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
@@ -342,6 +404,10 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   function totalKm2() { return cells.size * AREA_M2 / 1e6; }
 
   /* ================= GPX -> lignes ================= */
+  function altOf(n) {
+    var e = n.getElementsByTagName("ele")[0] || n.getElementsByTagName("AltitudeMeters")[0], v = e ? parseFloat(e.textContent) : NaN;
+    return isNaN(v) ? null : v;
+  }
   function parseGPX(text) {
     var doc = new DOMParser().parseFromString(text, "application/xml");
     if (doc.getElementsByTagName("parsererror").length) throw new Error("fichier GPX illisible");
@@ -352,7 +418,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       var lat = parseFloat(nodes[i].getAttribute("lat")), lng = parseFloat(nodes[i].getAttribute("lon"));
       if (isNaN(lat) || isNaN(lng)) continue;
       var tEl = nodes[i].getElementsByTagName("time")[0], t = tEl ? Date.parse(tEl.textContent) : NaN;
-      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000 });
+      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000, a: altOf(nodes[i]) });
     }
     var holder = doc.getElementsByTagName("trk")[0] || doc.getElementsByTagName("rte")[0];
     var nEl = holder && holder.getElementsByTagName("name")[0];
@@ -373,7 +439,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       var lat = val(pos, "LatitudeDegrees"), lng = val(pos, "LongitudeDegrees");
       if (isNaN(lat) || isNaN(lng)) continue;
       var tEl = nodes[i].getElementsByTagName("Time")[0], t = tEl ? Date.parse(tEl.textContent) : NaN;
-      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000 });
+      pts.push({ p: [lat, lng], t: isNaN(t) ? null : t / 1000, a: altOf(nodes[i]) });
     }
     var act = doc.getElementsByTagName("Activity")[0], course = doc.getElementsByTagName("Course")[0];
     var nEl = course && course.getElementsByTagName("Name")[0];
@@ -418,14 +484,16 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
           } else lt = h & 15;
           d = defs[lt];
           if (!d) throw new Error("fichier FIT illisible");
-          var lat = null, lng = null, ts = null, q = p;
+          var lat = null, lng = null, ts = null, alt = null, q = p;
           for (var f = 0; f < d.fields.length; f++) {
             var fd = d.fields[f];
             if (d.msg === 20) {
               if (fd.num === 0 && fd.size === 4) lat = dv.getInt32(q, d.le);
               else if (fd.num === 1 && fd.size === 4) lng = dv.getInt32(q, d.le);
               else if (fd.num === 253 && fd.size === 4) ts = dv.getUint32(q, d.le);
-              else if ((fd.num === 3 || fd.num === 4) && fd.size === 1) { var sv = dv.getUint8(q); if (sv > 0 && sv !== 255) sensor = true; }   // fréquence cardiaque, cadence
+              else if ((fd.num === 3 || fd.num === 4) && fd.size === 1) { var sv = dv.getUint8(q); if (sv > 0 && sv !== 255) sensor = true; }
+              else if (fd.num === 2 && fd.size === 2) { var av = dv.getUint16(q, d.le); if (av !== 0xFFFF && alt === null) alt = av / 5 - 500; }
+              else if (fd.num === 78 && fd.size === 4) { var av2 = dv.getUint32(q, d.le); if (av2 !== 0xFFFFFFFF) alt = av2 / 5 - 500; }   // fréquence cardiaque, cadence
             } else if (d.msg === 18) {
               if (fd.num === 5 && fd.size >= 1) sport = dv.getUint8(q);
               else if (fd.num === 6 && fd.size >= 1) sub = dv.getUint8(q);
@@ -437,7 +505,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
           if (d.msg === 20) {
             if (ts === null && compressed && lastTs !== null) { var off = h & 31; ts = (lastTs & ~31) + off; if (off < (lastTs & 31)) ts += 32; }
             if (ts !== null) lastTs = ts;
-            if (lat !== null && lng !== null && lat !== INVALID && lng !== INVALID) pts.push({ p: [lat * SEMI, lng * SEMI], t: ts !== null ? ts + FIT_EPOCH : null });
+            if (lat !== null && lng !== null && lat !== INVALID && lng !== INVALID) pts.push({ p: [lat * SEMI, lng * SEMI], t: ts !== null ? ts + FIT_EPOCH : null, a: alt });
           }
         }
         pos = end + 2;                                                          // CRC, puis fichier FIT chaîné éventuel
@@ -468,9 +536,13 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 
   function buildLines(pts, vmaxKmh) {
     var vmax = vmaxKmh / 3.6, lines = [], cur = [], dist = 0, skipped = 0, last = null;
-    function r5(p) { return [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]; }
+    function r5(q) {
+      var o = [Math.round(q.p[0] * 1e5) / 1e5, Math.round(q.p[1] * 1e5) / 1e5];
+      if (q.a !== null && q.a !== undefined) o.push(Math.round(q.a));
+      return o;
+    }
     for (var i = 0; i < pts.length; i++) {
-      if (i === 0) { cur = [r5(pts[0].p)]; last = pts[0].p; continue; }
+      if (i === 0) { cur = [r5(pts[0])]; last = pts[0].p; continue; }
       var a = pts[i - 1], b = pts[i], d = haversine(a.p, b.p), ok = true;
       if (a.t !== null && b.t !== null) {
         var dt = b.t - a.t;
@@ -478,9 +550,9 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         if (dt <= 0 && d > 60) ok = false;
         if (dt > 600 && d > 300) ok = false;               // saut de temps : déplacement sans enregistrement
       } else if (d > 500) ok = false;
-      if (!ok) { skipped++; if (cur.length > 1) lines.push(cur); cur = [r5(b.p)]; last = b.p; continue; }
+      if (!ok) { skipped++; if (cur.length > 1) lines.push(cur); cur = [r5(b)]; last = b.p; continue; }
       dist += d;
-      if (haversine(last, b.p) >= 8 || i === pts.length - 1) { cur.push(r5(b.p)); last = b.p; }
+      if (haversine(last, b.p) >= 8 || i === pts.length - 1) { cur.push(r5(b)); last = b.p; }
     }
     if (cur.length > 1) lines.push(cur);
     return { lines: lines, dist: dist, skipped: skipped };
@@ -513,12 +585,14 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     return S.activities.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id; });
   }
   function rebuild() {
-    cells = new Map();
+    cells = new Map(); reachedSet = new Set();
     sortedActs().forEach(function (a) {
-      var n = 0;
-      cellsOfLines(a.lines, S.rad).forEach(function (c) { if (!cells.has(c)) { cells.set(c, 1); n++; } });
+      var n = 0, info = { sport: a.sport, date: a.date };
+      actCells(a).forEach(function (c) { if (!cells.has(c)) { cells.set(c, info); n++; } });
       a.newCells = n;
+      (a.summits || []).forEach(function (s) { reachedSet.add(s.id); });
     });
+    refreshDisp();
     updateChip();
     $("hint").hidden = S.activities.length > 0;
   }
@@ -579,17 +653,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     return im;
   }
   function boundary(c) { var b = boundaryCache.get(c); if (!b) { b = h3.cellToBoundary(c, false); boundaryCache.set(c, b); } return b; }
-  function buildCellsPath(c) {
-    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20);
-    c.beginPath();
-    cells.forEach(function (v, id) {
-      var b = boundary(id), lat = b[0][0], lng = b[0][1];
-      if (lat < br[0] - 0.01 || lat > tl[0] + 0.01 || lng < tl[1] - 0.01 || lng > br[1] + 0.01) return;
-      for (var i = 0; i < b.length; i++) { var p = toScreen(b[i][0], b[i][1]); if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]); }
-      c.closePath();
-    });
-  }
-  function drawTiles() {
+  function drawTiles(vis) {
     gctx.setTransform(dpr, 0, 0, dpr, 0, 0); gctx.clearRect(0, 0, W, H);
     cctx.setTransform(dpr, 0, 0, dpr, 0, 0); cctx.clearRect(0, 0, W, H);
     var src = SOURCES[S.basemap], at = $("attr");
@@ -599,7 +663,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
-    cctx.save(); buildCellsPath(cctx); cctx.clip();
+    cctx.save(); buildCellsPath(cctx, vis); cctx.clip();
     var drawn = 0;
     for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) {
       var im = getTile(src, tz, x, y);
@@ -632,15 +696,16 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   }
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-    var onImg = drawTiles();
+    exploreRefresh();
+    var vis = visCells();
+    var onImg = drawTiles(vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
-    buildCellsPath(ctx);
-    ctx.globalAlpha = onImg ? 0.22 : 0.6; ctx.fillStyle = css("--cell"); ctx.fill();
+    fillCells(vis, onImg);
+    buildCellsPath(ctx, vis);
     ctx.globalAlpha = pxPerCell > 3 ? (onImg ? 0.3 : 0.4) : 0; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     ctx.globalAlpha = 1;
-        strokeLines(allLines(), css("--outline"), 3, 0.9);
-    strokeLines(allLines(), css("--accent"), 1.4, 1);
+    drawOverlays();
     if (selected !== null) {
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
       if (a) { strokeLines(a.lines, css("--outline"), 4.4, 1); strokeLines(a.lines, css("--pink"), 2.4, 1); }
@@ -704,10 +769,184 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   function readFile(f) {
     return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { rej(new Error("lecture impossible")); }; r.readAsArrayBuffer(f); });
   }
+
+  /* ================= sommets : bonus d’exploration ================= */
+  var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 500, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 40, SUMMIT_ALT_TOL = 70;
+  var peakCache = new Map(), diskCache = new Map(), reachedSet = new Set();
+  function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : String(k); }
+  function summitRadius(ele) { return SUMMIT_BASE_M + SUMMIT_BONUS_M * Math.floor(Math.max(0, ele || 0) / SUMMIT_ALT_STEP); }
+  function summitCells(lat, lng, r) {
+    var key = lat.toFixed(5) + "," + lng.toFixed(5) + "," + r, hit = diskCache.get(key);
+    if (hit) return hit;
+    var c0 = h3.latLngToCell(lat, lng, RES), out = [c0], ring = h3.gridDisk(c0, Math.ceil(r / 40) + 1);
+    for (var i = 0; i < ring.length; i++) {
+      if (ring[i] === c0) continue;
+      if (haversine([lat, lng], h3.cellToLatLng(ring[i])) <= r) out.push(ring[i]);
+    }
+    diskCache.set(key, out);
+    return out;
+  }
+  function actCells(a) {
+    var set = cellsOfLines(a.lines, S.rad);
+    (a.summits || []).forEach(function (s) { summitCells(s.lat, s.lng, s.r).forEach(function (c) { set.add(c); }); });
+    return set;
+  }
+  function parseEle(v) { if (v === undefined || v === null) return null; var n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : n; }
+  function tileKeysOf(lines) {
+    var keys = {};
+    lines.forEach(function (ln) { ln.forEach(function (p) { keys[Math.floor(p[0] / 0.1) + "_" + Math.floor(p[1] / 0.1)] = 1; }); });
+    return Object.keys(keys);
+  }
+  function fetchPeaks(keys) {
+    var need = keys.filter(function (k) { return !peakCache.has(k); });
+    if (!need.length) return Promise.resolve();
+    if (need.length > 16) return Promise.reject(new Error("zone trop étendue"));
+    var q = need.map(function (k) {
+      var p = k.split("_"), la = +p[0], lo = +p[1];
+      return 'node["natural"="peak"]["name"](' + (la * 0.1 - 0.001).toFixed(4) + "," + (lo * 0.1 - 0.001).toFixed(4) + "," + ((la + 1) * 0.1 + 0.001).toFixed(4) + "," + ((lo + 1) * 0.1 + 0.001).toFixed(4) + ");";
+    }).join("");
+    var url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent("[out:json][timeout:25];(" + q + ");out;");
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error("Overpass " + r.status); return r.json(); }).then(function (j) {
+      need.forEach(function (k) { peakCache.set(k, []); });
+      (j.elements || []).forEach(function (el) {
+        if (el.type !== "node" || !el.tags || !el.tags.name) return;
+        var arr = peakCache.get(Math.floor(el.lat / 0.1) + "_" + Math.floor(el.lon / 0.1));
+        if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: el.tags.name, lat: el.lat, lng: el.lon, ele: parseEle(el.tags.ele) });
+      });
+    });
+  }
+  function peaksFor(keys) { var out = []; keys.forEach(function (k) { (peakCache.get(k) || []).forEach(function (p) { out.push(p); }); }); return out; }
+  function segDistM(plat, plng, a, b) {
+    var kx = 111320 * Math.cos(plat * Math.PI / 180), ky = 110540;
+    var ax = (a[1] - plng) * kx, ay = (a[0] - plat) * ky, bx = (b[1] - plng) * kx, by = (b[0] - plat) * ky;
+    var dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+    return { d: Math.hypot(ax + t * dx, ay + t * dy), t: t };
+  }
+  function altAt(a, b, t) {
+    var p = t < 0.5 ? a : b, q = t < 0.5 ? b : a;
+    if (p.length > 2 && p[2] !== null) return p[2];
+    if (q.length > 2 && q[2] !== null) return q[2];
+    return null;
+  }
+  function detectSummits(lines, peaks) {
+    var found = [];
+    peaks.forEach(function (pk) {
+      var best = null;
+      lines.forEach(function (ln) {
+        for (var i = 0; i < ln.length; i++) {
+          var a = ln[i], b = ln[i + 1] || ln[i];
+          if ((a[0] > pk.lat + 0.02 && b[0] > pk.lat + 0.02) || (a[0] < pk.lat - 0.02 && b[0] < pk.lat - 0.02)) continue;
+          if ((a[1] > pk.lng + 0.03 && b[1] > pk.lng + 0.03) || (a[1] < pk.lng - 0.03 && b[1] < pk.lng - 0.03)) continue;
+          var r = segDistM(pk.lat, pk.lng, a, b);
+          if (!best || r.d < best.d) best = { d: r.d, alt: altAt(a, b, r.t) };
+        }
+      });
+      if (!best || best.d > SUMMIT_REACH_M) return;
+      if (best.alt !== null && pk.ele !== null && Math.abs(best.alt - pk.ele) > SUMMIT_ALT_TOL) return;
+      var ele = pk.ele !== null ? pk.ele : best.alt;
+      found.push({ id: pk.id, name: pk.name, lat: pk.lat, lng: pk.lng, ele: ele === null ? null : Math.round(ele), r: summitRadius(ele) });
+    });
+    return found;
+  }
+  function findSummits(lines) {
+    var keys = tileKeysOf(lines);
+    return fetchPeaks(keys).then(function () { return detectSummits(lines, peaksFor(keys)); });
+  }
+  function summitList() {
+    var m = new Map();
+    sortedActs().forEach(function (a) {
+      (a.summits || []).forEach(function (s) { if (!m.has(s.id)) m.set(s.id, { id: s.id, name: s.name, ele: s.ele, r: s.r, date: a.date }); });
+    });
+    return Array.from(m.values());
+  }
+  function scanAllSummits() {
+    var todo = S.activities.filter(function (a) { return !a.sumDone; }), found = 0, failed = 0, chain = Promise.resolve();
+    if (!todo.length) { toast("Toutes tes courses ont déjà été analysées."); return; }
+    toast("Recherche des sommets en cours…");
+    todo.forEach(function (a) {
+      chain = chain.then(function () {
+        return findSummits(a.lines).then(function (sm) { a.summits = sm; a.sumDone = true; found += sm.length; }, function () { failed++; });
+      });
+    });
+    return chain.then(function () {
+      rebuild(); save(); draw(); checkAchievements();
+      toast(failed ? "Analyse incomplète (réseau) : " + failed + " course(s) à relancer." : (found ? found + " sommet(s) trouvé(s)." : "Aucun sommet trouvé sur tes courses."));
+    });
+  }
+
+  /* ================= lissage des traces ================= */
+  function smoothPts(pts) {
+    var n = pts.length;
+    if (n < 5) return pts;
+    var out = [pts[0]];
+    for (var i = 1; i < n - 1; i++) {
+      var a = pts[i - 1], b = pts[i], c = pts[i + 1];
+      if (haversine(a.p, b.p) > 100 || haversine(b.p, c.p) > 100) { out.push(b); continue; }
+      out.push({ p: [0.25 * a.p[0] + 0.5 * b.p[0] + 0.25 * c.p[0], 0.25 * a.p[1] + 0.5 * b.p[1] + 0.25 * c.p[1]], t: b.t, a: b.a });
+    }
+    out.push(pts[n - 1]);
+    return out;
+  }
+
+  /* ================= import : aperçu puis validation ================= */
+  function showProgress(i, n, name) {
+    var el = $("addres");
+    if (el) el.innerHTML = '<div class="result">Analyse ' + i + '/' + n + ' : ' + esc(name) + '<div class="bar-track"><div class="bar-fill" style="width:' + Math.round((i - 1) / n * 100) + '%"></div></div></div>';
+  }
+  function computePreview() {
+    var seen = new Set(), all = new Set();
+    pending.items.forEach(function (it) {
+      var n = 0;
+      actCells(it.act).forEach(function (c) { if (!cells.has(c) && !seen.has(c)) { seen.add(c); all.add(c); n++; } });
+      it.newCells = n;
+    });
+    pending.newCells = all;
+  }
+  function pendingHTML() {
+    if (!pending) return "";
+    var tot = 0, h = pending.items.map(function (it) {
+      var a = it.act; tot += it.newCells;
+      var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km · ' + sl(a.sport) +
+        '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>';
+      a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
+      if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance la recherche dans les Réglages.</span>';
+      if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
+      if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
+      return s + '</div>';
+    }).join("");
+    h += pending.errors.map(function (e) { return '<div class="result"><b>' + esc(e.file) + '</b> — ignorée : ' + esc(e.msg) + '</div>'; }).join("");
+    if (pending.items.length) {
+      h += '<p class="note">Aperçu sur la carte : les hexagones roses seront ajoutés (+' + fmtKm2(tot * AREA_M2 / 1e6) + ' km² au total).</p>' +
+        '<button class="btn block" id="commit" style="margin-top:12px">Valider l’import</button><button class="btn ghost block" id="cancel">Annuler</button>';
+    } else {
+      h += '<button class="btn ghost block" id="cancel" style="margin-top:12px">Fermer</button>';
+    }
+    return h;
+  }
+  function commitPending() {
+    if (!pending || !pending.items.length) { pending = null; render(); draw(); return; }
+    var before = new Set(cells.keys()), known = new Set(reachedSet), newPeaks = [], lines = [];
+    pending.items.forEach(function (it) {
+      var a = it.act; a.id = S.nextId++; S.activities.push(a); lines = lines.concat(a.lines);
+      a.summits.forEach(function (s) { if (!known.has(s.id)) { known.add(s.id); newPeaks.push(s); } });
+    });
+    pending = null; selected = null;
+    rebuild(); save(); closeSheet();
+    var fresh = [];
+    cells.forEach(function (v, id) { if (!before.has(id)) fresh.push(id); });
+    fitLines(lines);
+    if (periodF === "all") runReveal(fresh, 1800); else draw();
+    if (newPeaks.length) {
+      var top = newPeaks.slice().sort(function (x, y) { return (y.ele || 0) - (x.ele || 0); })[0];
+      toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
+    }
+    checkAchievements();
+  }
   function importFiles(files, sportChoice, dateChoice) {
-    var chain = Promise.resolve(), lines = [], lastAdded = null;
+    if (!pending) pending = { items: [], errors: [], newCells: new Set() };
+    var items = pending.items, errs = pending.errors, chain = Promise.resolve(), total = files.length, k = 0;
     files.forEach(function (f) {
-      chain = chain.then(function () { return readFile(f); }).then(parseAny).then(function (g) {
+      chain = chain.then(function () { k++; showProgress(k, total, f.name); return readFile(f); }).then(parseAny).then(function (g) {
         if (g.sport === "moteur" || isMotor(f.name + " " + g.name)) throw new Error("sport motorisé : seuls les sports sans moteur sont acceptés");
         if (g.route) throw new Error("itinéraire sans horodatage : seules les traces enregistrées sont acceptées");
         if (g.pts.length < 2) throw new Error("aucun point de trace");
@@ -719,33 +958,434 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
         var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
         var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
         var date = g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice);
-        var b = buildLines(g.pts, SPORTS[sport].vmax);
+        var b = buildLines(smoothPts(g.pts), SPORTS[sport].vmax);
         if (!b.lines.length) throw new Error("trace entièrement filtrée (vitesse ou sauts GPS)");
         if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents : trace refusée");
         var name = g.name && !/^suuntoapp-/i.test(g.name) ? g.name : SPORTS[sport].label + " du " + fmtDate(date);
-        var dup = S.activities.some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
+        var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
         if (dup) throw new Error("déjà importée");
-        var act = { id: S.nextId++, name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non" };
-        S.activities.push(act); lastAdded = act;
-        lines.push({ ok: true, act: act, file: f.name });
-      }).catch(function (err) { lines.push({ ok: false, file: f.name, msg: err.message }); });
+        var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false };
+        return findSummits(b.lines).then(function (sm) { act.summits = sm; act.sumDone = true; }, function () { /* hors ligne */ }).then(function () { items.push({ act: act, file: f.name }); });
+      }).catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
     });
     return chain.then(function () {
-      rebuild(); save();
-      lastResult = lines.map(function (l) {
-        if (!l.ok) return '<div class="result"><b>' + esc(l.file) + '</b> — ignorée : ' + esc(l.msg) + '</div>';
-        var a = S.activities.filter(function (x) { return x.id === l.act.id; })[0];
-        return '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km<br><span class="gain">+' + fmtKm2(actArea(a)) + ' km² · ' + fmt(a.newCells, 0) + ' nouveaux hexagones</span>' +
-          (a.trust === "non" ? '<br><span style="color:var(--muted);font-size:13px">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>' : '') +
-          (a.skipped ? '<br><span style="color:var(--muted);font-size:13px">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>' : '') + '</div>';
-      }).join("");
-      if (lastAdded) { selected = lastAdded.id; fitLines(lastAdded.lines); }
+      computePreview();
+      var ls = [];
+      items.forEach(function (it) { ls = ls.concat(it.act.lines); });
+      if (ls.length) fitLines(ls);
       draw(); render();
     });
   }
 
+  /* ================= affichage : période, couleurs, révélation ================= */
+  var SPORT_COLOR = { trail: "#ff7a45", course: "#ff5d8f", rando: "#2fcf7e", velo: "#4aa8ff", ski: "#9a7bff", natation: "#19c3d6", pagaie: "#27b5a0", voile: "#6ec6ff", roller: "#ffc933", autre: "#a39bbd" };
+  function periodMin() {
+    var t = todayISO(), d;
+    if (periodF === "year") return t.slice(0, 4) + "-01-01";
+    if (periodF === "month") return t.slice(0, 7) + "-01";
+    d = new Date(); d.setDate(d.getDate() - 6);
+    return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
+  }
+  function refreshDisp() {
+    clearTimeout(revealTimer);
+    if (periodF === "all") { dispCells = cells; return; }
+    var min = periodMin(); dispCells = new Map();
+    cells.forEach(function (info, id) { if (info.date >= min) dispCells.set(id, info); });
+  }
+  function colorOf(info) {
+    if (S.colorMode === "sport") return SPORT_COLOR[info.sport] || SPORT_COLOR.autre;
+    var days = (Date.now() - Date.parse(info.date)) / 864e5;
+    return days <= 7 ? "#ff5d8f" : days <= 30 ? "#ffc933" : days <= 365 ? "#2fcf7e" : "#3aa6a0";
+  }
+  function visCells() {
+    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20), out = [];
+    dispCells.forEach(function (v, id) {
+      var b = boundary(id), lat = b[0][0], lng = b[0][1];
+      if (lat < br[0] - 0.01 || lat > tl[0] + 0.01 || lng < tl[1] - 0.01 || lng > br[1] + 0.01) return;
+      out.push(id);
+    });
+    return out;
+  }
+  function buildCellsPath(c, ids) {
+    c.beginPath();
+    for (var j = 0; j < ids.length; j++) {
+      var b = boundary(ids[j]);
+      for (var i = 0; i < b.length; i++) { var p = toScreen(b[i][0], b[i][1]); if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]); }
+      c.closePath();
+    }
+  }
+  function fillCells(vis, onImg) {
+    ctx.globalAlpha = onImg ? 0.22 : 0.6;
+    if (S.colorMode !== "sport" && S.colorMode !== "age") { buildCellsPath(ctx, vis); ctx.fillStyle = css("--cell"); ctx.fill(); return; }
+    var groups = {};
+    vis.forEach(function (id) { var col = colorOf(dispCells.get(id)); (groups[col] || (groups[col] = [])).push(id); });
+    Object.keys(groups).forEach(function (col) { buildCellsPath(ctx, groups[col]); ctx.fillStyle = col; ctx.fill(); });
+  }
+  function runReveal(ids, ms, tick, onEnd) {
+    clearTimeout(revealTimer);
+    if (!ids.length) { if (onEnd) onEnd(); return; }
+    var full = new Map(dispCells), hide = new Set(ids), n = ids.length, i = 0, t0 = Date.now();
+    dispCells = new Map();
+    full.forEach(function (v, id) { if (!hide.has(id)) dispCells.set(id, v); });
+    (function step() {
+      var upto = Math.min(n, Math.ceil(n * (Date.now() - t0) / ms));
+      for (; i < upto; i++) { if (full.has(ids[i])) dispCells.set(ids[i], full.get(ids[i])); }
+      if (tick) tick(ids[Math.max(0, i - 1)]);
+      draw();
+      if (i < n) revealTimer = setTimeout(step, 30);
+      else { refreshDisp(); draw(); if (onEnd) onEnd(); }
+    })();
+  }
+  function playTimelapse() {
+    closeSheet(); selected = null; fitAll();
+    var ids = Array.from(dispCells.keys()), lab = $("tlabel");
+    if (!ids.length) return;
+    lab.hidden = false;
+    runReveal(ids, Math.min(14000, Math.max(5000, ids.length * 3)), function (id) {
+      var inf = cells.get(id); if (inf) lab.textContent = inf.date.slice(5, 7) + "/" + inf.date.slice(0, 4);
+    }, function () { setTimeout(function () { lab.hidden = true; }, 1500); });
+  }
+
+  /* ================= surimpressions : aperçu, sommets, zones à explorer ================= */
+  var exploreInfo = { peaks: [], key: "", center: null, ring: [] }, exploreTimer = 0, exploreErr = false;
+  function drawPeak(p, reached, label, rad) {
+    var q = toScreen(p.lat, p.lng), mpp = 40075016.7 * Math.cos(p.lat * Math.PI / 180) / worldScale(), rpx = (rad || summitRadius(p.ele)) / mpp;
+    if (rpx > 6) {
+      ctx.beginPath(); ctx.arc(q[0], q[1], rpx, 0, 2 * Math.PI);
+      ctx.globalAlpha = 0.55; ctx.setLineDash(reached ? [] : [5, 4]); ctx.strokeStyle = css("--outline"); ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    ctx.beginPath(); ctx.moveTo(q[0], q[1] - 10); ctx.lineTo(q[0] + 9, q[1] + 7); ctx.lineTo(q[0] - 9, q[1] + 7); ctx.closePath();
+    ctx.fillStyle = reached ? css("--accent") : css("--panel"); ctx.fill();
+    ctx.strokeStyle = css("--outline"); ctx.lineWidth = 2.5; ctx.lineJoin = "round"; ctx.stroke();
+    if (label) {
+      var tx = p.name + (p.ele !== null && p.ele !== undefined ? " · " + Math.round(p.ele) + " m" : "");
+      ctx.font = "600 12px Fredoka, system-ui, sans-serif"; ctx.textAlign = "center";
+      ctx.lineWidth = 4; ctx.strokeStyle = css("--panel"); ctx.strokeText(tx, q[0], q[1] + 22);
+      ctx.fillStyle = css("--ink"); ctx.fillText(tx, q[0], q[1] + 22); ctx.textAlign = "start";
+    }
+  }
+  function exploreRefresh() {
+    if (!exploreOn || view.z < 11.5) return;
+    var tl = unproject(0, 0), br = unproject(W, H), keys = [], key;
+    for (var la = Math.floor(br[0] / 0.1); la <= Math.floor(tl[0] / 0.1); la++)
+      for (var lo = Math.floor(tl[1] / 0.1); lo <= Math.floor(br[1] / 0.1); lo++) keys.push(la + "_" + lo);
+    key = keys.join(",");
+    if (key === exploreInfo.key || keys.length > 6) return;
+    exploreInfo.key = key; clearTimeout(exploreTimer);
+    exploreTimer = setTimeout(function () {
+      fetchPeaks(keys).then(function () { exploreInfo.peaks = peaksFor(keys); draw(); }).catch(function () {
+        exploreInfo.key = "";
+        if (!exploreErr) { exploreErr = true; toast("Sommets indisponibles : vérifie ta connexion."); }
+      });
+    }, 500);
+  }
+  function drawOverlays() {
+    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20);
+    peakHits = [];
+    if (pending && pending.items.length) {
+      var ids = [];
+      pending.newCells.forEach(function (id) {
+        var b = boundary(id);
+        if (b[0][0] < br[0] - 0.01 || b[0][0] > tl[0] + 0.01 || b[0][1] < tl[1] - 0.01 || b[0][1] > br[1] + 0.01) return;
+        ids.push(id);
+      });
+      buildCellsPath(ctx, ids);
+      ctx.globalAlpha = 0.55; ctx.fillStyle = css("--pink"); ctx.fill();
+      ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1; ctx.stroke();
+      ctx.setLineDash([6, 5]);
+      pending.items.forEach(function (it) { strokeLines(it.act.lines, css("--outline"), 3.4, 1); strokeLines(it.act.lines, css("--accent"), 2, 1); });
+      ctx.setLineDash([]);
+      pending.items.forEach(function (it) { it.act.summits.forEach(function (s) { drawPeak(s, true, true, s.r); }); });
+    }
+    if (exploreOn) {
+      if (view.z >= 15) {
+        var c = unproject(W / 2, H / 2), cid = h3.latLngToCell(c[0], c[1], RES);
+        if (exploreInfo.center !== cid) { exploreInfo.center = cid; exploreInfo.ring = h3.gridDisk(cid, 22); }
+        var free = exploreInfo.ring.filter(function (id) { return !cells.has(id); });
+        if (free.length) {
+          buildCellsPath(ctx, free);
+          ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+        }
+      }
+      exploreInfo.peaks.forEach(function (p) {
+        var q = toScreen(p.lat, p.lng);
+        if (q[0] < -30 || q[0] > W + 30 || q[1] < -30 || q[1] > H + 30) return;
+        var rc = reachedSet.has(p.id);
+        drawPeak(p, rc, view.z >= 12.5);
+        peakHits.push({ x: q[0], y: q[1], p: p, reached: rc });
+      });
+    }
+    if (me) {
+      var m = toScreen(me[0], me[1]);
+      ctx.beginPath(); ctx.arc(m[0], m[1], 8, 0, 2 * Math.PI); ctx.fillStyle = css("--blue"); ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(m[0], m[1], 10.5, 0, 2 * Math.PI); ctx.lineWidth = 1.5; ctx.strokeStyle = css("--outline"); ctx.stroke();
+    }
+  }
+  function hitPeak(x, y) {
+    var best = null, bd = 26;
+    peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
+    if (!best) return;
+    var p = best.p, r = summitRadius(p.ele);
+    toast("▲ " + p.name + (p.ele ? " · " + Math.round(p.ele) + " m" : "") + (best.reached ? " : déjà atteint (cercle de " + r + " m)." : " : passe à moins de " + SUMMIT_REACH_M + " m pour débloquer un cercle de " + r + " m."));
+  }
+
+  /* ================= succès, défis, communes ================= */
+  var GOAL_TYPES = { km2: "Surface découverte", summits: "Sommets atteints", runs: "Sorties" };
+  var GOAL_PERIODS = { month: "ce mois-ci", year: "cette année" };
+  var QUICK = [
+    { type: "km2", target: 1, period: "month", label: "1 km² ce mois-ci" },
+    { type: "summits", target: 2, period: "month", label: "2 sommets ce mois-ci" },
+    { type: "runs", target: 8, period: "month", label: "8 sorties ce mois-ci" },
+    { type: "summits", target: 10, period: "year", label: "10 sommets cette année" }
+  ];
+  function goalLabel(g) {
+    var t = g.target, w = g.type === "km2" ? "Découvrir " + fmt(t, 2) + " km²" : g.type === "summits" ? "Atteindre " + fmt(t, 0) + (t > 1 ? " sommets" : " sommet") : "Faire " + fmt(t, 0) + (t > 1 ? " sorties" : " sortie");
+    return w + " " + GOAL_PERIODS[g.period];
+  }
+  function goalProgress(g) {
+    var p = g.period === "year" ? todayISO().slice(0, 4) : todayISO().slice(0, 7), v = 0;
+    if (g.type === "summits") { summitList().forEach(function (s) { if (s.date.indexOf(p) === 0) v++; }); return v; }
+    S.activities.forEach(function (a) { if (a.date.indexOf(p) === 0) v += g.type === "km2" ? actArea(a) : 1; });
+    return v;
+  }
+  function statsNow() {
+    var sp = {}, dist = 0, maxNew = 0, sm = summitList(), maxEle = 0;
+    S.activities.forEach(function (a) { sp[a.sport] = 1; dist += a.dist; if ((a.newCells || 0) > maxNew) maxNew = a.newCells; });
+    sm.forEach(function (s) { if ((s.ele || 0) > maxEle) maxEle = s.ele; });
+    return { km2: totalKm2(), n: S.activities.length, sports: Object.keys(sp).length, dist: dist / 1000, maxNew: maxNew, summits: sm.length, maxEle: maxEle };
+  }
+  var ACH = [
+    { id: "first", ic: "👟", name: "Premier pas", desc: "Importer une première course", ok: function (s) { return s.n >= 1; } },
+    { id: "km1", ic: "🗺️", name: "Premier km²", desc: "Découvrir 1 km²", ok: function (s) { return s.km2 >= 1; } },
+    { id: "km10", ic: "🧭", name: "Grand explorateur", desc: "Découvrir 10 km²", ok: function (s) { return s.km2 >= 10; } },
+    { id: "km50", ic: "🌍", name: "Cartographe", desc: "Découvrir 50 km²", ok: function (s) { return s.km2 >= 50; } },
+    { id: "big100", ic: "⚡", name: "Grande sortie", desc: "100 nouveaux hexagones en une sortie", ok: function (s) { return s.maxNew >= 100; } },
+    { id: "big1000", ic: "🚀", name: "Expédition", desc: "1 000 nouveaux hexagones en une sortie", ok: function (s) { return s.maxNew >= 1000; } },
+    { id: "multi3", ic: "🎯", name: "Multisport", desc: "Pratiquer 3 sports", ok: function (s) { return s.sports >= 3; } },
+    { id: "multi6", ic: "🎪", name: "Touche-à-tout", desc: "Pratiquer 6 sports", ok: function (s) { return s.sports >= 6; } },
+    { id: "dist100", ic: "👣", name: "Cent kilomètres", desc: "100 km cumulés", ok: function (s) { return s.dist >= 100; } },
+    { id: "dist1000", ic: "🛤️", name: "Mille kilomètres", desc: "1 000 km cumulés", ok: function (s) { return s.dist >= 1000; } },
+    { id: "peak1", ic: "⛰️", name: "Premier sommet", desc: "Atteindre un sommet", ok: function (s) { return s.summits >= 1; } },
+    { id: "peak5", ic: "🏔️", name: "Chasseur de sommets", desc: "Atteindre 5 sommets", ok: function (s) { return s.summits >= 5; } },
+    { id: "peak20", ic: "🗻", name: "Collectionneur", desc: "Atteindre 20 sommets", ok: function (s) { return s.summits >= 20; } },
+    { id: "high2000", ic: "🌤️", name: "Au-dessus de 2 000 m", desc: "Atteindre un sommet à 2 000 m", ok: function (s) { return s.maxEle >= 2000; } },
+    { id: "high3000", ic: "❄️", name: "Au-dessus de 3 000 m", desc: "Atteindre un sommet à 3 000 m", ok: function (s) { return s.maxEle >= 3000; } },
+    { id: "high4000", ic: "👑", name: "Quatre mille", desc: "Atteindre un sommet à 4 000 m", ok: function (s) { return s.maxEle >= 4000; } }
+  ];
+  function checkAchievements(silent) {
+    var st = statsNow(), have = S.unlocked || [], fresh = [];
+    ACH.forEach(function (a) { if (a.ok(st) && have.indexOf(a.id) < 0) fresh.push(a); });
+    if (!fresh.length && S.unlocked) return;
+    S.unlocked = have.concat(fresh.map(function (a) { return a.id; }));
+    save();
+    if (!silent) fresh.forEach(function (a) { toast("Succès débloqué : " + a.ic + " " + a.name); });
+  }
+  function inRing(lat, lng, ring) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      var xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      if ((yi > lat) !== (yj > lat) && lng < (xj - xi) * (lat - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function inPoly(lat, lng, poly) {
+    if (!inRing(lat, lng, poly[0])) return false;
+    for (var k = 1; k < poly.length; k++) if (inRing(lat, lng, poly[k])) return false;
+    return true;
+  }
+  function geomPolys(g) { return g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []; }
+  function polyAreaM2(poly) {
+    var x0 = poly[0][0][0], y0 = poly[0][0][1], kx = 111320 * Math.cos(y0 * Math.PI / 180), ky = 110540;
+    function ar(ring) {
+      var s = 0;
+      for (var i = 0; i < ring.length; i++) { var a = ring[i], b = ring[(i + 1) % ring.length]; s += ((a[0] - x0) * kx) * ((b[1] - y0) * ky) - ((b[0] - x0) * kx) * ((a[1] - y0) * ky); }
+      return Math.abs(s) / 2;
+    }
+    var t = ar(poly[0]);
+    for (var k = 1; k < poly.length; k++) t -= ar(poly[k]);
+    return t;
+  }
+  function communeStats(nom, polys) {
+    var total = 0, minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, found = 0;
+    polys.forEach(function (poly) {
+      total += polyAreaM2(poly);
+      poly[0].forEach(function (c) { minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]); minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]); });
+    });
+    cells.forEach(function (v, id) {
+      var c = h3.cellToLatLng(id);
+      if (c[0] < minLat || c[0] > maxLat || c[1] < minLng || c[1] > maxLng) return;
+      for (var i = 0; i < polys.length; i++) { if (inPoly(c[0], c[1], polys[i])) { found++; return; } }
+    });
+    var tot = Math.max(1, Math.round(total / AREA_M2));
+    return { nom: nom, found: found, total: tot, pct: Math.min(100, found / tot * 100) };
+  }
+  var communesBusy = false;
+  function updateCommunes() {
+    if (communesBusy) return;
+    var pts = [], seen = {}, calls = 0, okN = 0, polysDone = [], chain = Promise.resolve();
+    S.activities.forEach(function (a) { a.lines.forEach(function (ln) { for (var i = 0; i < ln.length; i += 25) { var k = ln[i][0].toFixed(2) + "," + ln[i][1].toFixed(2); if (!seen[k]) { seen[k] = 1; pts.push(ln[i]); } } }); });
+    if (!pts.length) { toast("Importe d’abord une course."); return; }
+    communesBusy = true;
+    pts.forEach(function (p) {
+      chain = chain.then(function () {
+        if (calls >= 40) return;
+        for (var i = 0; i < polysDone.length; i++) { for (var j = 0; j < polysDone[i].length; j++) { if (inPoly(p[0], p[1], polysDone[i][j])) return; } }
+        calls++;
+        var b = $("communesBtn"); if (b) b.textContent = "Analyse… (" + calls + ")";
+        return fetch("https://geo.api.gouv.fr/communes?lat=" + p[0].toFixed(5) + "&lon=" + p[1].toFixed(5) + "&fields=nom,code&format=geojson&geometry=contour")
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(function (j) {
+            var f = j && j.features && j.features[0];
+            if (!f || !f.geometry || !f.properties) return;
+            var polys = geomPolys(f.geometry);
+            if (!polys.length) return;
+            polysDone.push(polys); okN++;
+            S.communes[f.properties.code] = communeStats(f.properties.nom, polys);
+          }).catch(function () { /* hors France ou réseau : ignoré */ });
+      });
+    });
+    return chain.then(function () {
+      communesBusy = false; save(); render();
+      toast(okN ? "Communes mises à jour." : "Communes indisponibles (réseau ou zone hors France).");
+    });
+  }
+  function viewGoals() {
+    var sm = summitList(), st = statsNow(), h = "", i;
+    h += '<h3>Défis</h3>';
+    if (!S.goals.length) h += '<div class="empty-line">Aucun défi pour l’instant. Choisis-en un ci-dessous.</div>';
+    S.goals.forEach(function (g, idx) {
+      var v = goalProgress(g), pct = Math.min(100, v / g.target * 100), fm = function (x) { return g.type === "km2" ? fmt(x, 2) + " km²" : fmt(x, 0); };
+      h += '<div class="goal"><div class="goal-top"><span class="t">' + esc(goalLabel(g)) + '</span><button class="del" data-gdel="' + idx + '">Retirer</button></div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(0) + '%"></div></div><div class="s">' + fm(v) + ' / ' + fm(g.target) + (v >= g.target ? ' · atteint !' : '') + '</div></div>';
+    });
+    h += '<div class="seg" style="margin-top:12px">' + QUICK.map(function (q, n) { return '<button data-gquick="' + n + '">' + q.label + '</button>'; }).join("") + '</div>';
+    h += '<div class="field"><label for="gtype">Défi personnalisé</label><select id="gtype">' + Object.keys(GOAL_TYPES).map(function (k) { return '<option value="' + k + '">' + GOAL_TYPES[k] + '</option>'; }).join("") + '</select></div>' +
+      '<div class="field"><select id="gper" aria-label="Période">' + Object.keys(GOAL_PERIODS).map(function (k) { return '<option value="' + k + '">' + GOAL_PERIODS[k] + '</option>'; }).join("") + '</select></div>' +
+      '<div class="field"><label for="gtarget">Objectif</label><input type="number" id="gtarget" min="1" step="1" value="5"></div>' +
+      '<button class="btn block" id="gadd">Ajouter le défi</button>';
+
+    h += '<h3>Sommets atteints (' + sm.length + ')</h3>';
+    if (!sm.length) h += '<div class="empty-line">Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.</div>';
+    sm.slice().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }).forEach(function (s) {
+      h += '<div class="row"><span class="main"><span class="t" style="display:block">▲ ' + esc(s.name) + '</span><span class="s" style="display:block">' + fmtDate(s.date) + (s.ele !== null ? ' · ' + fmt(s.ele, 0) + ' m' : '') + '</span></span><span class="v">' + s.r + '<small>m de rayon</small></span></div>';
+    });
+
+    var done = ACH.filter(function (a) { return a.ok(st); }).length;
+    h += '<h3>Succès (' + done + '/' + ACH.length + ')</h3><div class="badges">' + ACH.map(function (a) {
+      return '<div class="badge ' + (a.ok(st) ? "on" : "off") + '"><span class="ic">' + a.ic + '</span><b>' + esc(a.name) + '</b><small>' + esc(a.desc) + '</small></div>';
+    }).join("") + '</div>';
+
+    h += '<h3>Communes explorées (France)</h3>';
+    var cs = Object.keys(S.communes).map(function (k) { return S.communes[k]; }).sort(function (a, b) { return b.pct - a.pct; });
+    if (!cs.length) h += '<div class="empty-line">Pas encore calculé.</div>';
+    cs.forEach(function (c) {
+      h += '<div class="row"><span class="main"><span class="t" style="display:block">' + esc(c.nom) + '</span><span class="s" style="display:block">' + fmt(c.found, 0) + ' / ' + fmt(c.total, 0) + ' hexagones</span></span><span class="v">' + fmt(c.pct, c.pct < 10 ? 1 : 0) + '<small>%</small></span></div>';
+    });
+    h += '<button class="btn ghost block" id="communesBtn" style="margin-top:10px">Calculer / mettre à jour</button>' +
+      '<p class="note">Utilise les contours officiels des communes (geo.api.gouv.fr) : connexion requise, France uniquement. Le total est une estimation (surface de la commune divisée par la surface d’un hexagone).</p>';
+    return h;
+  }
+
+  /* ================= partage de la carte ================= */
+  function shareMap() {
+    selected = null; fitAll();
+    function compose(withTiles) {
+      var w = 1080, h = 1350, c = document.createElement("canvas"), g = c.getContext("2d"), st = statsNow();
+      c.width = w; c.height = h;
+      g.fillStyle = css("--bg"); g.fillRect(0, 0, w, h);
+      var side = Math.min(cv.width, cv.height), sx = (cv.width - side) / 2, sy = (cv.height - side) / 2, mx = 40, my = 40, ms = w - 80;
+      g.fillStyle = css("--panel"); g.fillRect(mx, my, ms, ms);
+      g.save(); g.beginPath(); g.rect(mx, my, ms, ms); g.clip();
+      if (withTiles) {
+        try { g.filter = "grayscale(1) contrast(0.7) brightness(1.1)"; } catch (e) { /* filtre indisponible */ }
+        g.globalAlpha = 0.42; g.drawImage(gray, sx, sy, side, side, mx, my, ms, ms);
+        g.filter = "none"; g.globalAlpha = 1;
+        g.drawImage(color, sx, sy, side, side, mx, my, ms, ms);
+      }
+      g.drawImage(cv, sx, sy, side, side, mx, my, ms, ms);
+      g.restore();
+      g.lineWidth = 6; g.strokeStyle = css("--outline"); g.strokeRect(mx, my, ms, ms);
+      var lvl = levelOf(totalKm2()), fam = "Fredoka, system-ui, sans-serif";
+      g.fillStyle = css("--ink"); g.textAlign = "left";
+      g.font = "700 72px " + fam; g.fillText(fmtKm2(totalKm2()) + " km²", mx, 1190);
+      g.font = "500 36px " + fam; g.fillText(fmt(cells.size, 0) + " hexagones · " + st.summits + (st.summits > 1 ? " sommets" : " sommet"), mx, 1245);
+      g.fillText(S.name ? S.name : "Explorateur" + (lvl ? " · " + TROPHIES[lvl - 1].name : ""), mx, 1295);
+      g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("⬡ Hexplore", w - mx, 1295);
+      return c;
+    }
+    function out(c) {
+      c.toBlob(function (blob) {
+        if (!blob) { toast("Création de l’image impossible."); return; }
+        var file = new File([blob], "hexplore-carte.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Ma carte Hexplore" }).catch(function () { /* annulé */ }); return; }
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-carte.png"; document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+      }, "image/png");
+    }
+    try { out(compose(true)); }
+    catch (e) { try { out(compose(false)); } catch (e2) { toast("Création de l’image impossible."); } }   // fonds de carte externes : toile verrouillée
+  }
+
+  /* ================= position, recherche, glisser-déposer ================= */
+  function doSearch() {
+    var q = $("searchq").value.trim();
+    if (!q) return;
+    fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&accept-language=fr&q=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || !j.length) { toast("Lieu introuvable."); return; }
+        var lat = parseFloat(j[0].lat), lng = parseFloat(j[0].lon);
+        view.cx = mercX(lng); view.cy = mercY(lat); view.z = 13; $("searchbar").hidden = true; draw();
+      }).catch(function () { toast("Recherche impossible : vérifie ta connexion."); });
+  }
+  $("searchBtn").addEventListener("click", function () { var b = $("searchbar"); b.hidden = !b.hidden; if (!b.hidden) $("searchq").focus(); });
+  $("searchGo").addEventListener("click", doSearch);
+  $("searchq").addEventListener("keydown", function (e) { if (e.key === "Enter") doSearch(); });
+  $("locBtn").addEventListener("click", function () {
+    if (!navigator.geolocation) { toast("Géolocalisation indisponible sur cet appareil."); return; }
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      me = [pos.coords.latitude, pos.coords.longitude];
+      view.cx = mercX(me[1]); view.cy = mercY(me[0]); view.z = Math.max(view.z, 15); draw();
+    }, function () { toast("Position impossible : autorise la localisation dans le navigateur."); }, { enableHighAccuracy: true, timeout: 10000 });
+  });
+  document.querySelectorAll("#mapbar [data-per]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      periodF = b.dataset.per; refreshDisp(); draw();
+      document.querySelectorAll("#mapbar [data-per]").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+    });
+  });
+  $("exploreBtn").addEventListener("click", function () {
+    exploreOn = !exploreOn; this.setAttribute("aria-pressed", exploreOn ? "true" : "false");
+    exploreInfo.key = ""; exploreErr = false;
+    if (exploreOn && view.z < 11.5) toast("Zoome sur ta région pour voir les sommets et les hexagones à explorer.");
+    draw();
+  });
+  var downPt = null;
+  cv.addEventListener("pointerdown", function (e) { downPt = [e.clientX, e.clientY]; });
+  cv.addEventListener("click", function (e) { if (downPt && Math.hypot(e.clientX - downPt[0], e.clientY - downPt[1]) < 6) hitPeak(e.clientX, e.clientY); });
+  var dragDepth = 0;
+  window.addEventListener("dragenter", function (e) {
+    if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") >= 0) { dragDepth++; $("dropzone").hidden = false; e.preventDefault(); }
+  });
+  window.addEventListener("dragover", function (e) { e.preventDefault(); });
+  window.addEventListener("dragleave", function () { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("dropzone").hidden = true; });
+  window.addEventListener("drop", function (e) {
+    e.preventDefault(); dragDepth = 0; $("dropzone").hidden = true;
+    var fs = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []).filter(function (f) { return /\.(gpx|tcx|fit)(\.gz)?$/i.test(f.name); });
+    if (!fs.length) { toast("Dépose des fichiers GPX, TCX ou FIT."); return; }
+    if (current !== "add") openTab("add");
+    importFiles(fs, ($("sp") && $("sp").value) || "autre", ($("dt") && $("dt").value) || todayISO());
+  });
+  function initExtras() {
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
+    if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
+    function reg() { navigator.serviceWorker.register("sw.js").catch(function () { /* hors hébergement */ }); }
+    if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) { if (document.readyState === "complete") reg(); else window.addEventListener("load", reg); }
+  }
+
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", rank: "Classement" };
+  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Défis et succès", rank: "Classement" };
   function openTab(k) {
     if (current === k) { closeSheet(); return; }
     closeDrawer(); current = k; render();
@@ -753,33 +1393,36 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     document.body.classList.add("sheet-open"); markTabs();
   }
   function closeSheet() {
-    current = null; lastResult = ""; $("sheet").classList.remove("open"); $("sheet").setAttribute("aria-hidden", "true");
+    current = null; lastResult = ""; if (pending) { pending = null; draw(); } $("sheet").classList.remove("open"); $("sheet").setAttribute("aria-hidden", "true");
     document.body.classList.remove("sheet-open"); markTabs();
   }
   function markTabs() { document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", t.dataset.tab === current ? "true" : "false"); }); }
   function render() {
     if (!current) return;
     $("sheetTitle").textContent = TITLES[current];
-    var html = { add: viewAdd, list: viewList, stats: viewStats, rank: viewRank }[current]();
+    var html = { add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, rank: viewRank }[current]();
     $("sheetBody").innerHTML = html;
     bindSheet();
   }
 
   function viewAdd() {
-    var opts = Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '">' + SPORTS[k].label + '</option>'; }).join("");
+    var opts = Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '">' + sl(k) + '</option>'; }).join("");
     return '<div class="field"><label for="sp">Sport (utilisé si le fichier ne l’indique pas)</label><select id="sp">' + opts + '</select></div>' +
       '<div class="field"><label for="dt">Date (utilisée si le fichier n’en contient pas)</label><input type="date" id="dt" value="' + todayISO() + '"></div>' +
       '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
-      '<div id="addres">' + lastResult + '</div>' +
-      (lastResult ? '<button class="btn block" id="validate" style="margin-top:14px">Validé !</button>' : '') +
+      '<div id="addres">' + pendingHTML() + '</div>' +
       '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
-      '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur restent dans ton territoire mais sont exclues du classement.</p>';
+      '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur restent dans ton territoire mais sont exclues du classement.</p>' +
+      '<p class="note">Atteindre un sommet nommé (à moins de ' + SUMMIT_REACH_M + ' m) débloque un cercle d’exploration : ' + SUMMIT_BASE_M + ' m de rayon, plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude. La recherche des sommets utilise OpenStreetMap et demande une connexion.</p>';
   }
   function viewList() {
     if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX ou FIT) depuis l’onglet Ajouter.</div>';
-    return sortedActs().reverse().map(function (a) {
+    var present = Object.keys(SPORTS).filter(function (k) { return S.activities.some(function (a) { return a.sport === k; }); });
+    if (listSport !== "all" && present.indexOf(listSport) < 0) listSport = "all";
+    var bar = present.length > 1 ? '<div class="seg">' + [["all", "Tous"]].concat(present.map(function (k) { return [k, sl(k)]; })).map(function (it) { return '<button data-lsport="' + it[0] + '" aria-pressed="' + (listSport === it[0]) + '">' + it[1] + '</button>'; }).join("") + '</div>' : "";
+    return bar + sortedActs().reverse().filter(function (a) { return listSport === "all" || a.sport === listSport; }).map(function (a) {
       return '<div class="row"><button class="row main" style="border:0;padding:0" data-act="' + a.id + '"><span class="main"><span class="t" style="display:block">' + esc(a.name) + '</span><span class="s" style="display:block">' +
-        fmtDate(a.date) + ' · ' + SPORTS[a.sport].label + ' · ' + fmt(a.dist / 1000, 1) + ' km' + (a.trust === "non" ? ' · sans capteur' : '') + '</span></span></button>' +
+        fmtDate(a.date) + ' · ' + sl(a.sport) + ' · ' + fmt(a.dist / 1000, 1) + ' km' + (a.summits && a.summits.length ? ' · ▲' + a.summits.length : '') + (a.trust === "non" ? ' · sans capteur' : '') + '</span></span></button>' +
         '<span class="v">+' + fmtKm2(actArea(a)) + '<small>km² nouveaux</small></span><button class="del" data-del="' + a.id + '" aria-label="Supprimer ' + esc(a.name) + '">Supprimer</button></div>';
     }).join("");
   }
@@ -815,12 +1458,13 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var bySport = {}; acts.forEach(function (a) { var s = bySport[a.sport] || (bySport[a.sport] = { n: 0, d: 0, a: 0 }); s.n++; s.d += a.dist; s.a += actArea(a); });
     html += '<h3>Par sport</h3>' + Object.keys(bySport).map(function (k) {
       var s = bySport[k];
-      return '<div class="row"><span class="main"><span class="t" style="display:block">' + SPORTS[k].label + '</span><span class="s" style="display:block">' + s.n + ' course' + (s.n > 1 ? "s" : "") + ' · ' + fmt(s.d / 1000, 1) + ' km</span></span><span class="v">' + fmtKm2(s.a) + '<small>km²</small></span></div>';
+      return '<div class="row"><span class="main"><span class="t" style="display:block">' + sl(k) + '</span><span class="s" style="display:block">' + s.n + ' course' + (s.n > 1 ? "s" : "") + ' · ' + fmt(s.d / 1000, 1) + ' km</span></span><span class="v">' + fmtKm2(s.a) + '<small>km²</small></span></div>';
     }).join("");
 
     html += '<h3>Records</h3>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Plus grande découverte</span><span class="s" style="display:block">' + esc(best.name) + '</span></span><span class="v">+' + fmtKm2(actArea(best)) + '<small>km²</small></span></div>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Sortie la plus longue</span><span class="s" style="display:block">' + esc(longest.name) + '</span></span><span class="v">' + fmt(longest.dist / 1000, 1) + '<small>km</small></span></div>';
+    html += '<h3>Partager et revivre</h3><button class="btn block" id="shareBtn">Partager ma carte</button><button class="btn ghost block" id="tlBtn">Rejouer ma carte</button>';
     return html;
   }
 
@@ -837,7 +1481,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     var ym = todayISO().slice(0, 7), seen = new Set(), s = 0;
     sortedActs().filter(function (a) { return a.trust !== "non" && (!sport || sport === "all" || a.sport === sport); }).forEach(function (a) {   // classement : courses avec capteur
       var n = 0;
-      cellsOfLines(a.lines, S.rad).forEach(function (c) { if (!seen.has(c)) { seen.add(c); n++; } });
+      actCells(a).forEach(function (c) { if (!seen.has(c)) { seen.add(c); n++; } });
       if (period === "all" || a.date.slice(0, 7) === ym) s += n * AREA_M2 / 1e6;
     });
     return s;
@@ -851,15 +1495,21 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
     function seg(group, items, cur) { return '<div class="seg">' + items.map(function (it) { return '<button data-' + group + '="' + it[0] + '" aria-pressed="' + (cur === it[0]) + '">' + it[1] + '</button>'; }).join("") + '</div>'; }
     function row(x) { return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + x.r + '</span><span class="main"><span class="t">' + esc(x.name) + (x.me ? " (toi)" : "") + '</span></span><span class="v">' + fmtKm2(x.v) + '<small>km²</small></span></div>'; }
     return '<div class="banner">Aperçu avec des joueurs fictifs. Un vrai classement mondial ou régional demande des comptes et un serveur ; ton score ci-dessous est réel et ne compte que les courses avec données de capteur.</div>' +
-      seg("sport", [["all", "Tous sports"]].concat(Object.keys(SPORTS).map(function (k) { return [k, SPORTS[k].label]; })), rankSport) +
+      seg("sport", [["all", "Tous sports"]].concat(Object.keys(SPORTS).map(function (k) { return [k, sl(k)]; })), rankSport) +
       seg("scope", [["monde", "Monde"], ["france", "Pays"], ["region", "Région"]], rankScope) +
       seg("period", [["all", "Total"], ["month", "Ce mois-ci"]], rankPeriod) +
       top.map(row).join("") + (extra ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(meRow) : "");
   }
 
   function bindSheet() {
-    var vb = $("validate");
-    if (vb) vb.addEventListener("click", closeSheet);
+    var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
+    var xb = $("cancel"); if (xb) xb.addEventListener("click", function () { pending = null; render(); draw(); });
+    var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
+    var tb = $("tlBtn"); if (tb) tb.addEventListener("click", playTimelapse);
+    var cob = $("communesBtn"); if (cob) cob.addEventListener("click", updateCommunes);
+    document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
+    var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
+    document.querySelectorAll("[data-gdel]").forEach(function (b) { b.addEventListener("click", function () { S.goals.splice(+b.dataset.gdel, 1); save(); render(); }); });
     var gi = $("gpxin");
     if (gi) gi.addEventListener("change", function (e) {
       var files = Array.prototype.slice.call(e.target.files || []);
@@ -883,6 +1533,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       });
     });
     document.querySelectorAll("[data-scope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.scope; render(); }); });
+    document.querySelectorAll("[data-lsport]").forEach(function (b) { b.addEventListener("click", function () { listSport = b.dataset.lsport; render(); }); });
     document.querySelectorAll("[data-sport]").forEach(function (b) { b.addEventListener("click", function () { rankSport = b.dataset.sport; render(); }); });
     document.querySelectorAll("[data-period]").forEach(function (b) { b.addEventListener("click", function () { rankPeriod = b.dataset.period; render(); }); });
   }
@@ -959,12 +1610,17 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       '<div class="drawer-sec"><button class="btn ghost block" id="gosettings">Réglages</button><button class="btn ghost block" id="dclose">Fermer</button></div>';
   }
   function settingsHTML() {
-    var bm = [["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
+    var bm = [["relief", "Relief ombré (discret)"], ["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
+    var cm = [["uniform", "Uniforme"], ["sport", "Par sport"], ["age", "Par ancienneté"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.colorMode === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
+      '<div class="field"><label for="cmsel">Couleur des hexagones</label><select id="cmsel">' + cm + '</select></div>' +
+      '<p class="note">Par sport : une couleur par discipline. Par ancienneté : rose (7 derniers jours), jaune (30 jours), vert (1 an), vert-bleu (plus ancien).</p>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Rechercher les sommets de mes courses</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
+      '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
       '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="sback">Retour au profil</button></div>';
   }
@@ -1010,7 +1666,10 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
   }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
+    $("cmsel").addEventListener("change", function (e) { S.colorMode = e.target.value; save(); draw(); });
+    $("scanpk").addEventListener("click", scanAllSummits);
     $("exp").addEventListener("click", function () {
+      S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-sauvegarde.json"; document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -1024,7 +1683,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
           if (!a || !Array.isArray(a.lines) || !a.date) return;
           var dup = S.activities.some(function (x) { return x.date === a.date && Math.abs(x.dist - a.dist) < 20 && x.name === a.name; });
           if (dup) return;
-          S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines });
+          S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines, trust: a.trust === "non" ? "non" : "ok", summits: Array.isArray(a.summits) ? a.summits : [], sumDone: !!a.sumDone });
           added++;
         });
         rebuild(); save(); fitAll(); renderDrawer(); toast(added + " course" + (added > 1 ? "s" : "") + " importée" + (added > 1 ? "s" : ""));
@@ -1062,7 +1721,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
       var b = buildLines(demo, 60);
       S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines });
     }
-    resize(); rebuild();
+    resize(); rebuild(); checkAchievements(true); initExtras();
     if (S.activities.length) fitAll(); else draw();
   }
 })();
