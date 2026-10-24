@@ -240,8 +240,8 @@ body.sheet-open #mapbar { display: none; }
 #searchbar .btn { width: auto; padding: 8px 18px; }
 #dropzone { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(43, 31, 74, 0.6); color: #fff; font-size: 24px; font-weight: 700; text-align: center; padding: 24px; }
 #dropzone[hidden] { display: none; }
-#tlabel { top: calc(env(safe-area-inset-top, 0px) + 84px); left: 50%; transform: translateX(-50%); padding: 6px 18px; background: var(--accent); color: var(--on-accent); border: 3px solid var(--outline); border-radius: 999px; font-weight: 700; font-size: 20px; box-shadow: 3px 3px 0 var(--outline); }
-#tlabel[hidden] { display: none; }
+#aggtag { left: 10px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 40px); }
+#aggtag[hidden] { display: none; }
 /* ---- défis, succès, sommets ---- */
 .goal { padding: 10px 0; border-top: 2px dashed color-mix(in srgb, var(--outline) 28%, transparent); }
 .goal:first-of-type { border-top: 0; }
@@ -280,6 +280,7 @@ body.sheet-open #mapbar { display: none; }
 </div>
 <div class="float tag" id="scalebar"></div>
 <div class="float tag" id="attr"></div>
+<div class="float tag" id="aggtag" hidden></div>
 <div class="float" id="mapbar" role="toolbar" aria-label="Filtres de la carte">
   <button class="pill" data-per="all" aria-pressed="true">Tout</button>
   <button class="pill" data-per="year" aria-pressed="false">Année</button>
@@ -288,7 +289,6 @@ body.sheet-open #mapbar { display: none; }
   <button class="pill" id="exploreBtn" aria-pressed="false">Explorer</button>
 </div>
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
-<div class="float" id="tlabel" hidden></div>
 <div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
 
 <div class="float" id="hint" hidden>
@@ -309,7 +309,7 @@ body.sheet-open #mapbar { display: none; }
   <button class="tab" data-tab="add" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>Ajouter</span></button>
   <button class="tab" data-tab="list" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>Courses</span></button>
   <button class="tab" data-tab="stats" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Stats</span></button>
-  <button class="tab" data-tab="goals" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></svg><span>Défis</span></button>
+  <button class="tab" data-tab="goals" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></svg><span>Succès</span></button>
   <button class="tab" data-tab="rank" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 14v4M8 20h8"/></svg><span>Classement</span></button>
 </nav>
 
@@ -346,7 +346,7 @@ body.sheet-open #mapbar { display: none; }
   /* ================= état ================= */
   var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {} };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
-  var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], revealTimer = 0;
+  var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
@@ -585,12 +585,13 @@ body.sheet-open #mapbar { display: none; }
     return S.activities.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id; });
   }
   function rebuild() {
-    cells = new Map(); reachedSet = new Set();
+    cells = new Map(); reachedSet = new Set(); summitDraw = [];
     sortedActs().forEach(function (a) {
       var n = 0, info = { sport: a.sport, date: a.date };
+      (a.summits || []).forEach(function (s) { s.r = summitRadius(s.ele); });   // rayon recalculé selon la règle en vigueur
       actCells(a).forEach(function (c) { if (!cells.has(c)) { cells.set(c, info); n++; } });
       a.newCells = n;
-      (a.summits || []).forEach(function (s) { reachedSet.add(s.id); });
+      (a.summits || []).forEach(function (s) { if (!reachedSet.has(s.id)) summitDraw.push(s); reachedSet.add(s.id); });
     });
     refreshDisp();
     updateChip();
@@ -659,6 +660,7 @@ body.sheet-open #mapbar { display: none; }
     var src = SOURCES[S.basemap], at = $("attr");
     at.textContent = src ? src.attr : ""; at.style.display = src ? "" : "none";
     if (!src) return false;
+    if (!vis.length) return false;
     var k = worldScale(), tz = Math.max(1, Math.min(src.maxZ, Math.round(view.z))), n = Math.pow(2, tz), size = k / n;
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
@@ -697,14 +699,16 @@ body.sheet-open #mapbar { display: none; }
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     exploreRefresh();
-    var vis = visCells();
+    var ag = aggInfo();
+    var vis = ag.wFine > 0 ? visCells() : [];
     var onImg = drawTiles(vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
-    fillCells(vis, onImg);
+    fillCells(vis, onImg, ag.wFine);
     buildCellsPath(ctx, vis);
-    ctx.globalAlpha = pxPerCell > 3 ? (onImg ? 0.3 : 0.4) : 0; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.globalAlpha = (pxPerCell > 3 ? (onImg ? 0.3 : 0.4) : 0) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     ctx.globalAlpha = 1;
+    if (ag.wAgg > 0) drawAgg(ag); else $("aggtag").hidden = true;
     drawOverlays();
     if (selected !== null) {
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
@@ -771,7 +775,7 @@ body.sheet-open #mapbar { display: none; }
   }
 
   /* ================= sommets : bonus d’exploration ================= */
-  var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 500, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 40, SUMMIT_ALT_TOL = 70;
+  var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 100, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 60, SUMMIT_ALT_TOL = 70;
   var peakCache = new Map(), diskCache = new Map(), reachedSet = new Set();
   function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : String(k); }
   function summitRadius(ele) { return SUMMIT_BASE_M + SUMMIT_BONUS_M * Math.floor(Math.max(0, ele || 0) / SUMMIT_ALT_STEP); }
@@ -828,7 +832,7 @@ body.sheet-open #mapbar { display: none; }
     if (q.length > 2 && q[2] !== null) return q[2];
     return null;
   }
-  function detectSummits(lines, peaks) {
+  function detectSummits(lines, peaks, misses) {
     var found = [];
     peaks.forEach(function (pk) {
       var best = null;
@@ -841,16 +845,17 @@ body.sheet-open #mapbar { display: none; }
           if (!best || r.d < best.d) best = { d: r.d, alt: altAt(a, b, r.t) };
         }
       });
-      if (!best || best.d > SUMMIT_REACH_M) return;
-      if (best.alt !== null && pk.ele !== null && Math.abs(best.alt - pk.ele) > SUMMIT_ALT_TOL) return;
+      if (!best) return;
+      if (best.d > SUMMIT_REACH_M) { if (misses && best.d <= 150) misses.push({ name: pk.name, d: best.d, why: "dist" }); return; }
+      if (best.alt !== null && pk.ele !== null && Math.abs(best.alt - pk.ele) > SUMMIT_ALT_TOL) { if (misses) misses.push({ name: pk.name, d: best.d, why: "alt", alt: best.alt, ele: pk.ele }); return; }
       var ele = pk.ele !== null ? pk.ele : best.alt;
       found.push({ id: pk.id, name: pk.name, lat: pk.lat, lng: pk.lng, ele: ele === null ? null : Math.round(ele), r: summitRadius(ele) });
     });
     return found;
   }
-  function findSummits(lines) {
+  function findSummits(lines, misses) {
     var keys = tileKeysOf(lines);
-    return fetchPeaks(keys).then(function () { return detectSummits(lines, peaksFor(keys)); });
+    return fetchPeaks(keys).then(function () { return detectSummits(lines, peaksFor(keys), misses); });
   }
   function summitList() {
     var m = new Map();
@@ -902,6 +907,10 @@ body.sheet-open #mapbar { display: none; }
     });
     pending.newCells = all;
   }
+  function nearTxt(n) {
+    return n.why === "dist" ? "Presque : " + esc(n.name) + " à " + Math.round(n.d) + " m de la trace (limite " + SUMMIT_REACH_M + " m)"
+      : esc(n.name) + " : altitude trop différente (trace " + Math.round(n.alt) + " m, sommet " + Math.round(n.ele) + " m)";
+  }
   function pendingHTML() {
     if (!pending) return "";
     var tot = 0, h = pending.items.map(function (it) {
@@ -909,6 +918,7 @@ body.sheet-open #mapbar { display: none; }
       var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km · ' + sl(a.sport) +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>';
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
+      if (a.sumDone && !a.summits.length) s += '<br><span class="warn">' + (it.near && it.near.length ? it.near.map(nearTxt).join("<br>") : "Aucun sommet nommé trouvé à moins de " + SUMMIT_REACH_M + " m de la trace.") + '</span>';
       if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance la recherche dans les Réglages.</span>';
       if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
       if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
@@ -965,7 +975,11 @@ body.sheet-open #mapbar { display: none; }
         var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
         if (dup) throw new Error("déjà importée");
         var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false };
-        return findSummits(b.lines).then(function (sm) { act.summits = sm; act.sumDone = true; }, function () { /* hors ligne */ }).then(function () { items.push({ act: act, file: f.name }); });
+        var misses = [];
+        return findSummits(b.lines, misses).then(function (sm) { act.summits = sm; act.sumDone = true; }, function () { /* hors ligne */ }).then(function () {
+          misses.sort(function (x, y) { return x.d - y.d; });
+          items.push({ act: act, file: f.name, near: misses.slice(0, 3) });
+        });
       }).catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
     });
     return chain.then(function () {
@@ -987,7 +1001,7 @@ body.sheet-open #mapbar { display: none; }
     return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
   }
   function refreshDisp() {
-    clearTimeout(revealTimer);
+    clearTimeout(revealTimer); dispVer++;
     if (periodF === "all") { dispCells = cells; return; }
     var min = periodMin(); dispCells = new Map();
     cells.forEach(function (info, id) { if (info.date >= min) dispCells.set(id, info); });
@@ -1014,12 +1028,60 @@ body.sheet-open #mapbar { display: none; }
       c.closePath();
     }
   }
-  function fillCells(vis, onImg) {
-    ctx.globalAlpha = onImg ? 0.22 : 0.6;
+  function fillCells(vis, onImg, mul) {
+    ctx.globalAlpha = (onImg ? 0.22 : 0.6) * mul;
     if (S.colorMode !== "sport" && S.colorMode !== "age") { buildCellsPath(ctx, vis); ctx.fillStyle = css("--cell"); ctx.fill(); return; }
     var groups = {};
     vis.forEach(function (id) { var col = colorOf(dispCells.get(id)); (groups[col] || (groups[col] = [])).push(id); });
     Object.keys(groups).forEach(function (col) { buildCellsPath(ctx, groups[col]); ctx.fillStyle = col; ctx.fill(); });
+  }
+  /* ================= vue agrégée à fort dézoom ================= */
+  var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
+  var aggCache = { key: "", map: null };
+  function aggInfo() {
+    var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
+    var px = EDGE_M[11] / mpp;
+    if (px >= 9) return { wFine: 1, wAgg: 0, mpp: mpp };
+    var res = 10;
+    while (res > 0 && EDGE_M[res] / mpp < 7) res--;
+    var t = px <= 4 ? 0 : (px - 4) / 5;
+    return { wFine: t, wAgg: 1 - t, res: res, mpp: mpp };
+  }
+  function aggCells(res) {
+    var key = res + "|" + dispCells.size + "|" + dispVer;
+    if (aggCache.key === key) return aggCache.map;
+    var m = new Map();
+    dispCells.forEach(function (info, id) {
+      var p = h3.cellToParent(id, res), e = m.get(p);
+      if (e) e.n++; else m.set(p, { n: 1, info: info });
+    });
+    aggCache = { key: key, map: m };
+    return m;
+  }
+  function drawAgg(ag) {
+    var map = aggCells(ag.res), tl = unproject(-20, -20), br = unproject(W + 20, H + 20), kids = Math.pow(7, 11 - ag.res);
+    var mg = EDGE_M[ag.res] / 111000 * 1.6 + 0.01, uni = css("--cell"), groups = {}, ids = [];
+    map.forEach(function (e, id) {
+      var b = boundary(id), lat = b[0][0], lng = b[0][1];
+      if (lat < br[0] - mg || lat > tl[0] + mg || lng < tl[1] - mg * 2 || lng > br[1] + mg * 2) return;
+      var t = Math.min(1, Math.log10(1 + e.n) / Math.log10(1 + kids)), lvl = Math.round(t * 4);
+      var col = S.colorMode === "sport" || S.colorMode === "age" ? colorOf(e.info) : uni, key = col + "|" + lvl;
+      (groups[key] || (groups[key] = { col: col, lvl: lvl, ids: [] })).ids.push(id);
+      ids.push(id);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var g = groups[k];
+      buildCellsPath(ctx, g.ids);
+      ctx.globalAlpha = (0.34 + 0.6 * g.lvl / 4) * ag.wAgg; ctx.fillStyle = g.col; ctx.fill();
+    });
+    if (EDGE_M[ag.res] / ag.mpp >= 10) {
+      buildCellsPath(ctx, ids);
+      ctx.globalAlpha = 0.5 * ag.wAgg; ctx.strokeStyle = css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    var tg = $("aggtag"), km2 = h3.getHexagonAreaAvg(ag.res, "km2");
+    tg.hidden = ag.wAgg < 0.5;
+    tg.textContent = "Vue agrégée · 1 hexagone ≈ " + (km2 < 10 ? fmt(km2, 1) : fmt(km2, 0)) + " km²";
   }
   function runReveal(ids, ms, tick, onEnd) {
     clearTimeout(revealTimer);
@@ -1035,15 +1097,6 @@ body.sheet-open #mapbar { display: none; }
       if (i < n) revealTimer = setTimeout(step, 30);
       else { refreshDisp(); draw(); if (onEnd) onEnd(); }
     })();
-  }
-  function playTimelapse() {
-    closeSheet(); selected = null; fitAll();
-    var ids = Array.from(dispCells.keys()), lab = $("tlabel");
-    if (!ids.length) return;
-    lab.hidden = false;
-    runReveal(ids, Math.min(14000, Math.max(5000, ids.length * 3)), function (id) {
-      var inf = cells.get(id); if (inf) lab.textContent = inf.date.slice(5, 7) + "/" + inf.date.slice(0, 4);
-    }, function () { setTimeout(function () { lab.hidden = true; }, 1500); });
   }
 
   /* ================= surimpressions : aperçu, sommets, zones à explorer ================= */
@@ -1082,6 +1135,22 @@ body.sheet-open #mapbar { display: none; }
   function drawOverlays() {
     var tl = unproject(-20, -20), br = unproject(W + 20, H + 20);
     peakHits = [];
+    if (summitDraw.length) {   // sommets atteints : cercle bonus teinté, repère et nom
+      var bonus = [];
+      var bigCells = worldScale() * (50 / 40075016.7) > 3;
+      if (bigCells) summitDraw.forEach(function (s) { summitCells(s.lat, s.lng, s.r).forEach(function (id) { if (dispCells.has(id)) bonus.push(id); }); });
+      if (bonus.length) {
+        buildCellsPath(ctx, bonus);
+        ctx.globalAlpha = 0.6; ctx.fillStyle = css("--accent"); ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1.2; ctx.stroke();
+      }
+      if (view.z >= 10) summitDraw.forEach(function (s) {
+        var q = toScreen(s.lat, s.lng);
+        if (q[0] < -60 || q[0] > W + 60 || q[1] < -60 || q[1] > H + 60) return;
+        drawPeak(s, true, view.z >= 13, s.r);
+        peakHits.push({ x: q[0], y: q[1], p: s, reached: true });
+      });
+    }
     if (pending && pending.items.length) {
       var ids = [];
       pending.newCells.forEach(function (id) {
@@ -1111,7 +1180,7 @@ body.sheet-open #mapbar { display: none; }
         var q = toScreen(p.lat, p.lng);
         if (q[0] < -30 || q[0] > W + 30 || q[1] < -30 || q[1] > H + 30) return;
         var rc = reachedSet.has(p.id);
-        drawPeak(p, rc, view.z >= 12.5);
+        if (!rc) drawPeak(p, rc, view.z >= 12.5);
         peakHits.push({ x: q[0], y: q[1], p: p, reached: rc });
       });
     }
@@ -1252,18 +1321,7 @@ body.sheet-open #mapbar { display: none; }
   }
   function viewGoals() {
     var sm = summitList(), st = statsNow(), h = "", i;
-    h += '<h3>Défis</h3>';
-    if (!S.goals.length) h += '<div class="empty-line">Aucun défi pour l’instant. Choisis-en un ci-dessous.</div>';
-    S.goals.forEach(function (g, idx) {
-      var v = goalProgress(g), pct = Math.min(100, v / g.target * 100), fm = function (x) { return g.type === "km2" ? fmt(x, 2) + " km²" : fmt(x, 0); };
-      h += '<div class="goal"><div class="goal-top"><span class="t">' + esc(goalLabel(g)) + '</span><button class="del" data-gdel="' + idx + '">Retirer</button></div>' +
-        '<div class="bar-track"><div class="bar-fill" style="width:' + pct.toFixed(0) + '%"></div></div><div class="s">' + fm(v) + ' / ' + fm(g.target) + (v >= g.target ? ' · atteint !' : '') + '</div></div>';
-    });
-    h += '<div class="seg" style="margin-top:12px">' + QUICK.map(function (q, n) { return '<button data-gquick="' + n + '">' + q.label + '</button>'; }).join("") + '</div>';
-    h += '<div class="field"><label for="gtype">Défi personnalisé</label><select id="gtype">' + Object.keys(GOAL_TYPES).map(function (k) { return '<option value="' + k + '">' + GOAL_TYPES[k] + '</option>'; }).join("") + '</select></div>' +
-      '<div class="field"><select id="gper" aria-label="Période">' + Object.keys(GOAL_PERIODS).map(function (k) { return '<option value="' + k + '">' + GOAL_PERIODS[k] + '</option>'; }).join("") + '</select></div>' +
-      '<div class="field"><label for="gtarget">Objectif</label><input type="number" id="gtarget" min="1" step="1" value="5"></div>' +
-      '<button class="btn block" id="gadd">Ajouter le défi</button>';
+
 
     h += '<h3>Sommets atteints (' + sm.length + ')</h3>';
     if (!sm.length) h += '<div class="empty-line">Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.</div>';
@@ -1385,7 +1443,7 @@ body.sheet-open #mapbar { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Défis et succès", rank: "Classement" };
+  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", rank: "Classement" };
   function openTab(k) {
     if (current === k) { closeSheet(); return; }
     closeDrawer(); current = k; render();
@@ -1464,7 +1522,7 @@ body.sheet-open #mapbar { display: none; }
     html += '<h3>Records</h3>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Plus grande découverte</span><span class="s" style="display:block">' + esc(best.name) + '</span></span><span class="v">+' + fmtKm2(actArea(best)) + '<small>km²</small></span></div>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Sortie la plus longue</span><span class="s" style="display:block">' + esc(longest.name) + '</span></span><span class="v">' + fmt(longest.dist / 1000, 1) + '<small>km</small></span></div>';
-    html += '<h3>Partager et revivre</h3><button class="btn block" id="shareBtn">Partager ma carte</button><button class="btn ghost block" id="tlBtn">Rejouer ma carte</button>';
+    html += '<h3>Partager</h3><button class="btn block" id="shareBtn">Partager ma carte</button>';
     return html;
   }
 
@@ -1505,7 +1563,6 @@ body.sheet-open #mapbar { display: none; }
     var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
     var xb = $("cancel"); if (xb) xb.addEventListener("click", function () { pending = null; render(); draw(); });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
-    var tb = $("tlBtn"); if (tb) tb.addEventListener("click", playTimelapse);
     var cob = $("communesBtn"); if (cob) cob.addEventListener("click", updateCommunes);
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
     var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
