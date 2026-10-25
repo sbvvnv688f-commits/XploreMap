@@ -718,8 +718,11 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
     fillCells(vis, onImg, ag.wFine);
-    buildCellsPath(ctx, vis);
-    ctx.globalAlpha = (pxPerCell > 3 ? (onImg ? 0.3 : 0.4) : 0) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
+    var strokeA = Math.max(0, Math.min(1, (43 / ag.mpp - 12) / 10));   // contours seulement quand les hexagones sont assez grands
+    if (strokeA > 0 && vis.length) {
+      buildCellsPath(ctx, vis);
+      ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
+    }
     ctx.globalAlpha = 1;
     if (ag.wAgg > 0) drawAgg(ag, onImg); else $("aggtag").hidden = true;
     drawOverlays();
@@ -909,8 +912,9 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     });
     return Array.from(m.values());
   }
-  function scanAllSummits() {
-    var todo = S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }), nS = 0, nL = 0, failed = 0, chain = Promise.resolve();
+  function scanAllSummits(force) {
+    if (force) { peakCache.clear(); lmCache.clear(); }   // repart des données OpenStreetMap les plus récentes
+    var todo = force ? S.activities.slice() : S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }), nS = 0, nL = 0, failed = 0, chain = Promise.resolve();
     if (!todo.length) { toast("Toutes tes courses ont déjà été analysées."); return; }
     toast("Recherche des sommets et des lieux en cours…");
     todo.forEach(function (a) {
@@ -965,7 +969,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
       (a.landmarks || []).forEach(function (l) { s += '<br><span class="peak">' + l.ic + ' ' + esc(l.name) + ' · ' + esc(l.kind) + ' · cercle de ' + l.r + ' m</span>'; });
       if (a.sumDone && !a.summits.length) s += '<br><span class="warn">' + (it.near && it.near.length ? it.near.map(nearTxt).join("<br>") : "Aucun sommet nommé trouvé à moins de " + SUMMIT_REACH_M + " m de la trace.") + '</span>';
-      if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance la recherche dans les Réglages.</span>';
+      if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance « Tout recalculer » dans les Réglages.</span>';
       if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
       if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
       return s + '</div>';
@@ -999,6 +1003,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     }
     if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
     checkAchievements();
+    updateCommunes({ lines: lines, silent: true });
   }
   function importFiles(files, sportChoice, dateChoice) {
     if (!pending) pending = { items: [], errors: [], newCells: new Set() };
@@ -1076,23 +1081,25 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       c.closePath();
     }
   }
+  var PALE_YELLOW = "#ffe27a";
   function fillOn() { return !SOURCES[S.basemap] || (!tilesLoaded && tilesFailed >= 7); }   // sans imagerie : repli en teinte unie
   function fillCells(vis, onImg, mul) {
     if (!fillOn()) return;
-    ctx.globalAlpha = 0.6 * mul;
-    buildCellsPath(ctx, vis); ctx.fillStyle = css("--cell"); ctx.fill();
+    ctx.globalAlpha = 0.5 * mul;
+    buildCellsPath(ctx, vis); ctx.fillStyle = PALE_YELLOW; ctx.fill();
     ctx.globalAlpha = 1;
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
+  var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
     var px = EDGE_M[11] / mpp;
-    if (px >= 9) return { wFine: 1, wAgg: 0, mpp: mpp };
+    if (px >= 6) return { wFine: 1, wAgg: 0, mpp: mpp };
     var res = 10;
-    while (res > 0 && EDGE_M[res] / mpp < 7) res--;
-    var t = px <= 4 ? 0 : (px - 4) / 5;
+    while (res > MIN_AGG_RES && EDGE_M[res] / mpp < 7) res--;
+    var t = px <= 3.5 ? 0 : (px - 3.5) / 2.5;
     return { wFine: t, wAgg: 1 - t, res: res, mpp: mpp };
   }
   function aggCells(res) {
@@ -1126,11 +1133,8 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       (groups[key] || (groups[key] = { col: col, lvl: lvl, ids: [] })).ids.push(id);
       ids.push(id);
     });
-    if (fillOn()) Object.keys(groups).forEach(function (k) {
-      var g = groups[k];
-      buildCellsPath(ctx, g.ids);
-      ctx.globalAlpha = (onImg ? 0.12 + 0.3 * g.lvl / 4 : 0.34 + 0.6 * g.lvl / 4) * ag.wAgg; ctx.fillStyle = g.col; ctx.fill();
-    });
+    buildCellsPath(ctx, ids);
+    ctx.globalAlpha = (onImg ? 0.45 : 0.65) * ag.wAgg; ctx.fillStyle = PALE_YELLOW; ctx.fill();
     if (EDGE_M[ag.res] / ag.mpp >= 10) {
       buildCellsPath(ctx, ids);
       ctx.globalAlpha = (onImg ? 0.35 : 0.5) * ag.wAgg; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
@@ -1257,7 +1261,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       return '<button data-succ="' + it[0] + '" aria-pressed="' + (succTab === it[0]) + '">' + it[1] + '</button>';
     }).join("") + '</div>';
     var legacy = S.activities.some(function (a) { return a.poiV !== 2 && ((a.summits || []).length || (a.landmarks || []).length); });
-    var legacyNote = legacy ? '<p class="note">Certaines fiches ne sont pas encore reliées à Wikipédia : lance « Rechercher sommets et lieux de mes courses » dans les Réglages pour les récupérer.</p>' : "";
+    var legacyNote = legacy ? '<p class="note">Certaines fiches ne sont pas encore reliées à Wikipédia : lance « Tout recalculer » dans les Réglages pour les récupérer.</p>' : "";
     if (succTab === "sommets") {
       var sm = summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); });
       h += '<h3>Sommets atteints (' + sm.length + ')</h3>';
@@ -1288,8 +1292,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     cs.forEach(function (c) {
       h += '<div class="row"><span class="main"><span class="t" style="display:block">' + esc(c.nom) + '</span><span class="s" style="display:block">' + fmt(c.found, 0) + ' / ' + fmt(c.total, 0) + ' hexagones</span></span><span class="v">' + fmt(c.pct, c.pct < 10 ? 1 : 0) + '<small>%</small></span></div>';
     });
-    h += '<button class="btn ghost block" id="communesBtn" style="margin-top:10px">Calculer / mettre à jour</button>' +
-      '<p class="note">Utilise les contours officiels des communes (geo.api.gouv.fr) : connexion requise, France uniquement. Le total est une estimation (surface de la commune divisée par la surface d’un hexagone).</p>';
+    h += '<p class="note">Calcul automatique à chaque course ajoutée, avec les contours officiels des communes (geo.api.gouv.fr) : connexion requise, France uniquement. Le total est une estimation (surface de la commune divisée par la surface d’un hexagone). « Tout recalculer » dans les Réglages relance l’ensemble.</p>';
     return h;
   }
   function runReveal(ids, ms, tick, onEnd) {
@@ -1510,18 +1513,19 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     return { nom: nom, found: found, total: tot, pct: Math.min(100, found / tot * 100) };
   }
   var communesBusy = false;
-  function updateCommunes() {
-    if (communesBusy) return;
-    var pts = [], seen = {}, calls = 0, okN = 0, polysDone = [], chain = Promise.resolve();
-    S.activities.forEach(function (a) { a.lines.forEach(function (ln) { for (var i = 0; i < ln.length; i += 25) { var k = ln[i][0].toFixed(2) + "," + ln[i][1].toFixed(2); if (!seen[k]) { seen[k] = 1; pts.push(ln[i]); } } }); });
-    if (!pts.length) { toast("Importe d’abord une course."); return; }
+  function updateCommunes(opts) {
+    opts = opts || {};
+    if (communesBusy) return Promise.resolve();
+    var src = opts.lines || [].concat.apply([], S.activities.map(function (a) { return a.lines; }));
+    var pts = [], seen = {}, calls = 0, okN = 0, polysDone = [], fresh = [], chain = Promise.resolve();
+    src.forEach(function (ln) { for (var i = 0; i < ln.length; i += 25) { var k = ln[i][0].toFixed(2) + "," + ln[i][1].toFixed(2); if (!seen[k]) { seen[k] = 1; pts.push(ln[i]); } } });
+    if (!pts.length) { if (!opts.silent) toast("Importe d’abord une course."); return Promise.resolve(); }
     communesBusy = true;
     pts.forEach(function (p) {
       chain = chain.then(function () {
         if (calls >= 40) return;
         for (var i = 0; i < polysDone.length; i++) { for (var j = 0; j < polysDone[i].length; j++) { if (inPoly(p[0], p[1], polysDone[i][j])) return; } }
         calls++;
-        var b = $("communesBtn"); if (b) b.textContent = "Analyse… (" + calls + ")";
         return fetch("https://geo.api.gouv.fr/communes?lat=" + p[0].toFixed(5) + "&lon=" + p[1].toFixed(5) + "&fields=nom,code&format=geojson&geometry=contour")
           .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
           .then(function (j) {
@@ -1530,14 +1534,22 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
             var polys = geomPolys(f.geometry);
             if (!polys.length) return;
             polysDone.push(polys); okN++;
-            S.communes[f.properties.code] = communeStats(f.properties.nom, polys);
+            var code = f.properties.code, isNew = !S.communes[code];
+            S.communes[code] = communeStats(f.properties.nom, polys);
+            if (isNew) fresh.push(f.properties.nom);
           }).catch(function () { /* hors France ou réseau : ignoré */ });
       });
     });
     return chain.then(function () {
-      communesBusy = false; save(); render();
-      toast(okN ? "Communes mises à jour." : "Communes indisponibles (réseau ou zone hors France).");
+      communesBusy = false; save();
+      if (current === "goals") render();
+      if (opts.silent) { if (fresh.length) toast("Nouvelle commune explorée : " + fresh[0] + (fresh.length > 1 ? " (+" + (fresh.length - 1) + ")" : "") + "."); }
+      else toast(okN ? "Communes mises à jour." : "Communes indisponibles (réseau ou zone hors France).");
     });
+  }
+  function recomputeAll() {
+    if (!S.activities.length) { toast("Importe d’abord une course."); return; }
+    Promise.resolve(scanAllSummits(true)).then(function () { return updateCommunes({}); });
   }
 
   /* ================= partage de la carte ================= */
@@ -1666,7 +1678,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       '<div id="addres">' + pendingHTML() + '</div>' +
       '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
       '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur restent dans ton territoire mais sont exclues du classement.</p>' +
-      '<p class="note">Atteindre un sommet nommé (à moins de ' + SUMMIT_REACH_M + ' m) débloque un cercle d’exploration : ' + SUMMIT_BASE_M + ' m de rayon, plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude. Les lieux emblématiques (monuments, châteaux, cascades, sites historiques référencés sur Wikipédia) à moins de ' + LANDMARK_REACH_M + ' m débloquent un cercle de ' + LANDMARK_R + ' m. La recherche utilise OpenStreetMap et demande une connexion.</p>';
+      '<p class="note">Atteindre un sommet nommé (à moins de ' + SUMMIT_REACH_M + ' m) débloque un cercle d’exploration : ' + SUMMIT_BASE_M + ' m de rayon, plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude. Les lieux emblématiques (monuments, châteaux, cascades, sites historiques référencés sur Wikipédia) à moins de ' + LANDMARK_REACH_M + ' m débloquent un cercle de ' + LANDMARK_R + ' m. L’analyse des sommets, des lieux et des communes est automatique à l’ajout (OpenStreetMap et geo.api.gouv.fr, connexion requise).</p>';
   }
   function viewList() {
     if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX ou FIT) depuis l’onglet Ajouter.</div>';
@@ -1758,7 +1770,6 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
     var xb = $("cancel"); if (xb) xb.addEventListener("click", function () { pending = null; render(); draw(); });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
-    var cob = $("communesBtn"); if (cob) cob.addEventListener("click", updateCommunes);
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
     var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
     document.querySelectorAll("[data-gdel]").forEach(function (b) { b.addEventListener("click", function () { S.goals.splice(+b.dataset.gdel, 1); save(); render(); }); });
@@ -1872,7 +1883,8 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     var bm = [["relief", "Relief ombré (discret)"], ["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Rechercher sommets et lieux de mes courses</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
+      '<p class="note">À utiliser si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap, ou pour corriger les surfaces de communes. Les nouvelles courses sont analysées automatiquement.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
@@ -1922,7 +1934,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
-    $("scanpk").addEventListener("click", scanAllSummits);
+    $("scanpk").addEventListener("click", recomputeAll);
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
