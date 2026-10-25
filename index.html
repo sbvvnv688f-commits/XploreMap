@@ -674,7 +674,6 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     var src = SOURCES[S.basemap], at = $("attr");
     at.textContent = src ? src.attr : ""; at.style.display = src ? "" : "none";
     if (!src) return false;
-    if (!vis.length) return false;
     var k = worldScale(), tz = Math.max(1, Math.min(src.maxZ, Math.round(view.z))), n = Math.pow(2, tz), size = k / n;
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
