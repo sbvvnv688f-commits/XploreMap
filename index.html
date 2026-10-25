@@ -275,6 +275,8 @@ body.sheet-open #poicard { display: none; }
 .pc-x { flex: none; width: 34px; height: 34px; border-radius: 999px; border: 2.5px solid var(--outline); background: var(--panel); color: var(--ink); font-size: 16px; font-weight: 700; cursor: pointer; }
 .pc-s { font-size: 13px; color: var(--muted); margin-top: 3px; }
 .poi-info[hidden] { display: none; }
+.diag { margin: 8px 0 0; padding: 8px 10px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 2px dashed var(--outline); border-radius: 12px; user-select: text; -webkit-user-select: text; }
+.diag[hidden] { display: none; }
 .warn { font-size: 13px; color: var(--muted); }
 </style>
 </head>
@@ -853,13 +855,13 @@ body.sheet-open #poicard { display: none; }
     var body = "data=" + encodeURIComponent(q), tries = 0;
     function attempt() {
       var url = OVERPASS[tries % OVERPASS.length], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-      var to = ctl ? setTimeout(function () { ctl.abort(); }, 45000) : 0;
+      var to = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : 0;
       return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
         .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); return j; })
         .catch(function (e) {
           clearTimeout(to); lastPoiError = (e && e.message) || "réseau"; tries++;
-          if (tries >= OVERPASS.length * 2) throw e;
+          if (tries >= OVERPASS.length + 1) throw e;
           return new Promise(function (res) { setTimeout(res, 700 * tries); }).then(attempt);
         });
     }
@@ -875,7 +877,7 @@ body.sheet-open #poicard { display: none; }
         'nwr["tourism"~"^(attraction|viewpoint)$"]' + wp + bb +
         'nwr["natural"~"^(waterfall|cave_entrance|hot_spring|glacier)$"]' + wp + bb;
     }).join("");
-    return overpassFetch("[out:json][timeout:40];(" + q + ");out center;").then(function (j) {
+    return overpassFetch("[out:json][timeout:25];(" + q + ");out center;").then(function (j) {
       need.forEach(function (k) { peakCache.set(k, []); lmCache.set(k, []); });
       (j.elements || []).forEach(function (el) {
         var t = el.tags;
@@ -898,7 +900,7 @@ body.sheet-open #poicard { display: none; }
     if (!need.length) return Promise.resolve();
     if (need.length > 80) return Promise.reject(new Error("zone trop étendue"));
     var chain = Promise.resolve();
-    for (var i = 0; i < need.length; i += 6) (function (b) { chain = chain.then(function () { return fetchBatch(b); }); })(need.slice(i, i + 6));
+    for (var i = 0; i < need.length; i += 3) (function (b) { chain = chain.then(function () { return fetchBatch(b); }); })(need.slice(i, i + 3));
     return chain;
   }
   function peaksFor(keys) { var out = []; keys.forEach(function (k) { (peakCache.get(k) || []).forEach(function (p) { out.push(p); }); }); return out; }
@@ -929,7 +931,6 @@ body.sheet-open #poicard { display: none; }
       });
       if (!best) return;
       if (best.d > SUMMIT_REACH_M) { if (misses && best.d <= 150) misses.push({ name: pk.name, d: best.d, why: "dist" }); return; }
-      if (best.alt !== null && pk.ele !== null && Math.abs(best.alt - pk.ele) > SUMMIT_ALT_TOL) { if (misses) misses.push({ name: pk.name, d: best.d, why: "alt", alt: best.alt, ele: pk.ele }); return; }
       var ele = pk.ele !== null ? pk.ele : best.alt;
       found.push({ id: pk.id, name: pk.name, lat: pk.lat, lng: pk.lng, ele: ele === null ? null : Math.round(ele), r: summitRadius(ele), wp: pk.wp || "", wd: pk.wd || "" });
     });
@@ -1130,7 +1131,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v21";
+  var BUILD = "25/10/2026 · v22";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1380,7 +1381,7 @@ body.sheet-open #poicard { display: none; }
         var r = s.r || summitRadius(s.ele), bonus = r - SUMMIT_BASE_M;
         h += poiCard(poiKey("s", s.id), s, "▲", 'Atteint le ' + fmtDate(s.date) + ' · cercle de ' + r + ' m' + (bonus > 0 ? ' (dont +' + bonus + ' m d’altitude)' : ''), s.ele !== null ? fmt(s.ele, 0) + '<small>m</small>' : "");
       });
-      return h + legacyNote;
+      return h + legacyNote + poiStatusHTML(sm.length);
     }
     if (succTab === "lieux") {
       var lm = landmarkList().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
@@ -1389,7 +1390,7 @@ body.sheet-open #poicard { display: none; }
       lm.forEach(function (l) {
         h += poiCard(poiKey("l", l.id), l, l.ic, esc(l.kind) + ' · visité le ' + fmtDate(l.date) + ' · cercle de ' + LANDMARK_R + ' m (dont +' + LANDMARK_BONUS_M + ' m de bonus)', "");
       });
-      return h + legacyNote;
+      return h + legacyNote + poiStatusHTML(lm.length);
     }
     if (succTab === "communes") {
       var cs = Object.keys(S.communes).map(function (k) { var c = S.communes[k]; c.code = k; return c; }).sort(function (a, b) { return b.pct - a.pct; });
@@ -1662,6 +1663,44 @@ body.sheet-open #poicard { display: none; }
       if (opts.silent) { if (fresh.length) toast("Nouvelle commune explorée : " + fresh[0] + (fresh.length > 1 ? " (+" + (fresh.length - 1) + ")" : "") + "."); }
       else toast(okN ? "Communes mises à jour." : "Communes indisponibles (réseau ou zone hors France).");
     });
+  }
+  function runDiagnostic() {
+    var out = $("diagout"), btn = $("diagbtn"), ref = S.activities.length ? S.activities[S.activities.length - 1].lines[0][0] : [45.9, 6.13];
+    var lat = ref[0].toFixed(4), lon = ref[1].toFixed(4), rows = [], chain = Promise.resolve();
+    out.hidden = false; out.textContent = "Diagnostic en cours…"; btn.disabled = true;
+    function test(label, fn) {
+      var t0 = Date.now();
+      return fn().then(function (info) { rows.push("✔ " + label + " : " + info + " (" + (Date.now() - t0) + " ms)"); }, function (e) { rows.push("✘ " + label + " : " + ((e && e.message) || "échec")); })
+        .then(function () { out.textContent = rows.join("\n") + "\n…"; });
+    }
+    function ovp(url) {
+      return function () {
+        var ctl = typeof AbortController !== "undefined" ? new AbortController() : null, to = ctl ? setTimeout(function () { ctl.abort(); }, 20000) : 0;
+        return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent('[out:json][timeout:15];node["natural"="peak"]["name"](around:6000,' + lat + "," + lon + ");out count;"), signal: ctl ? ctl.signal : undefined })
+          .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(function (j) { var c = j.elements && j.elements[0] && j.elements[0].tags; return (c ? c.total : 0) + " sommets nommés dans 6 km"; });
+      };
+    }
+    OVERPASS.forEach(function (u, i) { chain = chain.then(function () { return test("Serveur Overpass " + (i + 1) + " (" + u.split("/")[2] + ")", ovp(u)); }); });
+    chain = chain.then(function () { return test("Wikipédia", function () { return fetch("https://fr.wikipedia.org/api/rest_v1/page/summary/France").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return "accessible"; }); }); });
+    chain = chain.then(function () { return test("geo.api.gouv.fr", function () { return fetch("https://geo.api.gouv.fr/communes?lat=" + lat + "&lon=" + lon + "&fields=nom").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return j.length ? j[0].nom : "hors France"; }); }); });
+    chain.then(function () {
+      var done = S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length;
+      rows.push("— Version : " + BUILD + " · hôte : " + location.hostname + " · en ligne : " + (navigator.onLine !== false ? "oui" : "non"));
+      rows.push("— Courses analysées : " + done + " / " + S.activities.length + (lastPoiError ? " · dernière erreur : " + lastPoiError : ""));
+      rows.push("— Sommets : " + summitList().length + " · lieux : " + landmarkList().length);
+      rows.push("— Navigateur : " + String(navigator.userAgent).slice(0, 90));
+      rows.push("(touche ce rapport pour le copier)");
+      out.textContent = rows.join("\n"); btn.disabled = false;
+      out.onclick = function () { if (navigator.clipboard) navigator.clipboard.writeText(out.textContent).then(function () { toast("Rapport copié."); }, function () { /* sélection manuelle */ }); };
+    });
+  }
+  function poiStatusHTML(n) {
+    var tot = S.activities.length, done = S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length;
+    if (!tot || (n > 0 && done === tot)) return "";
+    return '<p class="note">Courses analysées pour les sommets et les lieux : ' + done + ' / ' + tot + (lastPoiError ? ' · dernière erreur : ' + esc(lastPoiError) : '') + '. ' +
+      (done < tot ? 'L’analyse reprend automatiquement tant que la connexion le permet.' : 'Aucun sommet nommé ni lieu référencé trouvé à moins de ' + SUMMIT_REACH_M + ' m de tes traces.') +
+      '</p><button class="btn ghost block" id="rescanBtn">Relancer l’analyse maintenant</button>';
   }
   function forceUpdate() {
     toast("Mise à jour en cours…");
@@ -1946,6 +1985,7 @@ body.sheet-open #poicard { display: none; }
       });
     });
     document.querySelectorAll("[data-scope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.scope; render(); }); });
+    var rs = $("rescanBtn"); if (rs) rs.addEventListener("click", recomputeAll);
     document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
     document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; render(); }); });
     document.querySelectorAll("[data-info]").forEach(function (b) { b.addEventListener("click", function () {
@@ -2036,6 +2076,7 @@ body.sheet-open #poicard { display: none; }
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="diagbtn">Diagnostic de connexion</button><pre class="diag" id="diagout" hidden></pre></div>' +
       '<p class="note">À utiliser si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap, ou pour corriger les surfaces de communes. Les nouvelles courses sont analysées automatiquement.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
@@ -2091,6 +2132,7 @@ body.sheet-open #poicard { display: none; }
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
+    $("diagbtn").addEventListener("click", runDiagnostic);
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
