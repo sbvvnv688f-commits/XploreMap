@@ -1076,12 +1076,12 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       c.closePath();
     }
   }
+  function fillOn() { return !SOURCES[S.basemap] || (!tilesLoaded && tilesFailed >= 7); }   // sans imagerie : repli en teinte unie
   function fillCells(vis, onImg, mul) {
-    ctx.globalAlpha = (onImg ? 0.22 : 0.6) * mul;
-    if (S.colorMode !== "sport" && S.colorMode !== "age") { buildCellsPath(ctx, vis); ctx.fillStyle = css("--cell"); ctx.fill(); return; }
-    var groups = {};
-    vis.forEach(function (id) { var col = colorOf(dispCells.get(id)); (groups[col] || (groups[col] = [])).push(id); });
-    Object.keys(groups).forEach(function (col) { buildCellsPath(ctx, groups[col]); ctx.fillStyle = col; ctx.fill(); });
+    if (!fillOn()) return;
+    ctx.globalAlpha = 0.6 * mul;
+    buildCellsPath(ctx, vis); ctx.fillStyle = css("--cell"); ctx.fill();
+    ctx.globalAlpha = 1;
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
@@ -1126,7 +1126,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       (groups[key] || (groups[key] = { col: col, lvl: lvl, ids: [] })).ids.push(id);
       ids.push(id);
     });
-    Object.keys(groups).forEach(function (k) {
+    if (fillOn()) Object.keys(groups).forEach(function (k) {
       var g = groups[k];
       buildCellsPath(ctx, g.ids);
       ctx.globalAlpha = (onImg ? 0.12 + 0.3 * g.lvl / 4 : 0.34 + 0.6 * g.lvl / 4) * ag.wAgg; ctx.fillStyle = g.col; ctx.fill();
@@ -1345,14 +1345,6 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     var tl = unproject(-20, -20), br = unproject(W + 20, H + 20);
     peakHits = [];
     if (summitDraw.length) {   // sommets atteints : cercle bonus teinté, repère et nom
-      var bonus = [];
-      var bigCells = worldScale() * (50 / 40075016.7) > 3;
-      if (bigCells) summitDraw.forEach(function (s) { summitCells(s.lat, s.lng, s.r).forEach(function (id) { if (dispCells.has(id)) bonus.push(id); }); });
-      if (bonus.length) {
-        buildCellsPath(ctx, bonus);
-        ctx.globalAlpha = 0.6; ctx.fillStyle = css("--accent"); ctx.fill();
-        ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1.2; ctx.stroke();
-      }
       if (view.z >= 10) summitDraw.forEach(function (s) {
         var q = toScreen(s.lat, s.lng);
         if (q[0] < -60 || q[0] > W + 60 || q[1] < -60 || q[1] > H + 60) return;
@@ -1361,13 +1353,6 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       });
     }
     if (landmarkDraw.length) {   // lieux emblématiques : cercle bonus teinté, repère et nom
-      var lb = [];
-      if (worldScale() * (50 / 40075016.7) > 3) landmarkDraw.forEach(function (l) { summitCells(l.lat, l.lng, l.r).forEach(function (id) { if (dispCells.has(id)) lb.push(id); }); });
-      if (lb.length) {
-        buildCellsPath(ctx, lb);
-        ctx.globalAlpha = 0.5; ctx.fillStyle = css("--pink"); ctx.fill();
-        ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1.2; ctx.stroke();
-      }
       if (view.z >= 12) landmarkDraw.forEach(function (l) {
         var q = toScreen(l.lat, l.lng);
         if (q[0] < -60 || q[0] > W + 60 || q[1] < -60 || q[1] > H + 60) return;
@@ -1383,7 +1368,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
         ids.push(id);
       });
       buildCellsPath(ctx, ids);
-      ctx.globalAlpha = 0.55; ctx.fillStyle = css("--pink"); ctx.fill();
+      ctx.globalAlpha = 0.2; ctx.fillStyle = css("--pink"); ctx.fill();
       ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1; ctx.stroke();
       ctx.setLineDash([6, 5]);
       pending.items.forEach(function (it) { strokeLines(it.act.lines, css("--outline"), 3.4, 1); strokeLines(it.act.lines, css("--accent"), 2, 1); });
@@ -1885,11 +1870,8 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   }
   function settingsHTML() {
     var bm = [["relief", "Relief ombré (discret)"], ["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
-    var cm = [["uniform", "Uniforme"], ["sport", "Par sport"], ["age", "Par ancienneté"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.colorMode === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
-      '<div class="field"><label for="cmsel">Couleur des hexagones</label><select id="cmsel">' + cm + '</select></div>' +
-      '<p class="note">Par sport : une couleur par discipline. Par ancienneté : rose (7 derniers jours), jaune (30 jours), vert (1 an), vert-bleu (plus ancien).</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Rechercher sommets et lieux de mes courses</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
@@ -1940,7 +1922,6 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
-    $("cmsel").addEventListener("change", function (e) { S.colorMode = e.target.value; save(); draw(); });
     $("scanpk").addEventListener("click", scanAllSummits);
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
