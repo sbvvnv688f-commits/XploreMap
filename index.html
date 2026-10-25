@@ -848,10 +848,24 @@ body.sheet-open #poicard { display: none; }
     if (t.tourism === "viewpoint") return ["Belvédère", "🔭"];
     return ["Site remarquable", "⭐"];
   }
-  function fetchPeaks(keys) {
-    var need = keys.filter(function (k) { return !peakCache.has(k); });
-    if (!need.length) return Promise.resolve();
-    if (need.length > 16) return Promise.reject(new Error("zone trop étendue"));
+  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"], lastPoiError = "";
+  function overpassFetch(q) {   // plusieurs serveurs et plusieurs essais : le serveur principal refuse parfois les requêtes
+    var body = "data=" + encodeURIComponent(q), tries = 0;
+    function attempt() {
+      var url = OVERPASS[tries % OVERPASS.length], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      var to = ctl ? setTimeout(function () { ctl.abort(); }, 45000) : 0;
+      return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
+        .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); return j; })
+        .catch(function (e) {
+          clearTimeout(to); lastPoiError = (e && e.message) || "réseau"; tries++;
+          if (tries >= OVERPASS.length * 2) throw e;
+          return new Promise(function (res) { setTimeout(res, 700 * tries); }).then(attempt);
+        });
+    }
+    return attempt().then(function (j) { lastPoiError = ""; return j; });
+  }
+  function fetchBatch(need) {
     var wp = '[~"^(wikipedia|wikidata)$"~"."]';
     var q = need.map(function (k) {
       var p = k.split("_"), la = +p[0], lo = +p[1];
@@ -861,24 +875,31 @@ body.sheet-open #poicard { display: none; }
         'nwr["tourism"~"^(attraction|viewpoint)$"]' + wp + bb +
         'nwr["natural"~"^(waterfall|cave_entrance|hot_spring|glacier)$"]' + wp + bb;
     }).join("");
-    return fetch("https://overpass-api.de/api/interpreter", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent("[out:json][timeout:40];(" + q + ");out center;") })
-      .then(function (r) { if (!r.ok) throw new Error("Overpass " + r.status); return r.json(); }).then(function (j) {
-        need.forEach(function (k) { peakCache.set(k, []); lmCache.set(k, []); });
-        (j.elements || []).forEach(function (el) {
-          var t = el.tags;
-          if (!t || !t.name) return;
-          var lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat), lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
-          if (lat === undefined || lon === undefined) return;
-          var key = Math.floor(lat / 0.1) + "_" + Math.floor(lon / 0.1);
-          if (t.natural === "peak") {
-            var arr = peakCache.get(key);
-            if (el.type === "node" && arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: lat, lng: lon, ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
-          } else if (t.historic || t.tourism || t.natural) {
-            var la = lmCache.get(key), id = String(el.type).charAt(0) + el.id;
-            if (la && !la.some(function (x) { return x.id === id; })) { var kd = lmKind(t); la.push({ id: id, name: t.name, lat: lat, lng: lon, kind: kd[0], ic: kd[1], wp: t.wikipedia || "", wd: t.wikidata || "" }); }
-          }
-        });
+    return overpassFetch("[out:json][timeout:40];(" + q + ");out center;").then(function (j) {
+      need.forEach(function (k) { peakCache.set(k, []); lmCache.set(k, []); });
+      (j.elements || []).forEach(function (el) {
+        var t = el.tags;
+        if (!t || !t.name) return;
+        var lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat), lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        if (lat === undefined || lon === undefined) return;
+        var key = Math.floor(lat / 0.1) + "_" + Math.floor(lon / 0.1);
+        if (t.natural === "peak") {
+          var arr = peakCache.get(key);
+          if (el.type === "node" && arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: lat, lng: lon, ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
+        } else if (t.historic || t.tourism || t.natural) {
+          var la = lmCache.get(key), id = String(el.type).charAt(0) + el.id;
+          if (la && !la.some(function (x) { return x.id === id; })) { var kd = lmKind(t); la.push({ id: id, name: t.name, lat: lat, lng: lon, kind: kd[0], ic: kd[1], wp: t.wikipedia || "", wd: t.wikidata || "" }); }
+        }
       });
+    });
+  }
+  function fetchPeaks(keys) {
+    var need = keys.filter(function (k) { return !peakCache.has(k); });
+    if (!need.length) return Promise.resolve();
+    if (need.length > 80) return Promise.reject(new Error("zone trop étendue"));
+    var chain = Promise.resolve();
+    for (var i = 0; i < need.length; i += 6) (function (b) { chain = chain.then(function () { return fetchBatch(b); }); })(need.slice(i, i + 6));
+    return chain;
   }
   function peaksFor(keys) { var out = []; keys.forEach(function (k) { (peakCache.get(k) || []).forEach(function (p) { out.push(p); }); }); return out; }
   function segDistM(plat, plng, a, b) {
@@ -1020,6 +1041,7 @@ body.sheet-open #poicard { display: none; }
     if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
     checkAchievements();
     updateCommunes({ lines: lines, silent: true });
+    setTimeout(function () { autoScanAt = 0; autoScan(); }, 6000);
   }
   function importFiles(files, sportChoice, dateChoice) {
     if (!pending) pending = { items: [], errors: [], newCells: new Set() };
@@ -1108,7 +1130,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v20";
+  var BUILD = "25/10/2026 · v21";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1648,6 +1670,27 @@ body.sheet-open #poicard { display: none; }
     if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
     Promise.all(tasks).catch(function () { /* ignoré */ }).then(function () { location.replace(location.pathname + "?maj=" + Date.now()); });
   }
+  var autoScanBusy = false, autoScanAt = 0;
+  function autoScan() {   // rattrapage automatique : courses jamais analysées ou dont l’analyse a échoué
+    if (autoScanBusy || (typeof navigator.onLine === "boolean" && !navigator.onLine)) return;
+    if (Date.now() - autoScanAt < 600000) return;
+    var todo = S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; });
+    if (!todo.length) return;
+    autoScanAt = Date.now(); autoScanBusy = true;
+    var found = 0, ok = 0, chain = Promise.resolve();
+    todo.forEach(function (a) {
+      chain = chain.then(function () {
+        return findPois(a.lines).then(function (r) { a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; found += r.sm.length + r.lm.length; ok++; }, function () { /* nouvel essai plus tard */ });
+      });
+    });
+    chain.then(function () {
+      autoScanBusy = false;
+      if (!ok) return;
+      rebuild(); save(); draw(); checkAchievements();
+      if (found) toast(found + " sommet(s) ou lieu(x) trouvé(s) sur tes courses.");
+      if (!Object.keys(S.communes).length) updateCommunes({ silent: true });
+    });
+  }
   function recomputeAll() {
     if (!S.activities.length) { toast("Importe d’abord une course."); return; }
     Promise.resolve(scanAllSummits(true)).then(function () { return updateCommunes({}); });
@@ -1750,6 +1793,8 @@ body.sheet-open #poicard { display: none; }
       var m = /var BUILD = "([^"]+)"/.exec(t);
       if (m && m[1] !== BUILD) toast("Une nouvelle version est disponible (" + m[1] + ") : Réglages › Mettre à jour l’appli.");
     }).catch(function () { /* hors ligne */ });
+    setTimeout(autoScan, 3000);
+    window.addEventListener("online", function () { autoScanAt = 0; autoScan(); });
     function reg() { navigator.serviceWorker.register("sw.js").catch(function () { /* hors hébergement */ }); }
     if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) { if (document.readyState === "complete") reg(); else window.addEventListener("load", reg); }
   }
@@ -1996,6 +2041,8 @@ body.sheet-open #poicard { display: none; }
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
       '<p class="note">Version de l’appli : ' + BUILD + '</p>' +
+      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (lastPoiError ? ' · dernière erreur : ' + esc(lastPoiError) : '') + '.</p>' +
+      (/claude|anthropic/i.test(location.hostname) ? '<p class="note">Cette page est un aperçu : les recherches en ligne (sommets, lieux, communes, résumés Wikipédia) y sont bloquées. Ouvre l’appli à son adresse hébergée.</p>' : '') +
       '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
       '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="sback">Retour au profil</button></div>';
