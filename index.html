@@ -307,7 +307,6 @@ body.sheet-open #poicard { display: none; }
   <button class="pill" data-per="year" aria-pressed="false">Année</button>
   <button class="pill" data-per="month" aria-pressed="false">Mois</button>
   <button class="pill" data-per="week" aria-pressed="false">Semaine</button>
-  <button class="pill" id="exploreBtn" aria-pressed="false">Explorer</button>
 </div>
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
 <div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
@@ -851,31 +850,32 @@ body.sheet-open #poicard { display: none; }
     return ["Site remarquable", "⭐"];
   }
   var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"], lastPoiError = "";
-  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1500, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve();
-  function overpassFetch(q) {   // requêtes espacées et relancées sur plusieurs serveurs : le service public limite le débit
-    var run = ovpGate.then(function () { return overpassTry(q); });
+  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1200, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve();
+  function overpassFetch(q, deadline) {   // requêtes espacées et relancées sur plusieurs serveurs ; délai maximal optionnel
+    var run = ovpGate.then(function () { return overpassTry(q, deadline); });
     function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
     ovpGate = run.then(pause, pause);
     return run;
   }
-  function overpassTry(q) {
+  function overpassTry(q, deadline) {
     var body = "data=" + encodeURIComponent(q), tries = 0;
     function attempt() {
+      if (deadline && Date.now() > deadline) throw new Error("délai dépassé");
       var url = OVERPASS[tries % OVERPASS.length], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-      var to = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : 0;
+      var to = ctl ? setTimeout(function () { ctl.abort(); }, deadline ? Math.max(3000, Math.min(20000, deadline - Date.now())) : 20000) : 0;
       return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
         .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); return j; })
         .catch(function (e) {
           clearTimeout(to); lastPoiError = (e && e.message) || "réseau"; tries++;
-          if (tries >= OVERPASS.length + 2) throw e;
-          var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * tries : 0;   // débit limité : on attend plus longtemps
-          return new Promise(function (res) { setTimeout(res, Math.min(700 * tries, OVP_GAP_MS ? 700 * tries : 0) + extra); }).then(attempt);
+          if (tries >= OVERPASS.length + 2 || (deadline && Date.now() > deadline) || lastPoiError === "délai dépassé") throw e;
+          var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * tries : 0;
+          return new Promise(function (res) { setTimeout(res, (OVP_GAP_MS ? 700 * tries : 0) + extra); }).then(attempt);
         });
     }
     return attempt();
   }
-  function fetchBatch(need) {
+  function fetchBatch(need, deadline) {
     var wp = '[~"^(wikipedia|wikidata)$"~"."]';
     var q = need.map(function (k) {
       var p = k.split("_"), la = +p[0], lo = +p[1];
@@ -885,7 +885,7 @@ body.sheet-open #poicard { display: none; }
         'nwr["tourism"~"^(attraction|viewpoint)$"]' + wp + bb +
         'nwr["natural"~"^(waterfall|cave_entrance|hot_spring|glacier)$"]' + wp + bb;
     }).join("");
-    return overpassFetch("[out:json][timeout:25];(" + q + ");out center;").then(function (j) {
+    return overpassFetch("[out:json][timeout:25];(" + q + ");out center;", deadline).then(function (j) {
       need.forEach(function (k) { peakCache.set(k, []); lmCache.set(k, []); });
       (j.elements || []).forEach(function (el) {
         var t = el.tags;
@@ -903,12 +903,12 @@ body.sheet-open #poicard { display: none; }
       });
     });
   }
-  function fetchPeaks(keys) {
+  function fetchPeaks(keys, deadline) {
     var need = keys.filter(function (k) { return !peakCache.has(k); });
     if (!need.length) return Promise.resolve();
     if (need.length > 200) return Promise.reject(new Error("trace trop étendue pour l’analyse (" + need.length + " zones)"));
     var chain = Promise.resolve();
-    for (var i = 0; i < need.length; i += 3) (function (b) { chain = chain.then(function () { return fetchBatch(b); }); })(need.slice(i, i + 3));
+    for (var i = 0; i < need.length; i += 3) (function (b) { chain = chain.then(function () { return fetchBatch(b, deadline); }); })(need.slice(i, i + 3));
     return chain;
   }
   function peaksFor(keys) { var out = []; keys.forEach(function (k) { (peakCache.get(k) || []).forEach(function (p) { out.push(p); }); }); return out; }
@@ -1013,7 +1013,8 @@ body.sheet-open #poicard { display: none; }
       if (a.lmDone && !(a.landmarks || []).length) s += '<br><span class="warn">' + (it.nearLm && it.nearLm.length ? it.nearLm.map(function (n) { return 'Presque : ' + n.ic + ' ' + esc(n.name) + ' à ' + Math.round(n.d) + ' m de la trace (limite ' + LANDMARK_REACH_M + ' m)'; }).join('<br>') : 'Aucun lieu emblématique référencé à moins de ' + LANDMARK_REACH_M + ' m de la trace.') + '</span>';
       if (it.zone) s += '<br><span class="warn">Zone analysée : ' + it.zone.p + ' sommets nommés, ' + it.zone.l + ' lieux référencés.</span>';
       if (a.sumDone && !a.summits.length) s += '<br><span class="warn">' + (it.near && it.near.length ? it.near.map(nearTxt).join("<br>") : "Aucun sommet nommé trouvé à moins de " + SUMMIT_REACH_M + " m de la trace.") + '</span>';
-      if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance « Tout recalculer » dans les Réglages.</span>';
+      if (it.scanning) s += '<br><span class="warn">Recherche des sommets et des lieux en cours… tu peux valider sans attendre.</span>';
+      else if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement, ou relance « Tout recalculer » dans les Réglages.</span>';
       if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
       if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
       return s + '</div>';
@@ -1050,11 +1051,50 @@ body.sheet-open #poicard { display: none; }
     updateCommunes({ lines: lines, silent: true });
     setTimeout(function () { autoScanAt = 0; autoScan(); }, 6000);
   }
+  var scanningSet = new Set(), analysisPriority = 0;
+  function quiet() { return new Promise(function (res) { (function w() { if (analysisPriority <= 0) res(); else setTimeout(w, 1500); })(); }); }
+  function stepUI(k, total, name, pct, label) {   // étape affichée, puis courte pause pour laisser l’écran se rafraîchir
+    var el = $("addres");
+    if (el) el.innerHTML = '<div class="result">Analyse ' + k + '/' + total + ' : ' + esc(name) + '<br><span class="warn">' + label + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>';
+    return new Promise(function (r) { setTimeout(r, 30); });
+  }
+  function announcePois(newPeaks, newLms) {
+    if (newPeaks.length) {
+      var top = newPeaks.slice().sort(function (x, y) { return (y.ele || 0) - (x.ele || 0); })[0];
+      toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
+    }
+    if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
+  }
+  function onItemScanned(it) {
+    var a = it.act;
+    if (pending && pending.items.indexOf(it) >= 0) { computePreview(); if (current === "add") render(); draw(); return; }
+    if (S.activities.indexOf(a) < 0) return;   // import annulé entre-temps
+    var knownS = new Set(reachedSet), knownL = new Set(reachedLm);
+    var newPeaks = (a.summits || []).filter(function (s) { return !knownS.has(s.id); }), newLms = (a.landmarks || []).filter(function (l) { return !knownL.has(l.id); });
+    rebuild(); save(); draw(); checkAchievements(); announcePois(newPeaks, newLms);
+  }
+  function scanItem(it) {   // sommets et lieux : recherche en arrière-plan, l’aperçu n’attend pas
+    var a = it.act, misses = [], lmMisses = [], p;
+    scanningSet.add(a); analysisPriority++;
+    try { p = findPois(a.lines, misses, lmMisses, Date.now() + 60000); } catch (e) { p = Promise.reject(e); }
+    p.then(function (r) {
+      it.zone = { p: r.np, l: r.nl }; a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; delete a.poiErr;
+    }, function (e) { a.poiErr = (e && e.message) || "échec"; }).then(function () {
+      misses.sort(function (x, y) { return x.d - y.d; }); lmMisses.sort(function (x, y) { return x.d - y.d; });
+      it.near = misses.slice(0, 3); it.nearLm = lmMisses.slice(0, 3); it.scanning = false;
+      scanningSet.delete(a); analysisPriority--;
+      onItemScanned(it);
+    });
+  }
   function importFiles(files, sportChoice, dateChoice) {
     if (!pending) pending = { items: [], errors: [], newCells: new Set() };
     var items = pending.items, errs = pending.errors, chain = Promise.resolve(), total = files.length, k = 0;
     files.forEach(function (f) {
-      chain = chain.then(function () { k++; showProgress(k, total, f.name); return readFile(f); }).then(parseAny).then(function (g) {
+      chain = chain.then(function () { k++; return stepUI(k, total, f.name, 8, "Lecture du fichier…"); })
+        .then(function () { return readFile(f); })
+        .then(function (buf) { return stepUI(k, total, f.name, 30, "Décodage de la trace…").then(function () { return parseAny(buf); }); })
+        .then(function (g) { return stepUI(k, total, f.name, 60, "Calcul des hexagones…").then(function () { return g; }); })
+        .then(function (g) {
         if (g.sport === "moteur" || isMotor(f.name + " " + g.name)) throw new Error("sport motorisé : seuls les sports sans moteur sont acceptés");
         if (g.route) throw new Error("itinéraire sans horodatage : seules les traces enregistrées sont acceptées");
         if (g.pts.length < 2) throw new Error("aucun point de trace");
@@ -1073,12 +1113,9 @@ body.sheet-open #poicard { display: none; }
         var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
         if (dup) throw new Error("déjà importée");
         var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false };
-        var misses = [], lmMisses = [], zone = null;
-        return findPois(b.lines, misses, lmMisses).then(function (r) { zone = { p: r.np, l: r.nl }; act.summits = r.sm; act.landmarks = r.lm; act.sumDone = true; act.lmDone = true; act.poiV = 2; }, function () { /* hors ligne */ }).then(function () {
-          misses.sort(function (x, y) { return x.d - y.d; });
-          lmMisses.sort(function (x, y) { return x.d - y.d; });
-          items.push({ act: act, file: f.name, near: misses.slice(0, 3), nearLm: lmMisses.slice(0, 3), zone: zone });
-        });
+        var it = { act: act, file: f.name, near: [], nearLm: [], zone: null, scanning: true };
+        items.push(it);
+        scanItem(it);
       }).catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
     });
     return chain.then(function () {
@@ -1137,7 +1174,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v23";
+  var BUILD = "25/10/2026 · v25";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1210,9 +1247,9 @@ body.sheet-open #poicard { display: none; }
     });
     return out;
   }
-  function findPois(lines, misses, lmMisses) {
+  function findPois(lines, misses, lmMisses, deadline) {
     var keys = tileKeysOf(lines);
-    return fetchPeaks(keys).then(function () { return { sm: detectSummits(lines, peaksFor(keys), misses), lm: detectLandmarks(lines, lmFor(keys), lmMisses), np: peaksFor(keys).length, nl: lmFor(keys).length }; });
+    return fetchPeaks(keys, deadline).then(function () { return { sm: detectSummits(lines, peaksFor(keys), misses), lm: detectLandmarks(lines, lmFor(keys), lmMisses), np: peaksFor(keys).length, nl: lmFor(keys).length }; });
   }
   function landmarkList() {
     var m = new Map();
@@ -1718,13 +1755,13 @@ body.sheet-open #poicard { display: none; }
   }
   function analyzeActivity(a) {   // ne lève jamais d’exception : une course défaillante ne bloque pas les suivantes
     try {
-      return findPois(a.lines || []).then(function (r) {
+      return findPois(a.lines || [], null, null, Date.now() + 120000).then(function (r) {
         a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; delete a.poiErr;
         return { ok: true, ns: r.sm.length, nl: r.lm.length };
       }, function (e) { a.poiErr = (e && e.message) || "échec"; return { ok: false }; });
     } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false }); }
   }
-  function pendingAnalysis() { return S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }); }
+  function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2) && !scanningSet.has(a); }); }
   function poiFailText() {
     var f = S.activities.filter(function (a) { return a.poiErr && pendingAnalysis().indexOf(a) >= 0; });
     return f.length ? " · " + f.length + " en échec (" + esc(f[0].poiErr) + ")" : "";
@@ -1732,13 +1769,14 @@ body.sheet-open #poicard { display: none; }
   var autoScanBusy = false, autoScanAt = 0, autoScanTry = 0;
   function autoScan(force) {   // rattrapage automatique, avec nouvel essai tant qu’il reste des courses non analysées
     if (autoScanBusy || (typeof navigator.onLine === "boolean" && !navigator.onLine)) return;
+    if (analysisPriority > 0) { setTimeout(function () { autoScan(force); }, 4000); return; }   // un import est en cours : il passe en priorité
     if (force !== true && Date.now() - autoScanAt < 60000) return;
     var todo = pendingAnalysis();
     if (!todo.length) { autoScanTry = 0; return; }
     autoScanAt = Date.now(); autoScanBusy = true;
     var found = 0, ok = 0, chain = Promise.resolve();
     todo.forEach(function (a) {
-      chain = chain.then(function () { return analyzeActivity(a); }).then(function (r) { if (r.ok) { ok++; found += r.ns + r.nl; } });
+      chain = chain.then(function () { return quiet(); }).then(function () { return analyzeActivity(a); }).then(function (r) { if (r.ok) { ok++; found += r.ns + r.nl; } });
     });
     chain.catch(function () { /* ignoré */ }).then(function () {
       autoScanBusy = false;
@@ -1819,12 +1857,6 @@ body.sheet-open #poicard { display: none; }
       periodF = b.dataset.per; refreshDisp(); draw();
       document.querySelectorAll("#mapbar [data-per]").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
     });
-  });
-  $("exploreBtn").addEventListener("click", function () {
-    exploreOn = !exploreOn; this.setAttribute("aria-pressed", exploreOn ? "true" : "false");
-    exploreInfo.key = ""; exploreErr = false;
-    if (exploreOn && view.z < 11.5) toast("Zoome sur ta région pour voir les sommets et les hexagones à explorer.");
-    draw();
   });
   var downPt = null;
   cv.addEventListener("pointerdown", function (e) { downPt = [e.clientX, e.clientY]; });
@@ -2201,7 +2233,7 @@ body.sheet-open #poicard { display: none; }
         demo.push({ p: [45.9 + r * 0.72 * Math.sin(a) + rnd() * 0.00006, 6.13 + r * Math.cos(a) + rnd() * 0.00008], t: null });
       }
       var b = buildLines(demo, 60);
-      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines });
+      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines, summits: [], landmarks: [], sumDone: true, lmDone: true, poiV: 2 });   // exemple : aucune recherche en ligne
     }
     resize(); rebuild(); checkAchievements(true); initExtras();
     if (S.activities.length) fitAll(); else draw();
