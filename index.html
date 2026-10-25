@@ -183,6 +183,8 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .bars .bar:nth-child(even) i { background: var(--pink); }
 .seg { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .seg button { padding: 7px 14px; border-radius: 999px; border: 3px solid var(--outline); background: var(--panel); font-size: 14px; font-weight: 600; color: var(--ink); }
+.seg4 { flex-wrap: nowrap; gap: 6px; }
+.seg4 button { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 2px 2px 0 var(--outline); }
 .banner { font-size: 13px; font-weight: 500; background: var(--k2); border: 2.5px dashed var(--outline); border-radius: 14px; padding: 8px 12px; color: var(--ink); margin-bottom: 12px; line-height: 1.4; }
 .rank-n { width: 28px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -240,8 +242,6 @@ body.sheet-open #mapbar { display: none; }
 #searchbar .btn { width: auto; padding: 8px 18px; }
 #dropzone { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(43, 31, 74, 0.6); color: #fff; font-size: 24px; font-weight: 700; text-align: center; padding: 24px; }
 #dropzone[hidden] { display: none; }
-#aggtag { left: 10px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 40px); }
-#aggtag[hidden] { display: none; }
 /* ---- défis, succès, sommets ---- */
 .goal { padding: 10px 0; border-top: 2px dashed color-mix(in srgb, var(--outline) 28%, transparent); }
 .goal:first-of-type { border-top: 0; }
@@ -299,7 +299,6 @@ body.sheet-open #poicard { display: none; }
 </div>
 <div class="float tag" id="scalebar"></div>
 <div class="float tag" id="attr"></div>
-<div class="float tag" id="aggtag" hidden></div>
 <div class="float" id="poicard" hidden role="dialog" aria-label="Fiche du lieu"></div>
 <div class="float" id="mapbar" role="toolbar" aria-label="Filtres de la carte">
   <button class="pill" data-per="all" aria-pressed="true">Tout</button>
@@ -733,7 +732,7 @@ body.sheet-open #poicard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    if (ag.wAgg > 0) drawAgg(ag, onImg); else $("aggtag").hidden = true;
+    if (ag.wAgg > 0) drawAgg(ag, onImg);
     drawOverlays();
     if (selected !== null) {
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
@@ -802,7 +801,7 @@ body.sheet-open #poicard { display: none; }
   /* ================= sommets : bonus d’exploration ================= */
   var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 100, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 60, SUMMIT_ALT_TOL = 70;
   var peakCache = new Map(), diskCache = new Map(), reachedSet = new Set(), lmCache = new Map(), reachedLm = new Set();
-  var LANDMARK_BASE_M = 50, LANDMARK_BONUS_M = 50, LANDMARK_R = LANDMARK_BASE_M + LANDMARK_BONUS_M, LANDMARK_REACH_M = 60;
+  var LANDMARK_BASE_M = 50, LANDMARK_BONUS_M = 100, LANDMARK_R = LANDMARK_BASE_M + LANDMARK_BONUS_M, LANDMARK_REACH_M = 60;
   function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : String(k); }
   function summitRadius(ele) { return SUMMIT_BASE_M + SUMMIT_BONUS_M * Math.floor(Math.max(0, ele || 0) / SUMMIT_ALT_STEP); }
   function summitCells(lat, lng, r) {
@@ -959,9 +958,9 @@ body.sheet-open #poicard { display: none; }
   function computePreview() {
     var seen = new Set(), all = new Set();
     pending.items.forEach(function (it) {
-      var n = 0;
-      actCells(it.act).forEach(function (c) { if (!cells.has(c) && !seen.has(c)) { seen.add(c); all.add(c); n++; } });
-      it.newCells = n;
+      var n = 0, b = 0, base = cellsOfLines(it.act.lines, S.rad);
+      actCells(it.act).forEach(function (c) { if (!cells.has(c) && !seen.has(c)) { seen.add(c); all.add(c); n++; if (!base.has(c)) b++; } });
+      it.newCells = n; it.bonusCells = b;
     });
     pending.newCells = all;
   }
@@ -974,9 +973,12 @@ body.sheet-open #poicard { display: none; }
     var tot = 0, h = pending.items.map(function (it) {
       var a = it.act; tot += it.newCells;
       var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km · ' + sl(a.sport) +
-        '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>';
+        '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
+        (it.bonusCells ? '<br><span class="peak">dont ' + fmt(it.bonusCells, 0) + ' hexagones bonus (' + fmtKm2(it.bonusCells * AREA_M2 / 1e6) + ' km²) autour des sommets et lieux</span>' : '');
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
       (a.landmarks || []).forEach(function (l) { s += '<br><span class="peak">' + l.ic + ' ' + esc(l.name) + ' · ' + esc(l.kind) + ' · cercle de ' + l.r + ' m</span>'; });
+      if (a.lmDone && !(a.landmarks || []).length) s += '<br><span class="warn">' + (it.nearLm && it.nearLm.length ? it.nearLm.map(function (n) { return 'Presque : ' + n.ic + ' ' + esc(n.name) + ' à ' + Math.round(n.d) + ' m de la trace (limite ' + LANDMARK_REACH_M + ' m)'; }).join('<br>') : 'Aucun lieu emblématique référencé à moins de ' + LANDMARK_REACH_M + ' m de la trace.') + '</span>';
+      if (it.zone) s += '<br><span class="warn">Zone analysée : ' + it.zone.p + ' sommets nommés, ' + it.zone.l + ' lieux référencés.</span>';
       if (a.sumDone && !a.summits.length) s += '<br><span class="warn">' + (it.near && it.near.length ? it.near.map(nearTxt).join("<br>") : "Aucun sommet nommé trouvé à moins de " + SUMMIT_REACH_M + " m de la trace.") + '</span>';
       if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (réseau indisponible) : relance « Tout recalculer » dans les Réglages.</span>';
       if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
@@ -1037,10 +1039,11 @@ body.sheet-open #poicard { display: none; }
         var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
         if (dup) throw new Error("déjà importée");
         var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false };
-        var misses = [];
-        return findPois(b.lines, misses).then(function (r) { act.summits = r.sm; act.landmarks = r.lm; act.sumDone = true; act.lmDone = true; act.poiV = 2; }, function () { /* hors ligne */ }).then(function () {
+        var misses = [], lmMisses = [], zone = null;
+        return findPois(b.lines, misses, lmMisses).then(function (r) { zone = { p: r.np, l: r.nl }; act.summits = r.sm; act.landmarks = r.lm; act.sumDone = true; act.lmDone = true; act.poiV = 2; }, function () { /* hors ligne */ }).then(function () {
           misses.sort(function (x, y) { return x.d - y.d; });
-          items.push({ act: act, file: f.name, near: misses.slice(0, 3) });
+          lmMisses.sort(function (x, y) { return x.d - y.d; });
+          items.push({ act: act, file: f.name, near: misses.slice(0, 3), nearLm: lmMisses.slice(0, 3), zone: zone });
         });
       }).catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
     });
@@ -1100,7 +1103,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v15";
+  var BUILD = "25/10/2026 · v19";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1149,9 +1152,6 @@ body.sheet-open #poicard { display: none; }
       ctx.globalAlpha = (onImg ? 0.35 : 0.5) * ag.wAgg; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    var tg = $("aggtag"), km2 = h3.getHexagonAreaAvg(ag.res, "km2");
-    tg.hidden = ag.wAgg < 0.5;
-    tg.textContent = "Vue agrégée · 1 hexagone ≈ " + (km2 < 10 ? fmt(km2, 1) : fmt(km2, 0)) + " km²";
   }
   function lmFor(keys) { var out = []; keys.forEach(function (k) { (lmCache.get(k) || []).forEach(function (l) { out.push(l); }); }); return out; }
   function trackDist(lines, lat, lng) {
@@ -1167,17 +1167,18 @@ body.sheet-open #poicard { display: none; }
     });
     return best;
   }
-  function detectLandmarks(lines, lms) {
+  function detectLandmarks(lines, lms, misses) {
     var out = [];
     lms.forEach(function (l) {
       var b = trackDist(lines, l.lat, l.lng);
       if (b && b.d <= LANDMARK_REACH_M) out.push({ id: l.id, name: l.name, lat: l.lat, lng: l.lng, kind: l.kind, ic: l.ic, r: LANDMARK_R, wp: l.wp || "", wd: l.wd || "" });
+      else if (b && misses && b.d <= 200) misses.push({ name: l.name, d: b.d, ic: l.ic });
     });
     return out;
   }
-  function findPois(lines, misses) {
+  function findPois(lines, misses, lmMisses) {
     var keys = tileKeysOf(lines);
-    return fetchPeaks(keys).then(function () { return { sm: detectSummits(lines, peaksFor(keys), misses), lm: detectLandmarks(lines, lmFor(keys)) }; });
+    return fetchPeaks(keys).then(function () { return { sm: detectSummits(lines, peaksFor(keys), misses), lm: detectLandmarks(lines, lmFor(keys), lmMisses), np: peaksFor(keys).length, nl: lmFor(keys).length }; });
   }
   function landmarkList() {
     var m = new Map();
@@ -1268,8 +1269,8 @@ body.sheet-open #poicard { display: none; }
   function goToPoi(it) {   // depuis la liste : retour sur la carte, centré sur le sommet ou le lieu
     if (!it || it.lat === undefined || it.lng === undefined) { toast("Position inconnue : lance « Tout recalculer » dans les Réglages."); return; }
     closeSheet(); closePoiCard(); selected = null;
-    focusPoi = { lat: it.lat, lng: it.lng, sticky: false, t0: Date.now() };
-    flyTo(mercX(it.lng), mercY(it.lat), Math.max(view.z, 16));
+    if (!it.zoom) focusPoi = { lat: it.lat, lng: it.lng, sticky: false, t0: Date.now() };   // anneau de repérage pour un sommet ou un lieu
+    flyTo(mercX(it.lng), mercY(it.lat), it.zoom || Math.max(view.z, 16));
   }
   function loadCardInfo(key, it) {
     var el = $("poicard-info");
@@ -1321,10 +1322,24 @@ body.sheet-open #poicard { display: none; }
       '<div class="poi-act"><button class="linkbtn" data-go="' + key + '">📍 Carte</button><button class="linkbtn" data-info="' + key + '">Infos</button><a class="linkbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
       '<div class="poi-info" id="info-' + key + '" hidden></div></div>';
   }
+  function communeCard(c) {
+    var key = "c" + String(c.code).replace(/\W/g, ""), pct = Math.max(2, Math.min(100, c.pct)), km2 = c.found * AREA_M2 / 1e6, info = [];
+    poiIdx[key] = { id: c.code, name: c.nom, lat: c.lat, lng: c.lng, zoom: 12 };
+    if (c.pop) info.push("Population : " + fmt(c.pop, 0) + " hab.");
+    if (c.ha) info.push("Superficie : " + fmt(c.ha / 100, c.ha < 1000 ? 1 : 0) + " km²");
+    if (c.dep) info.push("Département " + esc(c.dep));
+    var go = c.lat !== undefined ? '<button class="linkbtn" data-go="' + key + '">📍 Carte</button>' : "";
+    var url = "https://fr.wikipedia.org/w/index.php?search=" + encodeURIComponent(c.nom + (c.dep ? " " + c.dep : ""));
+    return '<div class="poi"><div class="poi-top"><span class="t">🏘️ ' + esc(c.nom) + '</span><span class="v">' + fmt(c.pct, c.pct < 10 ? 1 : 0) + '<small>%</small></span></div>' +
+      '<div class="bar-track" style="margin-top:6px"><div class="bar-fill" style="width:' + pct.toFixed(0) + '%"></div></div>' +
+      '<div class="s">' + fmt(c.found, 0) + ' / ' + fmt(c.total, 0) + ' hexagones · ' + fmtKm2(km2) + ' km² découverts</div>' +
+      (info.length ? '<div class="s">' + info.join(" · ") + '</div>' : "") +
+      '<div class="poi-act">' + go + '<a class="linkbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div></div>';
+  }
   function viewGoals() {
     poiIdx = {};
     var st = statsNow(), h = "";
-    h += '<div class="seg">' + [["succes", "Succès"], ["sommets", "Sommets"], ["lieux", "Lieux remarquables"]].map(function (it) {
+    h += '<div class="seg seg4">' + [["succes", "Succès"], ["sommets", "Sommets"], ["lieux", "Lieux"], ["communes", "Communes"]].map(function (it) {
       return '<button data-succ="' + it[0] + '" aria-pressed="' + (succTab === it[0]) + '">' + it[1] + '</button>';
     }).join("") + '</div>';
     var legacy = S.activities.some(function (a) { return a.poiV !== 2 && ((a.summits || []).length || (a.landmarks || []).length); });
@@ -1349,17 +1364,18 @@ body.sheet-open #poicard { display: none; }
       });
       return h + legacyNote;
     }
+    if (succTab === "communes") {
+      var cs = Object.keys(S.communes).map(function (k) { var c = S.communes[k]; c.code = k; return c; }).sort(function (a, b) { return b.pct - a.pct; });
+      h += '<h3>Communes explorées (' + cs.length + ')</h3>';
+      if (!cs.length) h += '<div class="empty-line">Aucune commune pour l’instant. Elles se calculent automatiquement à chaque course ajoutée (France, connexion requise).</div>';
+      cs.forEach(function (c) { h += communeCard(c); });
+      h += '<p class="note">Calcul automatique à chaque course ajoutée, avec les contours officiels des communes (geo.api.gouv.fr). Le total est une estimation (surface de la commune divisée par la surface d’un hexagone). « Tout recalculer » dans les Réglages relance l’ensemble et complète les fiches déjà calculées.</p>';
+      return h;
+    }
     var done = ACH.filter(function (a) { return a.ok(st); }).length;
     h += '<h3>Succès (' + done + '/' + ACH.length + ')</h3><div class="badges">' + ACH.map(function (a) {
       return '<div class="badge ' + (a.ok(st) ? "on" : "off") + '"><span class="ic">' + a.ic + '</span><b>' + esc(a.name) + '</b><small>' + esc(a.desc) + '</small></div>';
     }).join("") + '</div>';
-    h += '<h3>Communes explorées (France)</h3>';
-    var cs = Object.keys(S.communes).map(function (k) { return S.communes[k]; }).sort(function (a, b) { return b.pct - a.pct; });
-    if (!cs.length) h += '<div class="empty-line">Pas encore calculé.</div>';
-    cs.forEach(function (c) {
-      h += '<div class="row"><span class="main"><span class="t" style="display:block">' + esc(c.nom) + '</span><span class="s" style="display:block">' + fmt(c.found, 0) + ' / ' + fmt(c.total, 0) + ' hexagones</span></span><span class="v">' + fmt(c.pct, c.pct < 10 ? 1 : 0) + '<small>%</small></span></div>';
-    });
-    h += '<p class="note">Calcul automatique à chaque course ajoutée, avec les contours officiels des communes (geo.api.gouv.fr) : connexion requise, France uniquement. Le total est une estimation (surface de la commune divisée par la surface d’un hexagone). « Tout recalculer » dans les Réglages relance l’ensemble.</p>';
     return h;
   }
   function runReveal(ids, ms, tick, onEnd) {
@@ -1571,7 +1587,7 @@ body.sheet-open #poicard { display: none; }
     for (var k = 1; k < poly.length; k++) t -= ar(poly[k]);
     return t;
   }
-  function communeStats(nom, polys) {
+  function communeStats(nom, polys, props) {
     var total = 0, minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, found = 0;
     polys.forEach(function (poly) {
       total += polyAreaM2(poly);
@@ -1583,7 +1599,7 @@ body.sheet-open #poicard { display: none; }
       for (var i = 0; i < polys.length; i++) { if (inPoly(c[0], c[1], polys[i])) { found++; return; } }
     });
     var tot = Math.max(1, Math.round(total / AREA_M2));
-    return { nom: nom, found: found, total: tot, pct: Math.min(100, found / tot * 100) };
+    return { nom: nom, found: found, total: tot, pct: Math.min(100, found / tot * 100), lat: (minLat + maxLat) / 2, lng: (minLng + maxLng) / 2, pop: (props && props.population) || 0, ha: (props && props.surface) || 0, dep: (props && props.codeDepartement) || "" };
   }
   var communesBusy = false;
   function updateCommunes(opts) {
@@ -1599,7 +1615,7 @@ body.sheet-open #poicard { display: none; }
         if (calls >= 40) return;
         for (var i = 0; i < polysDone.length; i++) { for (var j = 0; j < polysDone[i].length; j++) { if (inPoly(p[0], p[1], polysDone[i][j])) return; } }
         calls++;
-        return fetch("https://geo.api.gouv.fr/communes?lat=" + p[0].toFixed(5) + "&lon=" + p[1].toFixed(5) + "&fields=nom,code&format=geojson&geometry=contour")
+        return fetch("https://geo.api.gouv.fr/communes?lat=" + p[0].toFixed(5) + "&lon=" + p[1].toFixed(5) + "&fields=nom,code,codeDepartement,population,surface&format=geojson&geometry=contour")
           .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
           .then(function (j) {
             var f = j && j.features && j.features[0];
@@ -1608,7 +1624,7 @@ body.sheet-open #poicard { display: none; }
             if (!polys.length) return;
             polysDone.push(polys); okN++;
             var code = f.properties.code, isNew = !S.communes[code];
-            S.communes[code] = communeStats(f.properties.nom, polys);
+            S.communes[code] = communeStats(f.properties.nom, polys, f.properties);
             if (isNew) fresh.push(f.properties.nom);
           }).catch(function () { /* hors France ou réseau : ignoré */ });
       });
@@ -1619,6 +1635,13 @@ body.sheet-open #poicard { display: none; }
       if (opts.silent) { if (fresh.length) toast("Nouvelle commune explorée : " + fresh[0] + (fresh.length > 1 ? " (+" + (fresh.length - 1) + ")" : "") + "."); }
       else toast(okN ? "Communes mises à jour." : "Communes indisponibles (réseau ou zone hors France).");
     });
+  }
+  function forceUpdate() {
+    toast("Mise à jour en cours…");
+    var tasks = [];
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) tasks.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); }));
+    if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
+    Promise.all(tasks).catch(function () { /* ignoré */ }).then(function () { location.replace(location.pathname + "?maj=" + Date.now()); });
   }
   function recomputeAll() {
     if (!S.activities.length) { toast("Importe d’abord une course."); return; }
@@ -1718,6 +1741,10 @@ body.sheet-open #poicard { display: none; }
   function initExtras() {
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
     if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
+    if (/^https?:$/.test(location.protocol)) fetch(location.pathname, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
+      var m = /var BUILD = "([^"]+)"/.exec(t);
+      if (m && m[1] !== BUILD) toast("Une nouvelle version est disponible (" + m[1] + ") : Réglages › Mettre à jour l’appli.");
+    }).catch(function () { /* hors ligne */ });
     function reg() { navigator.serviceWorker.register("sw.js").catch(function () { /* hors hébergement */ }); }
     if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) { if (document.readyState === "complete") reg(); else window.addEventListener("load", reg); }
   }
@@ -1958,6 +1985,7 @@ body.sheet-open #poicard { display: none; }
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
       '<p class="note">À utiliser si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap, ou pour corriger les surfaces de communes. Les nouvelles courses sont analysées automatiquement.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
@@ -2010,6 +2038,7 @@ body.sheet-open #poicard { display: none; }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
     $("scanpk").addEventListener("click", recomputeAll);
+    $("updapp").addEventListener("click", forceUpdate);
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
