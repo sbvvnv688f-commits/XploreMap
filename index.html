@@ -851,7 +851,14 @@ body.sheet-open #poicard { display: none; }
     return ["Site remarquable", "⭐"];
   }
   var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"], lastPoiError = "";
-  function overpassFetch(q) {   // plusieurs serveurs et plusieurs essais : le serveur principal refuse parfois les requêtes
+  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1500, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve();
+  function overpassFetch(q) {   // requêtes espacées et relancées sur plusieurs serveurs : le service public limite le débit
+    var run = ovpGate.then(function () { return overpassTry(q); });
+    function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
+    ovpGate = run.then(pause, pause);
+    return run;
+  }
+  function overpassTry(q) {
     var body = "data=" + encodeURIComponent(q), tries = 0;
     function attempt() {
       var url = OVERPASS[tries % OVERPASS.length], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -861,11 +868,12 @@ body.sheet-open #poicard { display: none; }
         .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); return j; })
         .catch(function (e) {
           clearTimeout(to); lastPoiError = (e && e.message) || "réseau"; tries++;
-          if (tries >= OVERPASS.length + 1) throw e;
-          return new Promise(function (res) { setTimeout(res, 700 * tries); }).then(attempt);
+          if (tries >= OVERPASS.length + 2) throw e;
+          var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * tries : 0;   // débit limité : on attend plus longtemps
+          return new Promise(function (res) { setTimeout(res, Math.min(700 * tries, OVP_GAP_MS ? 700 * tries : 0) + extra); }).then(attempt);
         });
     }
-    return attempt().then(function (j) { lastPoiError = ""; return j; });
+    return attempt();
   }
   function fetchBatch(need) {
     var wp = '[~"^(wikipedia|wikidata)$"~"."]';
@@ -898,7 +906,7 @@ body.sheet-open #poicard { display: none; }
   function fetchPeaks(keys) {
     var need = keys.filter(function (k) { return !peakCache.has(k); });
     if (!need.length) return Promise.resolve();
-    if (need.length > 80) return Promise.reject(new Error("zone trop étendue"));
+    if (need.length > 200) return Promise.reject(new Error("trace trop étendue pour l’analyse (" + need.length + " zones)"));
     var chain = Promise.resolve();
     for (var i = 0; i < need.length; i += 3) (function (b) { chain = chain.then(function () { return fetchBatch(b); }); })(need.slice(i, i + 3));
     return chain;
@@ -953,9 +961,7 @@ body.sheet-open #poicard { display: none; }
     if (!todo.length) { toast("Toutes tes courses ont déjà été analysées."); return; }
     toast("Recherche des sommets et des lieux en cours…");
     todo.forEach(function (a) {
-      chain = chain.then(function () {
-        return findPois(a.lines).then(function (r) { a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; nS += r.sm.length; nL += r.lm.length; }, function () { failed++; });
-      });
+      chain = chain.then(function () { return analyzeActivity(a); }).then(function (r) { if (r.ok) { nS += r.ns; nL += r.nl; } else failed++; });
     });
     return chain.then(function () {
       rebuild(); save(); draw(); checkAchievements();
@@ -1131,7 +1137,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v22";
+  var BUILD = "25/10/2026 · v23";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1688,6 +1694,7 @@ body.sheet-open #poicard { display: none; }
       var done = S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length;
       rows.push("— Version : " + BUILD + " · hôte : " + location.hostname + " · en ligne : " + (navigator.onLine !== false ? "oui" : "non"));
       rows.push("— Courses analysées : " + done + " / " + S.activities.length + (lastPoiError ? " · dernière erreur : " + lastPoiError : ""));
+      S.activities.filter(function (a) { return a.poiErr; }).slice(0, 5).forEach(function (a) { rows.push("— Échec : " + a.name + " (" + a.date + ") : " + a.poiErr); });
       rows.push("— Sommets : " + summitList().length + " · lieux : " + landmarkList().length);
       rows.push("— Navigateur : " + String(navigator.userAgent).slice(0, 90));
       rows.push("(touche ce rapport pour le copier)");
@@ -1698,7 +1705,7 @@ body.sheet-open #poicard { display: none; }
   function poiStatusHTML(n) {
     var tot = S.activities.length, done = S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length;
     if (!tot || (n > 0 && done === tot)) return "";
-    return '<p class="note">Courses analysées pour les sommets et les lieux : ' + done + ' / ' + tot + (lastPoiError ? ' · dernière erreur : ' + esc(lastPoiError) : '') + '. ' +
+    return '<p class="note">Courses analysées pour les sommets et les lieux : ' + done + ' / ' + tot + (done < tot ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '. ' +
       (done < tot ? 'L’analyse reprend automatiquement tant que la connexion le permet.' : 'Aucun sommet nommé ni lieu référencé trouvé à moins de ' + SUMMIT_REACH_M + ' m de tes traces.') +
       '</p><button class="btn ghost block" id="rescanBtn">Relancer l’analyse maintenant</button>';
   }
@@ -1709,25 +1716,35 @@ body.sheet-open #poicard { display: none; }
     if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
     Promise.all(tasks).catch(function () { /* ignoré */ }).then(function () { location.replace(location.pathname + "?maj=" + Date.now()); });
   }
-  var autoScanBusy = false, autoScanAt = 0;
-  function autoScan() {   // rattrapage automatique : courses jamais analysées ou dont l’analyse a échoué
+  function analyzeActivity(a) {   // ne lève jamais d’exception : une course défaillante ne bloque pas les suivantes
+    try {
+      return findPois(a.lines || []).then(function (r) {
+        a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; delete a.poiErr;
+        return { ok: true, ns: r.sm.length, nl: r.lm.length };
+      }, function (e) { a.poiErr = (e && e.message) || "échec"; return { ok: false }; });
+    } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false }); }
+  }
+  function pendingAnalysis() { return S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }); }
+  function poiFailText() {
+    var f = S.activities.filter(function (a) { return a.poiErr && pendingAnalysis().indexOf(a) >= 0; });
+    return f.length ? " · " + f.length + " en échec (" + esc(f[0].poiErr) + ")" : "";
+  }
+  var autoScanBusy = false, autoScanAt = 0, autoScanTry = 0;
+  function autoScan(force) {   // rattrapage automatique, avec nouvel essai tant qu’il reste des courses non analysées
     if (autoScanBusy || (typeof navigator.onLine === "boolean" && !navigator.onLine)) return;
-    if (Date.now() - autoScanAt < 600000) return;
-    var todo = S.activities.filter(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; });
-    if (!todo.length) return;
+    if (force !== true && Date.now() - autoScanAt < 60000) return;
+    var todo = pendingAnalysis();
+    if (!todo.length) { autoScanTry = 0; return; }
     autoScanAt = Date.now(); autoScanBusy = true;
     var found = 0, ok = 0, chain = Promise.resolve();
     todo.forEach(function (a) {
-      chain = chain.then(function () {
-        return findPois(a.lines).then(function (r) { a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; found += r.sm.length + r.lm.length; ok++; }, function () { /* nouvel essai plus tard */ });
-      });
+      chain = chain.then(function () { return analyzeActivity(a); }).then(function (r) { if (r.ok) { ok++; found += r.ns + r.nl; } });
     });
-    chain.then(function () {
+    chain.catch(function () { /* ignoré */ }).then(function () {
       autoScanBusy = false;
-      if (!ok) return;
-      rebuild(); save(); draw(); checkAchievements();
-      if (found) toast(found + " sommet(s) ou lieu(x) trouvé(s) sur tes courses.");
-      if (!Object.keys(S.communes).length) updateCommunes({ silent: true });
+      if (ok) { rebuild(); draw(); checkAchievements(); if (found) toast(found + " sommet(s) ou lieu(x) trouvé(s) sur tes courses."); if (!Object.keys(S.communes).length) updateCommunes({ silent: true }); }
+      save();
+      if (pendingAnalysis().length && autoScanTry < 6) { autoScanTry++; setTimeout(function () { autoScan(true); }, AUTO_RETRY_MS * autoScanTry); }
     });
   }
   function recomputeAll() {
@@ -2082,7 +2099,7 @@ body.sheet-open #poicard { display: none; }
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
       '<p class="note">Version de l’appli : ' + BUILD + '</p>' +
-      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (lastPoiError ? ' · dernière erreur : ' + esc(lastPoiError) : '') + '.</p>' +
+      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.</p>' +
       (/claude|anthropic/i.test(location.hostname) ? '<p class="note">Cette page est un aperçu : les recherches en ligne (sommets, lieux, communes, résumés Wikipédia) y sont bloquées. Ouvre l’appli à son adresse hébergée.</p>' : '') +
       '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
       '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
