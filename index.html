@@ -579,24 +579,29 @@ body.sheet-open #poicard { display: none; }
   }
 
   /* ================= lignes -> hexagones ================= */
-  function cellsOfLines(lines, rad) {
-    var out = new Set(), prev = null;
-    function put(c) {
-      if (rad > 0) { var a = h3.gridDisk(c, rad); for (var k = 0; k < a.length; k++) out.add(a[k]); }
-      else out.add(c);
-    }
-    function add(lat, lng) {
-      var c = h3.latLngToCell(lat, lng, RES);
-      if (c === prev) return;
-      if (prev && !h3.areNeighborCells(prev, c)) { try { h3.gridPathCells(prev, c).forEach(put); } catch (e) { /* pentagone */ } }
-      put(c); prev = c;
+  var DISCOVERY_R_M = 50, centerCache = new Map();
+  function centerOf(c) {
+    var v = centerCache.get(c);
+    if (!v) { if (centerCache.size > 300000) centerCache.clear(); v = h3.cellToLatLng(c); centerCache.set(c, v); }
+    return v;
+  }
+  function cellsOfLines(lines, rad) {   // hexagones dont le centre est à moins de DISCOVERY_R_M mètres de la trace
+    var out = new Set(), R2 = DISCOVERY_R_M * DISCOVERY_R_M, curCell = null, cand = null;
+    function point(lat, lng) {
+      var c0 = h3.latLngToCell(lat, lng, RES);
+      if (c0 !== curCell) { curCell = c0; cand = h3.gridDisk(c0, 1).map(function (id) { return { id: id, c: centerOf(id) }; }); }
+      out.add(c0);
+      var kx = 111320 * Math.cos(lat * Math.PI / 180), ky = 110540;
+      for (var k = 0; k < cand.length; k++) {
+        var dx = (cand[k].c[1] - lng) * kx, dy = (cand[k].c[0] - lat) * ky;
+        if (dx * dx + dy * dy <= R2) out.add(cand[k].id);
+      }
     }
     lines.forEach(function (ln) {
-      prev = null;
-      add(ln[0][0], ln[0][1]);
+      point(ln[0][0], ln[0][1]);
       for (var i = 1; i < ln.length; i++) {
-        var a = ln[i - 1], b = ln[i], n = Math.max(1, Math.ceil(haversine(a, b) / STEP_M));
-        for (var s = 1; s <= n; s++) { var f = s / n; add(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f); }
+        var a = ln[i - 1], b = ln[i], n = Math.max(1, Math.ceil(haversine(a, b) / 10));
+        for (var st = 1; st <= n; st++) { var f = st / n; point(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f); }
       }
     });
     return out;
@@ -1103,7 +1108,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v19";
+  var BUILD = "25/10/2026 · v20";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
