@@ -266,6 +266,14 @@ body.sheet-open #mapbar { display: none; }
 .linkbtn { display: inline-block; padding: 5px 12px; border: 2.5px solid var(--outline); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 13px; font-weight: 600; text-decoration: none; box-shadow: 2px 2px 0 var(--outline); cursor: pointer; }
 a.linkbtn { background: var(--accent); color: var(--on-accent); }
 .poi-info { margin-top: 8px; font-size: 14px; line-height: 1.4; }
+.poi-go { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; width: 100%; padding: 0; margin: 0; background: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+#poicard { left: 12px; right: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 14px); padding: 12px 14px; max-height: 42vh; overflow-y: auto; background: var(--panel); border: 3px solid var(--outline); border-radius: 18px; box-shadow: 4px 4px 0 var(--outline); z-index: 9; }
+#poicard[hidden] { display: none; }
+body.sheet-open #poicard { display: none; }
+.pc-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.pc-t { font-weight: 700; font-size: 17px; }
+.pc-x { flex: none; width: 34px; height: 34px; border-radius: 999px; border: 2.5px solid var(--outline); background: var(--panel); color: var(--ink); font-size: 16px; font-weight: 700; cursor: pointer; }
+.pc-s { font-size: 13px; color: var(--muted); margin-top: 3px; }
 .poi-info[hidden] { display: none; }
 .warn { font-size: 13px; color: var(--muted); }
 </style>
@@ -292,6 +300,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
 <div class="float tag" id="scalebar"></div>
 <div class="float tag" id="attr"></div>
 <div class="float tag" id="aggtag" hidden></div>
+<div class="float" id="poicard" hidden role="dialog" aria-label="Fiche du lieu"></div>
 <div class="float" id="mapbar" role="toolbar" aria-label="Filtres de la carte">
   <button class="pill" data-per="all" aria-pressed="true">Tout</button>
   <button class="pill" data-per="year" aria-pressed="false">Année</button>
@@ -793,7 +802,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   /* ================= sommets : bonus d’exploration ================= */
   var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 100, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 60, SUMMIT_ALT_TOL = 70;
   var peakCache = new Map(), diskCache = new Map(), reachedSet = new Set(), lmCache = new Map(), reachedLm = new Set();
-  var LANDMARK_R = 50, LANDMARK_REACH_M = 60;
+  var LANDMARK_BASE_M = 50, LANDMARK_BONUS_M = 50, LANDMARK_R = LANDMARK_BASE_M + LANDMARK_BONUS_M, LANDMARK_REACH_M = 60;
   function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : String(k); }
   function summitRadius(ele) { return SUMMIT_BASE_M + SUMMIT_BONUS_M * Math.floor(Math.max(0, ele || 0) / SUMMIT_ALT_STEP); }
   function summitCells(lat, lng, r) {
@@ -908,7 +917,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   function summitList() {
     var m = new Map();
     sortedActs().forEach(function (a) {
-      (a.summits || []).forEach(function (s) { if (!m.has(s.id)) m.set(s.id, { id: s.id, name: s.name, ele: s.ele, r: s.r, date: a.date, wp: s.wp || "", wd: s.wd || "" }); });
+      (a.summits || []).forEach(function (s) { if (!m.has(s.id)) m.set(s.id, { id: s.id, name: s.name, ele: s.ele, r: s.r, date: a.date, lat: s.lat, lng: s.lng, wp: s.wp || "", wd: s.wd || "" }); });
     });
     return Array.from(m.values());
   }
@@ -1091,6 +1100,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
+  var BUILD = "25/10/2026 · v15";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1099,8 +1109,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
     if (px >= 6) return { wFine: 1, wAgg: 0, mpp: mpp };
     var res = 10;
     while (res > MIN_AGG_RES && EDGE_M[res] / mpp < 7) res--;
-    var t = px <= 3.5 ? 0 : (px - 3.5) / 2.5;
-    return { wFine: t, wAgg: 1 - t, res: res, mpp: mpp };
+    return { wFine: 0, wAgg: 1, res: res, mpp: mpp };   // niveau agrégé : teinte pleine, aucune superposition avec les hexagones fins
   }
   function aggCells(res) {
     var key = res + "|" + dispCells.size + "|" + dispVer;
@@ -1173,7 +1182,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
   function landmarkList() {
     var m = new Map();
     sortedActs().forEach(function (a) {
-      (a.landmarks || []).forEach(function (l) { if (!m.has(l.id)) m.set(l.id, { id: l.id, name: l.name, ic: l.ic, kind: l.kind, date: a.date, wp: l.wp || "", wd: l.wd || "" }); });
+      (a.landmarks || []).forEach(function (l) { if (!m.has(l.id)) m.set(l.id, { id: l.id, name: l.name, ic: l.ic, kind: l.kind, date: a.date, lat: l.lat, lng: l.lng, wp: l.wp || "", wd: l.wd || "" }); });
     });
     return Array.from(m.values());
   }
@@ -1246,12 +1255,70 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       if (e2) e2.innerHTML = '<span class="warn">Résumé indisponible (' + (err && err.message === "pas de fiche" ? "aucune fiche Wikipédia référencée" : "connexion requise") + '). Utilise le lien Wikipédia.</span>';
     });
   }
+  var focusPoi = null, focusTimer = 0, cardKey = "", flyTimer = 0;
+  function flyTo(cx, cy, z) {
+    clearTimeout(flyTimer);
+    var c0 = view.cx, y0 = view.cy, z0 = view.z, i = 0, N = 14;
+    (function step() {
+      i++; var t = i / N, k = 1 - Math.pow(1 - t, 3);
+      view.cx = c0 + (cx - c0) * k; view.cy = y0 + (cy - y0) * k; view.z = z0 + (z - z0) * k; draw();
+      if (i < N) flyTimer = setTimeout(step, 22);
+    })();
+  }
+  function goToPoi(it) {   // depuis la liste : retour sur la carte, centré sur le sommet ou le lieu
+    if (!it || it.lat === undefined || it.lng === undefined) { toast("Position inconnue : lance « Tout recalculer » dans les Réglages."); return; }
+    closeSheet(); closePoiCard(); selected = null;
+    focusPoi = { lat: it.lat, lng: it.lng, sticky: false, t0: Date.now() };
+    flyTo(mercX(it.lng), mercY(it.lat), Math.max(view.z, 16));
+  }
+  function loadCardInfo(key, it) {
+    var el = $("poicard-info");
+    if (!el) return;
+    el.innerHTML = infoHTML(key);
+    if (S.info[key]) return;
+    wikiInfo(it).then(function (r) {
+      S.info[key] = r; save();
+      var e2 = $("poicard-info"); if (e2 && cardKey === key) e2.innerHTML = infoHTML(key);
+    }, function (err) {
+      var e2 = $("poicard-info");
+      if (e2 && cardKey === key) e2.innerHTML = '<span class="warn">Résumé indisponible (' + (err && err.message === "pas de fiche" ? "aucune fiche Wikipédia référencée" : "connexion requise") + ').</span>';
+    });
+  }
+  function showPoiCard(p, isLm, reached) {
+    var key = poiKey(isLm ? "l" : "s", p.id), list = isLm ? landmarkList() : summitList(), meta = list.filter(function (x) { return x.id === p.id; })[0];
+    var r = isLm ? LANDMARK_R : summitRadius(p.ele), bonus = isLm ? LANDMARK_BONUS_M : r - SUMMIT_BASE_M;
+    var l1 = isLm ? esc(p.kind || "Lieu remarquable") : (p.ele !== null && p.ele !== undefined ? fmt(p.ele, 0) + " m d’altitude" : "Altitude inconnue");
+    var verb = isLm ? "visité" : "atteint";
+    var l2 = reached ? (isLm ? "Visité" : "Atteint") + (meta ? " le " + fmtDate(meta.date) : "") : "Pas encore " + verb + " : passe à moins de " + (isLm ? LANDMARK_REACH_M : SUMMIT_REACH_M) + " m pour débloquer ce cercle.";
+    var l3 = "Cercle d’exploration de " + r + " m" + (bonus > 0 ? " (dont +" + bonus + " m de bonus)" : "");
+    var url = (S.info[key] && S.info[key].u) || wikiUrl(p);
+    $("poicard").innerHTML = '<div class="pc-top"><span class="pc-t">' + (isLm ? (p.ic || "⭐") : "▲") + ' ' + esc(p.name) + '</span><button class="pc-x" id="poicardx" aria-label="Fermer la fiche">✕</button></div>' +
+      '<div class="pc-s">' + l1 + '</div><div class="pc-s">' + esc(l2) + '</div><div class="pc-s">' + esc(l3) + '</div>' +
+      '<div class="poi-info" id="poicard-info"></div>' +
+      '<div class="poi-act"><a class="linkbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>';
+    $("poicard").hidden = false; cardKey = key;
+    focusPoi = { lat: p.lat, lng: p.lng, sticky: true, t0: 0 };
+    $("poicardx").addEventListener("click", closePoiCard);
+    loadCardInfo(key, p);
+    draw();
+  }
+  function closePoiCard() {
+    var c = $("poicard");
+    if (!c || c.hidden) return;
+    c.hidden = true; cardKey = ""; focusPoi = null; draw();
+  }
+  function hitPeak(x, y) {
+    var best = null, bd = 26;
+    peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
+    if (!best) { closePoiCard(); return; }
+    showPoiCard(best.p, !!best.lm, best.reached);
+  }
   function poiCard(key, it, icon, sub, right) {
     poiIdx[key] = it;
     var url = (S.info[key] && S.info[key].u) || wikiUrl(it);
-    return '<div class="poi"><div class="poi-top"><span class="t">' + icon + ' ' + esc(it.name) + '</span>' + (right ? '<span class="v">' + right + '</span>' : "") + '</div>' +
+    return '<div class="poi"><button class="poi-top poi-go" data-go="' + key + '" aria-label="Voir ' + esc(it.name) + ' sur la carte"><span class="t">' + icon + ' ' + esc(it.name) + '</span>' + (right ? '<span class="v">' + right + '</span>' : "") + '</button>' +
       '<div class="s">' + sub + '</div>' +
-      '<div class="poi-act"><button class="linkbtn" data-info="' + key + '">Infos</button><a class="linkbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
+      '<div class="poi-act"><button class="linkbtn" data-go="' + key + '">📍 Carte</button><button class="linkbtn" data-info="' + key + '">Infos</button><a class="linkbtn" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
       '<div class="poi-info" id="info-' + key + '" hidden></div></div>';
   }
   function viewGoals() {
@@ -1278,7 +1345,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       h += '<h3>Lieux remarquables (' + lm.length + ')</h3>';
       if (!lm.length) h += '<div class="empty-line">Aucun lieu pour l’instant. Passe à moins de ' + LANDMARK_REACH_M + ' m d’un monument, d’un château, d’une cascade ou d’un site historique référencé sur Wikipédia : un cercle de ' + LANDMARK_R + ' m se débloque.</div>';
       lm.forEach(function (l) {
-        h += poiCard(poiKey("l", l.id), l, l.ic, esc(l.kind) + ' · visité le ' + fmtDate(l.date) + ' · cercle de ' + LANDMARK_R + ' m', "");
+        h += poiCard(poiKey("l", l.id), l, l.ic, esc(l.kind) + ' · visité le ' + fmtDate(l.date) + ' · cercle de ' + LANDMARK_R + ' m (dont +' + LANDMARK_BONUS_M + ' m de bonus)', "");
       });
       return h + legacyNote;
     }
@@ -1403,20 +1470,26 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
         peakHits.push({ x: q[0], y: q[1], p: l, reached: rc, lm: true });
       });
     }
+    if (focusPoi) {   // anneau de repérage autour du sommet ou du lieu sélectionné
+      var age = focusPoi.sticky ? 0 : Date.now() - focusPoi.t0;
+      if (!focusPoi.sticky && age > 3200) focusPoi = null;
+      else {
+        var fq = toScreen(focusPoi.lat, focusPoi.lng), ph = focusPoi.sticky ? 0.3 : (age % 1100) / 1100;
+        for (var ri = 0; ri < 2; ri++) {
+          var f = (ph + ri * 0.5) % 1;
+          ctx.beginPath(); ctx.arc(fq[0], fq[1], 16 + f * 30, 0, 2 * Math.PI);
+          ctx.globalAlpha = 1 - f; ctx.lineWidth = 3; ctx.strokeStyle = css("--pink"); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        if (!focusPoi.sticky) { clearTimeout(focusTimer); focusTimer = setTimeout(draw, 40); }
+      }
+    }
     if (me) {
       var m = toScreen(me[0], me[1]);
       ctx.beginPath(); ctx.arc(m[0], m[1], 8, 0, 2 * Math.PI); ctx.fillStyle = css("--blue"); ctx.fill();
       ctx.lineWidth = 3; ctx.strokeStyle = "#ffffff"; ctx.stroke();
       ctx.beginPath(); ctx.arc(m[0], m[1], 10.5, 0, 2 * Math.PI); ctx.lineWidth = 1.5; ctx.strokeStyle = css("--outline"); ctx.stroke();
     }
-  }
-  function hitPeak(x, y) {
-    var best = null, bd = 26;
-    peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
-    if (!best) return;
-    if (best.lm) { toast(best.p.ic + " " + best.p.name + " (" + best.p.kind + ")" + (best.reached ? " : déjà visité." : " : passe à moins de " + LANDMARK_REACH_M + " m pour débloquer un cercle de " + LANDMARK_R + " m.")); return; }
-    var p = best.p, r = summitRadius(p.ele);
-    toast("▲ " + p.name + (p.ele ? " · " + Math.round(p.ele) + " m" : "") + (best.reached ? " : déjà atteint (cercle de " + r + " m)." : " : passe à moins de " + SUMMIT_REACH_M + " m pour débloquer un cercle de " + r + " m."));
   }
 
   /* ================= succès, défis, communes ================= */
@@ -1796,6 +1869,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       });
     });
     document.querySelectorAll("[data-scope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.scope; render(); }); });
+    document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
     document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; render(); }); });
     document.querySelectorAll("[data-info]").forEach(function (b) { b.addEventListener("click", function () {
       var key = b.dataset.info, el = $("info-" + key);
@@ -1888,6 +1962,7 @@ a.linkbtn { background: var(--accent); color: var(--on-accent); }
       '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
       '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
+      '<p class="note">Version de l’appli : ' + BUILD + '</p>' +
       '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
       '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="sback">Retour au profil</button></div>';
