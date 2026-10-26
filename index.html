@@ -3,11 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hexplore</title>
+<title>Portulan</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#bfe6ff">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Portulan">
+<meta name="application-name" content="Portulan">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -813,7 +816,7 @@ body.sheet-open #gradeBox { display: none; }
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
     } else {
       h += '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
-        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://hexplore-relay.….workers.dev" autocomplete="off"></div>' +
+        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://portulan-relay.….workers.dev" autocomplete="off"></div>' +
         '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
         '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>';
     }
@@ -1432,7 +1435,7 @@ body.sheet-open #gradeBox { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v30";
+  var BUILD = "25/10/2026 · v31";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -2093,15 +2096,15 @@ body.sheet-open #gradeBox { display: none; }
       g.font = "700 72px " + fam; g.fillText(fmtKm2(totalKm2()) + " km²", mx, 1190);
       g.font = "500 36px " + fam; g.fillText(fmt(cells.size, 0) + " hexagones · " + st.summits + (st.summits > 1 ? " sommets" : " sommet"), mx, 1245);
       g.fillText(S.name ? S.name : "Explorateur" + (lvl ? " · " + TROPHIES[lvl - 1].name : ""), mx, 1295);
-      g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("⬡ Hexplore", w - mx, 1295);
+      g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("Portulan", w - mx, 1295);
       return c;
     }
     function out(c) {
       c.toBlob(function (blob) {
         if (!blob) { toast("Création de l’image impossible."); return; }
-        var file = new File([blob], "hexplore-carte.png", { type: "image/png" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Ma carte Hexplore" }).catch(function () { /* annulé */ }); return; }
-        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-carte.png"; document.body.appendChild(a); a.click();
+        var file = new File([blob], "portulan-carte.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Ma carte Portulan" }).catch(function () { /* annulé */ }); return; }
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "portulan-carte.png"; document.body.appendChild(a); a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
       }, "image/png");
     }
@@ -2471,7 +2474,7 @@ body.sheet-open #gradeBox { display: none; }
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: Object.assign({}, S, { strava: undefined }) })], { type: "application/json" });
-      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-sauvegarde.json"; document.body.appendChild(a); a.click();
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "portulan-sauvegarde.json"; document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     });
     $("imp").addEventListener("change", function (e) {
