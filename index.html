@@ -277,6 +277,13 @@ body.sheet-open #poicard { display: none; }
 .poi-info[hidden] { display: none; }
 .diag { margin: 8px 0 0; padding: 8px 10px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 2px dashed var(--outline); border-radius: 12px; user-select: text; -webkit-user-select: text; }
 .diag[hidden] { display: none; }
+#gradeBox { left: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 58px); z-index: 5; }
+body.sheet-open #gradeBox { display: none; }
+.gradechk { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 3px solid var(--outline); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 13px; font-weight: 600; box-shadow: 2px 2px 0 var(--outline); cursor: pointer; }
+.gradechk input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.gradelegend { margin-top: 6px; padding: 6px 10px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); font-size: 12px; line-height: 1.6; }
+.gradelegend[hidden] { display: none; }
+.gradelegend i { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border-radius: 4px; border: 3px solid; background: rgba(43, 31, 74, 0.35); }
 .warn { font-size: 13px; color: var(--muted); }
 </style>
 </head>
@@ -309,6 +316,7 @@ body.sheet-open #poicard { display: none; }
   <button class="pill" data-per="week" aria-pressed="false">Semaine</button>
 </div>
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
+<div class="float" id="gradeBox"><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label><div class="gradelegend" id="gradeLegend" hidden><div><i style="border-color:#8a5a2e"></i>5 visites · bois</div><div><i style="border-color:#cd7f32"></i>20 · bronze</div><div><i style="border-color:#e6ebf2"></i>50 · argent</div><div><i style="border-color:#ffd23f"></i>100 · or</div><div><i style="border-color:#8ff3ff"></i>200 · diamant</div><div><i style="border-color:#ff6a1a"></i>500 · flamme 🔥</div></div></div>
 <div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
 
 <div class="float" id="hint" hidden>
@@ -364,7 +372,7 @@ body.sheet-open #poicard { display: none; }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {} };
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -392,6 +400,7 @@ body.sheet-open #poicard { display: none; }
         S.lastBackup = +o.lastBackup || 0;
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
+        S.gradeOutlines = !!o.gradeOutlines;
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
   }
@@ -607,20 +616,83 @@ body.sheet-open #poicard { display: none; }
     });
     return out;
   }
+  /* ================= maîtrise des hexagones : paliers de visites ================= */
+  var MASTERY = [
+    { n: 1, name: "Éclaireur", ic: "🔦" }, { n: 5, name: "Patrouilleur", ic: "🥾" }, { n: 20, name: "Cartographe", ic: "🗺️" },
+    { n: 50, name: "Guide local", ic: "🚩" }, { n: 100, name: "Gardien des lieux", ic: "🛡️" }, { n: 200, name: "Bâtisseur", ic: "🏗️" }, { n: 500, name: "Légende", ic: "🌟" }
+  ];
+  var visits = new Map(), masteryInfo = { exact: [], atLeast: [], max: 0, top: null }, corrCache = new WeakMap();
+  function actCorridor(a) { var c = corrCache.get(a); if (!c) { c = cellsOfLines(a.lines, S.rad); corrCache.set(a, c); } return c; }
+  function levelIdx(n) { var k = -1; for (var i = 0; i < MASTERY.length; i++) if (n >= MASTERY[i].n) k = i; return k; }
+  function computeMastery() {
+    var exact = MASTERY.map(function () { return 0; }), mx = 0, top = null;
+    visits.forEach(function (d, c) { var n = d.length, k = levelIdx(n); if (k >= 0) exact[k]++; if (n > mx) { mx = n; top = c; } });
+    var atLeast = exact.map(function (v, i) { var t = 0; for (var j = i; j < exact.length; j++) t += exact[j]; return t; });
+    masteryInfo = { exact: exact, atLeast: atLeast, max: mx, top: top };
+  }
+  function levelUps(it, tmp) {   // hexagones qui montent d’un palier avec cette course
+    var ups = MASTERY.map(function () { return 0; }), d = it.act.date;
+    actCorridor(it.act).forEach(function (c) {
+      var dates = tmp.get(c);
+      if (!dates) { dates = (visits.get(c) || []).slice(); tmp.set(c, dates); }
+      if (dates.indexOf(d) >= 0) return;
+      var before = levelIdx(dates.length); dates.push(d);
+      var after = levelIdx(dates.length);
+      if (after > before) ups[after]++;
+    });
+    return ups;
+  }
+  function upsParts(u) {
+    var parts = [];
+    for (var i = MASTERY.length - 1; i >= 1; i--) if (u[i]) parts.push(MASTERY[i].ic + " " + fmt(u[i], 0) + (u[i] > 1 ? " hexagones passent " : " hexagone passe ") + MASTERY[i].name);
+    return parts.slice(0, 3);
+  }
+  function upsText(u) { var p = upsParts(u); return p.length ? '<br><span class="peak">' + p.join(" · ") + '</span>' : ""; }
+  /* ================= contours par grade ================= */
+  var GRADES = [null, { n: "bois", c: "#8a5a2e", w: 2 }, { n: "bronze", c: "#cd7f32", w: 2.4 }, { n: "argent", c: "#e6ebf2", w: 2.6 }, { n: "or", c: "#ffd23f", w: 3 }, { n: "diamant", c: "#8ff3ff", w: 3 }, { n: "flamme", c: "#ff6a1a", w: 3.2 }];
+  var flameTimer = 0;
+  function drawGrades(vis, ag) {   // contour des hexagones selon le nombre de jours de visite
+    var groups = [null, [], [], [], [], [], []], any = false, i, k;
+    for (i = 0; i < vis.length; i++) { var d = visits.get(vis[i]); if (!d) continue; k = levelIdx(d.length); if (k >= 1) { groups[k].push(vis[i]); any = true; } }
+    groups[6] = groups[6].filter(function (id) { var b = boundary(id)[0], q = toScreen(b[0], b[1]); return q[0] > -30 && q[0] < W + 30 && q[1] > -30 && q[1] < H + 30; });   // animation seulement si une flamme est réellement à l’écran
+    if (!any) return;
+    var scale = Math.max(0.55, Math.min(1.7, 49 / ag.mpp / 28));
+    ctx.save(); ctx.lineJoin = "round"; ctx.globalAlpha = 1;
+    for (k = 1; k <= 6; k++) if (groups[k].length) { buildCellsPath(ctx, groups[k]); ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = (GRADES[k].w + 2.2) * scale; ctx.stroke(); }
+    for (k = 1; k <= 5; k++) if (groups[k].length) {
+      buildCellsPath(ctx, groups[k]); ctx.strokeStyle = GRADES[k].c; ctx.lineWidth = GRADES[k].w * scale; ctx.stroke();
+      if (k === 5) { ctx.strokeStyle = "rgba(255,255,255,0.95)"; ctx.lineWidth = 0.9 * scale; ctx.stroke(); }   // éclat du diamant
+    }
+    if (groups[6].length) {   // flamme : contour qui vacille, avec lueur et liseré lumineux qui défile
+      var t = Date.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(t * 7);
+      buildCellsPath(ctx, groups[6]);
+      ctx.shadowColor = "rgba(255,110,20,0.95)"; ctx.shadowBlur = 6 + 8 * pulse;
+      ctx.strokeStyle = "hsl(" + Math.round(18 + 20 * Math.sin(t * 5)) + ",100%," + Math.round(52 + 8 * pulse) + "%)"; ctx.lineWidth = (3.2 + 0.8 * pulse) * scale; ctx.stroke();
+      ctx.shadowBlur = 0; ctx.setLineDash([7 * scale, 6 * scale]); ctx.lineDashOffset = -t * 28;
+      ctx.strokeStyle = "#fff1a8"; ctx.lineWidth = 1.3 * scale; ctx.stroke();
+      clearTimeout(flameTimer); flameTimer = setTimeout(draw, 66);
+    }
+    ctx.restore();
+  }
+  $("gradeChk").addEventListener("change", function () {
+    S.gradeOutlines = this.checked; $("gradeLegend").hidden = !this.checked; save(); draw();
+  });
   function sortedActs() {
     return S.activities.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id; });
   }
   function rebuild() {
-    cells = new Map(); reachedSet = new Set(); summitDraw = []; reachedLm = new Set(); landmarkDraw = [];
+    cells = new Map(); reachedSet = new Set(); summitDraw = []; reachedLm = new Set(); landmarkDraw = []; visits = new Map();
     sortedActs().forEach(function (a) {
       var n = 0, info = { sport: a.sport, date: a.date };
       (a.summits || []).forEach(function (s) { s.r = summitRadius(s.ele); });
       (a.landmarks || []).forEach(function (l) { l.r = LANDMARK_R; });   // rayon recalculé selon la règle en vigueur
       actCells(a).forEach(function (c) { if (!cells.has(c)) { cells.set(c, info); n++; } });
+      actCorridor(a).forEach(function (c) { var e = visits.get(c); if (!e) visits.set(c, e = []); if (e[e.length - 1] !== a.date) e.push(a.date); });   // un seul passage compté par jour
       a.newCells = n;
       (a.summits || []).forEach(function (s) { if (!reachedSet.has(s.id)) summitDraw.push(s); reachedSet.add(s.id); });
       (a.landmarks || []).forEach(function (l) { if (!reachedLm.has(l.id)) landmarkDraw.push(l); reachedLm.add(l.id); });
     });
+    computeMastery();
     refreshDisp();
     updateChip();
     $("hint").hidden = S.activities.length > 0;
@@ -738,6 +810,7 @@ body.sheet-open #poicard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
+    if (S.gradeOutlines && ag.wFine > 0 && vis.length) drawGrades(vis, ag);
     if (ag.wAgg > 0) drawAgg(ag, onImg);
     drawOverlays();
     if (selected !== null) {
@@ -822,7 +895,7 @@ body.sheet-open #poicard { display: none; }
     return out;
   }
   function actCells(a) {
-    var set = cellsOfLines(a.lines, S.rad);
+    var set = new Set(actCorridor(a));
     (a.summits || []).forEach(function (s) { summitCells(s.lat, s.lng, s.r).forEach(function (c) { set.add(c); }); });
     (a.landmarks || []).forEach(function (l) { summitCells(l.lat, l.lng, l.r || LANDMARK_R).forEach(function (c) { set.add(c); }); });
     return set;
@@ -850,7 +923,7 @@ body.sheet-open #poicard { display: none; }
     return ["Site remarquable", "⭐"];
   }
   var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"], lastPoiError = "";
-  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1200, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve();
+  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1200, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve(), OVP_ABORT_MS = window.__ABORT_MS !== undefined ? window.__ABORT_MS : 45000;
   function overpassFetch(q, deadline) {   // requêtes espacées et relancées sur plusieurs serveurs ; délai maximal optionnel
     var run = ovpGate.then(function () { return overpassTry(q, deadline); });
     function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
@@ -862,12 +935,12 @@ body.sheet-open #poicard { display: none; }
     function attempt() {
       if (deadline && Date.now() > deadline) throw new Error("délai dépassé");
       var url = OVERPASS[tries % OVERPASS.length], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-      var to = ctl ? setTimeout(function () { ctl.abort(); }, deadline ? Math.max(3000, Math.min(20000, deadline - Date.now())) : 20000) : 0;
+      var to = ctl ? setTimeout(function () { ctl.abort(); }, deadline ? Math.max(3000, Math.min(OVP_ABORT_MS, deadline - Date.now())) : OVP_ABORT_MS) : 0;
       return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
         .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); return j; })
         .catch(function (e) {
-          clearTimeout(to); lastPoiError = (e && e.message) || "réseau"; tries++;
+          clearTimeout(to); lastPoiError = friendlyErr(e); tries++;
           if (tries >= OVERPASS.length + 2 || (deadline && Date.now() > deadline) || lastPoiError === "délai dépassé") throw e;
           var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * tries : 0;
           return new Promise(function (res) { setTimeout(res, (OVP_GAP_MS ? 700 * tries : 0) + extra); }).then(attempt);
@@ -875,42 +948,54 @@ body.sheet-open #poicard { display: none; }
     }
     return attempt();
   }
-  function fetchBatch(need, deadline) {
-    var wp = '[~"^(wikipedia|wikidata)$"~"."]';
-    var q = need.map(function (k) {
-      var p = k.split("_"), la = +p[0], lo = +p[1];
-      var bb = "(" + (la * 0.1 - 0.001).toFixed(4) + "," + (lo * 0.1 - 0.001).toFixed(4) + "," + ((la + 1) * 0.1 + 0.001).toFixed(4) + "," + ((lo + 1) * 0.1 + 0.001).toFixed(4) + ");";
-      return 'node["natural"="peak"]["name"]' + bb +
-        'nwr["historic"]' + wp + bb +
-        'nwr["tourism"~"^(attraction|viewpoint)$"]' + wp + bb +
-        'nwr["natural"~"^(waterfall|cave_entrance|hot_spring|glacier)$"]' + wp + bb;
-    }).join("");
-    return overpassFetch("[out:json][timeout:25];(" + q + ");out center;", deadline).then(function (j) {
-      need.forEach(function (k) { peakCache.set(k, []); lmCache.set(k, []); });
+  function tileBB(k) {
+    var p = k.split("_"), la = +p[0], lo = +p[1];
+    return "(" + (la * 0.1 - 0.001).toFixed(4) + "," + (lo * 0.1 - 0.001).toFixed(4) + "," + ((la + 1) * 0.1 + 0.001).toFixed(4) + "," + ((lo + 1) * 0.1 + 0.001).toFixed(4) + ");";
+  }
+  function elLatLon(el) {
+    var lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat), lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+    return lat === undefined || lon === undefined ? null : [lat, lon];
+  }
+  function tileOf(ll) { return Math.floor(ll[0] / 0.1) + "_" + Math.floor(ll[1] / 0.1); }
+  function fetchBatch(need, deadline) {   // sommets nommés : requête très légère
+    var q = need.map(function (k) { return 'node["natural"="peak"]["name"]' + tileBB(k); }).join("");
+    return overpassFetch("[out:json][timeout:40];(" + q + ");out;", deadline).then(function (j) {
+      need.forEach(function (k) { peakCache.set(k, []); });
       (j.elements || []).forEach(function (el) {
-        var t = el.tags;
-        if (!t || !t.name) return;
-        var lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat), lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
-        if (lat === undefined || lon === undefined) return;
-        var key = Math.floor(lat / 0.1) + "_" + Math.floor(lon / 0.1);
-        if (t.natural === "peak") {
-          var arr = peakCache.get(key);
-          if (el.type === "node" && arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: lat, lng: lon, ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
-        } else if (t.historic || t.tourism || t.natural) {
-          var la = lmCache.get(key), id = String(el.type).charAt(0) + el.id;
-          if (la && !la.some(function (x) { return x.id === id; })) { var kd = lmKind(t); la.push({ id: id, name: t.name, lat: lat, lng: lon, kind: kd[0], ic: kd[1], wp: t.wikipedia || "", wd: t.wikidata || "" }); }
-        }
+        var t = el.tags, ll = elLatLon(el);
+        if (!t || !t.name || el.type !== "node" || t.natural !== "peak" || !ll) return;
+        var arr = peakCache.get(tileOf(ll));
+        if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: ll[0], lng: ll[1], ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
       });
     });
   }
-  function fetchPeaks(keys, deadline) {
-    var need = keys.filter(function (k) { return !peakCache.has(k); });
+  function fetchLmBatch(need, deadline) {   // lieux référencés : sans filtre regex sur les clés, nettement plus rapide
+    var tf = ['"tourism"~"^(attraction|viewpoint)$"', '"natural"~"^(waterfall|cave_entrance|hot_spring|glacier)$"'];
+    var q = need.map(function (k) {
+      var bb = tileBB(k), s2 = 'nwr["historic"]["wikidata"]' + bb + 'nwr["historic"]["wikipedia"]' + bb;
+      tf.forEach(function (f) { s2 += 'nwr[' + f + ']["wikidata"]' + bb + 'nwr[' + f + ']["wikipedia"]' + bb; });
+      return s2;
+    }).join("");
+    return overpassFetch("[out:json][timeout:40];(" + q + ");out center;", deadline).then(function (j) {
+      need.forEach(function (k) { lmCache.set(k, []); });
+      (j.elements || []).forEach(function (el) {
+        var t = el.tags, ll = elLatLon(el);
+        if (!t || !t.name || !ll || t.natural === "peak" || !(t.historic || t.tourism || t.natural)) return;
+        var arr = lmCache.get(tileOf(ll)), id = String(el.type).charAt(0) + el.id;
+        if (arr && !arr.some(function (x) { return x.id === id; })) { var kd = lmKind(t); arr.push({ id: id, name: t.name, lat: ll[0], lng: ll[1], kind: kd[0], ic: kd[1], wp: t.wikipedia || "", wd: t.wikidata || "" }); }
+      });
+    });
+  }
+  function fetchTiles(keys, cache, size, fn, deadline) {
+    var need = keys.filter(function (k) { return !cache.has(k); });
     if (!need.length) return Promise.resolve();
     if (need.length > 200) return Promise.reject(new Error("trace trop étendue pour l’analyse (" + need.length + " zones)"));
     var chain = Promise.resolve();
-    for (var i = 0; i < need.length; i += 3) (function (b) { chain = chain.then(function () { return fetchBatch(b, deadline); }); })(need.slice(i, i + 3));
+    for (var i = 0; i < need.length; i += size) (function (b) { chain = chain.then(function () { return fn(b, deadline); }); })(need.slice(i, i + size));
     return chain;
   }
+  function fetchPeaks(keys, deadline) { return fetchTiles(keys, peakCache, 6, fetchBatch, deadline); }
+  function fetchLandmarks(keys, deadline) { return fetchTiles(keys, lmCache, 2, fetchLmBatch, deadline); }
   function peaksFor(keys) { var out = []; keys.forEach(function (k) { (peakCache.get(k) || []).forEach(function (p) { out.push(p); }); }); return out; }
   function segDistM(plat, plng, a, b) {
     var kx = 111320 * Math.cos(plat * Math.PI / 180), ky = 110540;
@@ -989,11 +1074,11 @@ body.sheet-open #poicard { display: none; }
     if (el) el.innerHTML = '<div class="result">Analyse ' + i + '/' + n + ' : ' + esc(name) + '<div class="bar-track"><div class="bar-fill" style="width:' + Math.round((i - 1) / n * 100) + '%"></div></div></div>';
   }
   function computePreview() {
-    var seen = new Set(), all = new Set();
+    var seen = new Set(), all = new Set(), tmpVisits = new Map();
     pending.items.forEach(function (it) {
       var n = 0, b = 0, base = cellsOfLines(it.act.lines, S.rad);
       actCells(it.act).forEach(function (c) { if (!cells.has(c) && !seen.has(c)) { seen.add(c); all.add(c); n++; if (!base.has(c)) b++; } });
-      it.newCells = n; it.bonusCells = b;
+      it.newCells = n; it.bonusCells = b; it.ups = levelUps(it, tmpVisits);
     });
     pending.newCells = all;
   }
@@ -1007,14 +1092,17 @@ body.sheet-open #poicard { display: none; }
       var a = it.act; tot += it.newCells;
       var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km · ' + sl(a.sport) +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
-        (it.bonusCells ? '<br><span class="peak">dont ' + fmt(it.bonusCells, 0) + ' hexagones bonus (' + fmtKm2(it.bonusCells * AREA_M2 / 1e6) + ' km²) autour des sommets et lieux</span>' : '');
+        (it.bonusCells ? '<br><span class="peak">dont ' + fmt(it.bonusCells, 0) + ' hexagones bonus (' + fmtKm2(it.bonusCells * AREA_M2 / 1e6) + ' km²) autour des sommets et lieux</span>' : '') + upsText(it.ups || []);
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
       (a.landmarks || []).forEach(function (l) { s += '<br><span class="peak">' + l.ic + ' ' + esc(l.name) + ' · ' + esc(l.kind) + ' · cercle de ' + l.r + ' m</span>'; });
       if (a.lmDone && !(a.landmarks || []).length) s += '<br><span class="warn">' + (it.nearLm && it.nearLm.length ? it.nearLm.map(function (n) { return 'Presque : ' + n.ic + ' ' + esc(n.name) + ' à ' + Math.round(n.d) + ' m de la trace (limite ' + LANDMARK_REACH_M + ' m)'; }).join('<br>') : 'Aucun lieu emblématique référencé à moins de ' + LANDMARK_REACH_M + ' m de la trace.') + '</span>';
       if (it.zone) s += '<br><span class="warn">Zone analysée : ' + it.zone.p + ' sommets nommés, ' + it.zone.l + ' lieux référencés.</span>';
       if (a.sumDone && !a.summits.length) s += '<br><span class="warn">' + (it.near && it.near.length ? it.near.map(nearTxt).join("<br>") : "Aucun sommet nommé trouvé à moins de " + SUMMIT_REACH_M + " m de la trace.") + '</span>';
       if (it.scanning) s += '<br><span class="warn">Recherche des sommets et des lieux en cours… tu peux valider sans attendre.</span>';
-      else if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement, ou relance « Tout recalculer » dans les Réglages.</span>';
+      else {
+        if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement, ou relance « Tout recalculer » dans les Réglages.</span>';
+        if (!a.lmDone) s += '<br><span class="warn">Lieux non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement.</span>';
+      }
       if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
       if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
       return s + '</div>';
@@ -1036,6 +1124,8 @@ body.sheet-open #poicard { display: none; }
       a.summits.forEach(function (s) { if (!known.has(s.id)) { known.add(s.id); newPeaks.push(s); } });
       (a.landmarks || []).forEach(function (l) { if (!knownLm.has(l.id)) { knownLm.add(l.id); newLms.push(l); } });
     });
+    var ups = MASTERY.map(function () { return 0; });
+    pending.items.forEach(function (it) { (it.ups || []).forEach(function (v, i) { ups[i] += v; }); });
     pending = null; selected = null;
     rebuild(); save(); closeSheet();
     var fresh = [];
@@ -1047,6 +1137,8 @@ body.sheet-open #poicard { display: none; }
       toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
     }
     if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
+    var up = upsParts(ups);
+    if (up.length) toast(up.join(" · "));
     checkAchievements();
     updateCommunes({ lines: lines, silent: true });
     setTimeout(function () { autoScanAt = 0; autoScan(); }, 6000);
@@ -1076,10 +1168,10 @@ body.sheet-open #poicard { display: none; }
   function scanItem(it) {   // sommets et lieux : recherche en arrière-plan, l’aperçu n’attend pas
     var a = it.act, misses = [], lmMisses = [], p;
     scanningSet.add(a); analysisPriority++;
-    try { p = findPois(a.lines, misses, lmMisses, Date.now() + 60000); } catch (e) { p = Promise.reject(e); }
+    try { p = findPois(a.lines, misses, lmMisses, Date.now() + 150000); } catch (e) { p = Promise.reject(e); }
     p.then(function (r) {
-      it.zone = { p: r.np, l: r.nl }; a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; delete a.poiErr;
-    }, function (e) { a.poiErr = (e && e.message) || "échec"; }).then(function () {
+      it.zone = { p: r.np, l: r.nl }; applyPois(a, r);
+    }, function (e) { a.poiErr = friendlyErr(e); }).then(function () {
       misses.sort(function (x, y) { return x.d - y.d; }); lmMisses.sort(function (x, y) { return x.d - y.d; });
       it.near = misses.slice(0, 3); it.nearLm = lmMisses.slice(0, 3); it.scanning = false;
       scanningSet.delete(a); analysisPriority--;
@@ -1174,7 +1266,7 @@ body.sheet-open #poicard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v25";
+  var BUILD = "25/10/2026 · v29";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1247,9 +1339,12 @@ body.sheet-open #poicard { display: none; }
     });
     return out;
   }
-  function findPois(lines, misses, lmMisses, deadline) {
-    var keys = tileKeysOf(lines);
-    return fetchPeaks(keys, deadline).then(function () { return { sm: detectSummits(lines, peaksFor(keys), misses), lm: detectLandmarks(lines, lmFor(keys), lmMisses), np: peaksFor(keys).length, nl: lmFor(keys).length }; });
+  function findPois(lines, misses, lmMisses, deadline) {   // sommets et lieux sont cherchés séparément : l’un peut réussir si l’autre échoue
+    var keys = tileKeysOf(lines), res = { sm: [], lm: [], np: 0, nl: 0, smErr: null, lmErr: null };
+    return fetchPeaks(keys, deadline).then(function () { res.sm = detectSummits(lines, peaksFor(keys), misses); res.np = peaksFor(keys).length; }, function (e) { res.smErr = e; })
+      .then(function () { return fetchLandmarks(keys, deadline); })
+      .then(function () { res.lm = detectLandmarks(lines, lmFor(keys), lmMisses); res.nl = lmFor(keys).length; }, function (e) { res.lmErr = e; })
+      .then(function () { if (res.smErr && res.lmErr) throw res.smErr; return res; });
   }
   function landmarkList() {
     var m = new Map();
@@ -1602,7 +1697,7 @@ body.sheet-open #poicard { display: none; }
     var sp = {}, dist = 0, maxNew = 0, sm = summitList(), maxEle = 0;
     S.activities.forEach(function (a) { sp[a.sport] = 1; dist += a.dist; if ((a.newCells || 0) > maxNew) maxNew = a.newCells; });
     sm.forEach(function (s) { if ((s.ele || 0) > maxEle) maxEle = s.ele; });
-    return { km2: totalKm2(), n: S.activities.length, sports: Object.keys(sp).length, dist: dist / 1000, maxNew: maxNew, summits: sm.length, maxEle: maxEle, landmarks: landmarkList().length };
+    return { km2: totalKm2(), n: S.activities.length, sports: Object.keys(sp).length, dist: dist / 1000, maxNew: maxNew, summits: sm.length, maxEle: maxEle, landmarks: landmarkList().length, mv: masteryInfo.atLeast || [] };
   }
   var ACH = [
     { id: "first", ic: "👟", name: "Premier pas", desc: "Importer une première course", ok: function (s) { return s.n >= 1; } },
@@ -1623,7 +1718,13 @@ body.sheet-open #poicard { display: none; }
     { id: "high4000", ic: "👑", name: "Quatre mille", desc: "Atteindre un sommet à 4 000 m", ok: function (s) { return s.maxEle >= 4000; } },
     { id: "lm1", ic: "🏰", name: "Premier lieu emblématique", desc: "Visiter un lieu emblématique", ok: function (s) { return s.landmarks >= 1; } },
     { id: "lm5", ic: "📜", name: "Curieux de patrimoine", desc: "Visiter 5 lieux emblématiques", ok: function (s) { return s.landmarks >= 5; } },
-    { id: "lm20", ic: "🎓", name: "Passionné d’histoire", desc: "Visiter 20 lieux emblématiques", ok: function (s) { return s.landmarks >= 20; } }
+    { id: "lm20", ic: "🎓", name: "Passionné d’histoire", desc: "Visiter 20 lieux emblématiques", ok: function (s) { return s.landmarks >= 20; } },
+    { id: "pa50", ic: "🥾", name: "Patrouilleur", desc: "50 hexagones visités au moins 5 jours", ok: function (s) { return (s.mv[1] || 0) >= 50; } },
+    { id: "ca10", ic: "🗺️", name: "Cartographe", desc: "10 hexagones visités au moins 20 jours", ok: function (s) { return (s.mv[2] || 0) >= 10; } },
+    { id: "gl1", ic: "🚩", name: "Guide local", desc: "Un hexagone visité 50 jours", ok: function (s) { return (s.mv[3] || 0) >= 1; } },
+    { id: "gd1", ic: "🛡️", name: "Gardien des lieux", desc: "Un hexagone visité 100 jours", ok: function (s) { return (s.mv[4] || 0) >= 1; } },
+    { id: "ba1", ic: "🏗️", name: "Bâtisseur", desc: "Un hexagone visité 200 jours", ok: function (s) { return (s.mv[5] || 0) >= 1; } },
+    { id: "le1", ic: "🌟", name: "Légende", desc: "Un hexagone visité 500 jours", ok: function (s) { return (s.mv[6] || 0) >= 1; } }
   ];
   function checkAchievements(silent) {
     var st = statsNow(), have = S.unlocked || [], fresh = [];
@@ -1753,13 +1854,25 @@ body.sheet-open #poicard { display: none; }
     if (window.caches && caches.keys) tasks.push(caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return caches.delete(k); })); }));
     Promise.all(tasks).catch(function () { /* ignoré */ }).then(function () { location.replace(location.pathname + "?maj=" + Date.now()); });
   }
+  function friendlyErr(e) {
+    var m = (e && e.message) || "";
+    if (/abort/i.test(m)) return "délai dépassé (serveur trop lent)";
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "réseau injoignable";
+    return m || "réseau";
+  }
+  function applyPois(a, r) {
+    if (!r.smErr) { a.summits = r.sm; a.sumDone = true; }
+    if (!r.lmErr) { a.landmarks = r.lm; a.lmDone = true; }
+    if (!r.smErr && !r.lmErr) { a.poiV = 2; delete a.poiErr; }
+    else a.poiErr = (r.smErr ? "sommets : " : "lieux : ") + friendlyErr(r.smErr || r.lmErr);
+  }
   function analyzeActivity(a) {   // ne lève jamais d’exception : une course défaillante ne bloque pas les suivantes
     try {
-      return findPois(a.lines || [], null, null, Date.now() + 120000).then(function (r) {
-        a.summits = r.sm; a.landmarks = r.lm; a.sumDone = true; a.lmDone = true; a.poiV = 2; delete a.poiErr;
-        return { ok: true, ns: r.sm.length, nl: r.lm.length };
-      }, function (e) { a.poiErr = (e && e.message) || "échec"; return { ok: false }; });
-    } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false }); }
+      return findPois(a.lines || [], null, null, Date.now() + 240000).then(function (r) {
+        applyPois(a, r);
+        return { ok: !r.smErr && !r.lmErr, ns: r.sm.length, nl: r.lm.length };
+      }, function (e) { a.poiErr = friendlyErr(e); return { ok: false, ns: 0, nl: 0 }; });
+    } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false, ns: 0, nl: 0 }); }
   }
   function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2) && !scanningSet.has(a); }); }
   function poiFailText() {
@@ -1875,6 +1988,7 @@ body.sheet-open #poicard { display: none; }
     importFiles(fs, ($("sp") && $("sp").value) || "autre", ($("dt") && $("dt").value) || todayISO());
   });
   function initExtras() {
+    $("gradeChk").checked = !!S.gradeOutlines; $("gradeLegend").hidden = !S.gradeOutlines;
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
     if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
     if (/^https?:$/.test(location.protocol)) fetch(location.pathname, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
@@ -1941,15 +2055,6 @@ body.sheet-open #poicard { display: none; }
       '<div class="kpi"><b>' + acts.length + '</b><span>' + (acts.length > 1 ? 'courses' : 'course') + '</span></div>' +
       '<div class="kpi"><b>' + fmt(dist / 1000, 1) + '</b><span>km parcourus</span></div></div>';
 
-    // courbe cumulée
-    var cum = 0, pts = acts.map(function (a) { cum += actArea(a); return cum; }), n = pts.length, max = pts[n - 1] || 1;
-    var Wc = 300, Hc = 110, px = function (i) { return n === 1 ? Wc / 2 : 8 + i * (Wc - 16) / (n - 1); }, py = function (v) { return Hc - 14 - (v / max) * (Hc - 30); };
-    var line = pts.map(function (v, i) { return (i ? "L" : "M") + px(i).toFixed(1) + " " + py(v).toFixed(1); }).join(" ");
-    html += '<h3>Territoire cumulé, course après course</h3><svg class="chart" viewBox="0 0 ' + Wc + ' ' + Hc + '" role="img" aria-label="Courbe du territoire cumulé">' +
-      '<path class="fill" d="' + line + ' L' + px(n - 1).toFixed(1) + " " + (Hc - 14) + " L" + px(0).toFixed(1) + " " + (Hc - 14) + ' Z"/><path class="ln" d="' + line + '"/>' +
-      '<text x="8" y="' + (Hc - 2) + '">' + fmtDate(acts[0].date) + '</text><text x="' + (Wc - 8) + '" y="' + (Hc - 2) + '" text-anchor="end">' + fmtDate(acts[n - 1].date) + '</text>' +
-      '<text x="' + (Wc - 8) + '" y="10" text-anchor="end">' + fmtKm2(max) + ' km²</text></svg>';
-
     // barres mensuelles
     var byMonth = {}; acts.forEach(function (a) { var k = a.date.slice(0, 7); byMonth[k] = (byMonth[k] || 0) + actArea(a); });
     var months = Object.keys(byMonth).sort().slice(-6), mm = Math.max.apply(null, months.map(function (k) { return byMonth[k]; })) || 1;
@@ -1967,6 +2072,15 @@ body.sheet-open #poicard { display: none; }
     html += '<h3>Records</h3>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Plus grande découverte</span><span class="s" style="display:block">' + esc(best.name) + '</span></span><span class="v">+' + fmtKm2(actArea(best)) + '<small>km²</small></span></div>' +
       '<div class="row"><span class="main"><span class="t" style="display:block">Sortie la plus longue</span><span class="s" style="display:block">' + esc(longest.name) + '</span></span><span class="v">' + fmt(longest.dist / 1000, 1) + '<small>km</small></span></div>';
+    html += '<h3>Maîtrise des hexagones</h3>' + MASTERY.map(function (m, i) {
+      return '<div class="row"><span class="main"><span class="t" style="display:block">' + m.ic + ' ' + m.name + '</span><span class="s" style="display:block">' + m.n + (m.n > 1 ? ' visites' : ' visite') + ' et plus</span></span><span class="v">' + fmt(masteryInfo.exact[i] || 0, 0) + '<small>hexagones</small></span></div>';
+    }).join('');
+    if (masteryInfo.top) {
+      var tl = h3.cellToLatLng(masteryInfo.top), tk = levelIdx(masteryInfo.max);
+      poiIdx.mastery = { name: "Hexagone le plus visité", lat: tl[0], lng: tl[1] };
+      html += '<div class="row"><span class="main"><span class="t" style="display:block">Hexagone le plus visité</span><span class="s" style="display:block">' + masteryInfo.max + (masteryInfo.max > 1 ? ' jours' : ' jour') + (tk >= 0 ? ' · ' + MASTERY[tk].name : '') + '</span></span><button class="linkbtn" data-go="mastery">📍 Carte</button></div>';
+    }
+    html += '<p class="note">Une visite est un jour où ta trace passe dans l’hexagone : plusieurs passages le même jour comptent pour un seul.</p>';
     html += '<h3>Partager</h3><button class="btn block" id="shareBtn">Partager ma carte</button>';
     return html;
   }
