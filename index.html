@@ -277,6 +277,7 @@ body.sheet-open #poicard { display: none; }
 .poi-info[hidden] { display: none; }
 .diag { margin: 8px 0 0; padding: 8px 10px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 2px dashed var(--outline); border-radius: 12px; user-select: text; -webkit-user-select: text; }
 .diag[hidden] { display: none; }
+.stravabtn { background: #fc4c02; color: #fff; }
 #gradeBox { left: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 58px); z-index: 5; }
 body.sheet-open #gradeBox { display: none; }
 .gradechk { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 3px solid var(--outline); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 13px; font-weight: 600; box-shadow: 2px 2px 0 var(--outline); cursor: pointer; }
@@ -372,7 +373,7 @@ body.sheet-open #gradeBox { display: none; }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false };
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -401,6 +402,7 @@ body.sheet-open #gradeBox { display: none; }
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
         S.gradeOutlines = !!o.gradeOutlines;
+        S.strava = Object.assign({ clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30 }, o.strava && typeof o.strava === "object" ? o.strava : {});
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
   }
@@ -677,6 +679,156 @@ body.sheet-open #gradeBox { display: none; }
   $("gradeChk").addEventListener("change", function () {
     S.gradeOutlines = this.checked; $("gradeLegend").hidden = !this.checked; save(); draw();
   });
+  /* ================= Strava : synchronisation des sorties ================= */
+  var stravaBusy = false, STV_MAX = 40;
+  function stravaReady() { return !!(S.strava.clientId && S.strava.relay); }
+  function stravaConnected() { return !!(S.strava.refresh && S.strava.relay); }
+  function stravaStatus(t) { var el = $("stvstatus"); if (el) el.textContent = t; }
+  function relayJson(path, opts) {
+    return fetch(S.strava.relay.replace(/\/+$/, "") + path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) { var e = new Error((j && (j.message || j.error)) || ("HTTP " + r.status)); e.status = r.status; throw e; }
+        return j;
+      });
+    });
+  }
+  function storeTokens(j) {
+    if (j.access_token) S.strava.access = j.access_token;
+    if (j.refresh_token) S.strava.refresh = j.refresh_token;
+    S.strava.exp = j.expires_at || 0;
+    if (j.athlete) S.strava.athlete = ((j.athlete.firstname || "") + " " + (j.athlete.lastname || "")).trim() || S.strava.athlete;
+    save();
+  }
+  function stravaConnect() {
+    if (!stravaReady()) { toast("Renseigne d’abord l’identifiant client Strava et l’adresse du relais."); return; }
+    save();
+    location.href = "https://www.strava.com/oauth/authorize?client_id=" + encodeURIComponent(S.strava.clientId) + "&response_type=code&approval_prompt=auto&scope=" +
+      encodeURIComponent("read,activity:read_all") + "&redirect_uri=" + encodeURIComponent(location.origin + location.pathname) + "&state=hexplore";
+  }
+  function stravaReturn() {   // retour de l’autorisation Strava : l’adresse contient ?code=…
+    var q = new URLSearchParams(location.search), code = q.get("code"), err = q.get("error"), scope = q.get("scope") || "";
+    if (q.get("state") !== "hexplore" || (!code && !err)) return Promise.resolve(false);
+    var redirect = location.origin + location.pathname;
+    try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignoré */ }
+    if (err || !code) { toast("Connexion à Strava refusée."); return Promise.resolve(false); }
+    if (scope && !/activity:read/.test(scope)) { toast("Autorise l’accès à tes activités pour que la synchronisation fonctionne."); return Promise.resolve(false); }
+    if (!S.strava.relay) { toast("Relais Strava non configuré."); return Promise.resolve(false); }
+    return relayJson("/strava/token", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code, redirect_uri: redirect }) })
+      .then(function (j) { storeTokens(j); toast("Strava connecté" + (S.strava.athlete ? " : " + S.strava.athlete : "") + "."); return true; },
+        function (e) { toast("Connexion à Strava impossible : " + e.message); return false; });
+  }
+  function ensureToken() {
+    if (S.strava.access && S.strava.exp - 60 > Date.now() / 1000) return Promise.resolve(S.strava.access);
+    return relayJson("/strava/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: S.strava.refresh }) })
+      .then(function (j) { storeTokens(j); return S.strava.access; }, function (e) {
+        if (e.status === 400 || e.status === 401) { S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; save(); e.expired = true; }
+        throw e;
+      });
+  }
+  function stravaApi(path) {
+    return ensureToken().then(function (tok) { return relayJson("/strava/api/" + path, { headers: { Authorization: "Bearer " + tok } }); });
+  }
+  function stravaSkip(a) {   // sans GPS, sur home-trainer, saisie manuelle, virtuel, assisté ou motorisé
+    var t = a.sport_type || a.type || "";
+    return !a.start_latlng || a.start_latlng.length !== 2 || !!a.trainer || !!a.manual || /Virtual|^EBike|^EMountainBike|Workout|Weight|Yoga|Crossfit|Elliptical|Stair|Pilates/i.test(t) || isMotor(a.name || "");
+  }
+  function stravaTrack(a, st) {
+    var ll = st.latlng && st.latlng.data, tm = st.time && st.time.data, al = st.altitude && st.altitude.data, hr = st.heartrate && st.heartrate.data;
+    if (!ll || ll.length < 2) throw new Error("pas de trace GPS");
+    var t0 = Date.parse(a.start_date) / 1000, pts = [];
+    for (var i = 0; i < ll.length; i++) {
+      var p = ll[i];
+      if (!p || !isFinite(p[0]) || !isFinite(p[1]) || (p[0] === 0 && p[1] === 0)) continue;
+      pts.push({ p: [p[0], p[1]], t: tm && tm[i] !== undefined ? t0 + tm[i] : null, a: al && al[i] !== undefined ? al[i] : null });
+    }
+    return { pts: pts, name: a.name || "", firstTime: t0, localDate: String(a.start_date_local || a.start_date).slice(0, 10), sport: guessSport(a.sport_type || a.type || "", null), sensor: !!(a.has_heartrate || (hr && hr.length)) };
+  }
+  function stravaSync(opts) {
+    opts = opts || {};
+    if (stravaBusy || !stravaConnected()) return Promise.resolve();
+    stravaBusy = true; stravaStatus("Synchronisation avec Strava…");
+    var nowS = Math.floor(Date.now() / 1000), cursor = S.strava.lastSync || 0, first = !cursor;
+    var after = cursor ? Math.max(0, cursor - 3600) : nowS - (S.strava.days || 30) * 86400;
+    var all = [], hadPending = !!(pending && pending.items.length), lastT = cursor, processed = 0, limited = false, errs = 0;
+    if (!pending) pending = { items: [], errors: [], newCells: new Set() };
+    var items = pending.items, before = items.length;
+    function page(n) {
+      return stravaApi("athlete/activities?after=" + after + "&per_page=50&page=" + n).then(function (list) {
+        if (!Array.isArray(list)) throw new Error("réponse inattendue");
+        all = all.concat(list);
+        return list.length === 50 && n < 6 ? page(n + 1) : null;
+      });
+    }
+    return page(1).then(function () {
+      all.sort(function (x, y) { return Date.parse(x.start_date) - Date.parse(y.start_date); });
+      var chain = Promise.resolve();
+      all.forEach(function (a) {
+        chain = chain.then(function () {
+          if (limited) return;
+          var t = Date.parse(a.start_date) / 1000;
+          if (S.activities.some(function (x) { return x.strava === a.id; }) || items.some(function (x) { return x.act.strava === a.id; })) { lastT = Math.max(lastT, t); return; }
+          if (stravaSkip(a)) { lastT = Math.max(lastT, t); return; }
+          if (processed >= STV_MAX) { limited = true; return; }
+          processed++; stravaStatus("Strava : récupération de « " + (a.name || "sortie") + " »…");
+          return stravaApi("activities/" + a.id + "/streams?keys=latlng,time,altitude,heartrate,cadence&key_by_type=true").then(function (st) {
+            ingestTrack(stravaTrack(a, st), (a.name || "Strava") + ".strava", "autre", String(a.start_date_local || a.start_date).slice(0, 10), items, { stravaId: a.id });
+          }).catch(function (e) {
+            if (e && (e.status === 429 || e.expired)) throw e;
+            if (/déjà importée/.test(e.message)) return;   // déjà présente (importée par fichier, par exemple) : on l’ignore sans bruit
+            errs++; pending.errors.push({ file: a.name || ("Strava " + a.id), msg: e.message });
+          }).then(function () { lastT = Math.max(lastT, t); });
+        });
+      });
+      return chain;
+    }).then(function () {
+      S.strava.lastSync = lastT; S.strava.checkedAt = nowS; save();
+      var added = items.length - before;
+      if (!hadPending && !added && !pending.errors.length) pending = null; else computePreview();
+      var msg = added ? "Strava : " + added + " nouvelle" + (added > 1 ? "s" : "") + " sortie" + (added > 1 ? "s" : "") : "Strava : aucune nouvelle sortie";
+      stravaStatus(msg + (limited ? " (il en reste à récupérer : relance dans quelques minutes)" : "") + ".");
+      if (added) {
+        if (S.strava.auto && !first && !opts.manual && !hadPending) { commitPending(); toast(msg + " ajoutée" + (added > 1 ? "s" : "") + "."); }
+        else {
+          var ls = []; items.forEach(function (it) { ls = ls.concat(it.act.lines); }); if (ls.length) fitLines(ls);
+          draw(); if (current !== "add") openTab("add"); else render();
+          toast(msg + " : vérifie et valide l’import.");
+        }
+      } else if (opts.manual) toast(msg + ".");
+      if (errs) toast(errs + " sortie" + (errs > 1 ? "s" : "") + " Strava ignorée" + (errs > 1 ? "s" : "") + " (voir l’aperçu).");
+    }).catch(function (e) {
+      var m = e && e.status === 429 ? "Limite d’appels Strava atteinte : réessaie dans quelques minutes." : e && e.expired ? "Session Strava expirée : reconnecte-toi dans les Réglages." : "Synchronisation Strava impossible : " + ((e && e.message) || "réseau");
+      stravaStatus(m); if (opts.manual || (e && e.expired)) toast(m);
+      if (pending && !pending.items.length && !pending.errors.length) pending = null;
+      if (current === "add") render();
+    }).then(function () { stravaBusy = false; });
+  }
+  function stravaSettingsHTML() {
+    var s = S.strava, sel = [[30, "30 derniers jours"], [365, "12 derniers mois"], [1095, "3 dernières années"]].map(function (o) { return '<option value="' + o[0] + '"' + (s.days === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
+    var h = '<h3>Strava</h3>';
+    if (stravaConnected()) {
+      h += '<p class="note">Connecté' + (s.athlete ? ' : ' + esc(s.athlete) : '') + (s.lastSync ? ' · dernière sortie récupérée le ' + new Date(s.lastSync * 1000).toLocaleDateString("fr-FR") : '') + '.</p>' +
+        '<div class="drawer-sec"><button class="btn block" id="stvsync">Synchroniser maintenant</button></div>' +
+        (s.lastSync ? '' : '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>') +
+        '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="stvauto"' + (s.auto ? ' checked' : '') + '><span>Ajouter automatiquement les nouvelles sorties</span></label>' +
+        '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
+    } else {
+      h += '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
+        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://hexplore-relay.….workers.dev" autocomplete="off"></div>' +
+        '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
+        '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>';
+    }
+    return h + '<p class="note" id="stvstatus"></p><p class="note">Powered by Strava</p>';
+  }
+  function bindStrava() {
+    var id = $("stvid"), rl = $("stvrelay"), dy = $("stvdays"), au = $("stvauto");
+    if (id) id.addEventListener("change", function () { S.strava.clientId = id.value.trim(); save(); });
+    if (rl) rl.addEventListener("change", function () { S.strava.relay = rl.value.trim(); save(); });
+    if (dy) dy.addEventListener("change", function () { S.strava.days = +dy.value; save(); });
+    if (au) au.addEventListener("change", function () { S.strava.auto = au.checked; save(); });
+    var cn = $("stvconnect"); if (cn) cn.addEventListener("click", function () { if (id) S.strava.clientId = id.value.trim(); if (rl) S.strava.relay = rl.value.trim(); stravaConnect(); });
+    var sy = $("stvsync"); if (sy) sy.addEventListener("click", function () { stravaSync({ manual: true }); });
+    var dc = $("stvdisc"); if (dc) dc.addEventListener("click", function () { S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; save(); renderDrawer(); toast("Strava déconnecté."); });
+  }
   function sortedActs() {
     return S.activities.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id; });
   }
@@ -1178,6 +1330,41 @@ body.sheet-open #gradeBox { display: none; }
       onItemScanned(it);
     });
   }
+  function sameActivity(a, date, t0, lines, dist) {   // même sortie déjà enregistrée (fichier et Strava, par exemple)
+    if (a.date !== date) return false;
+    var s1 = a.lines && a.lines[0] && a.lines[0][0], s2 = lines[0] && lines[0][0];
+    if (!s1 || !s2 || haversine(s1, s2) > 80) return false;
+    if (a.t0 && t0) return Math.abs(a.t0 - t0) < 600;
+    return Math.abs(a.dist - dist) < 0.1 * Math.max(a.dist, dist);
+  }
+  function ingestTrack(g, fname, sportChoice, dateChoice, items, extra) {   // contrôles, calcul de la trace, puis recherche des sommets en arrière-plan
+    extra = extra || {};
+    if (g.sport === "moteur" || isMotor(fname + " " + g.name)) throw new Error("sport motorisé : seuls les sports sans moteur sont acceptés");
+    if (g.route) throw new Error("itinéraire sans horodatage : seules les traces enregistrées sont acceptées");
+    if (g.pts.length < 2) throw new Error("aucun point de trace");
+    var timed = 0, back = 0;
+    g.pts.forEach(function (x, i) { if (x.t !== null) { timed++; if (i && g.pts[i - 1].t !== null && x.t < g.pts[i - 1].t) back++; } });
+    if (timed < g.pts.length * 0.95) throw new Error("trace sans horodatage : impossible à contrôler");
+    if (back > g.pts.length * 0.02) throw new Error("horodatage incohérent (retours dans le temps)");
+    var base = fname.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit)$/i, "");
+    var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
+    var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
+    var date = g.localDate || (g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice));
+    var b = buildLines(smoothPts(g.pts), SPORTS[sport].vmax);
+    if (!b.lines.length) throw new Error("trace entièrement filtrée (vitesse ou sauts GPS)");
+    if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents : trace refusée");
+    var name = g.name && !/^suuntoapp-/i.test(g.name) ? g.name : SPORTS[sport].label + " du " + fmtDate(date);
+    var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) {
+      if (extra.stravaId && a.strava === extra.stravaId) return true;
+      return (a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name) || sameActivity(a, date, g.firstTime || 0, b.lines, b.dist);
+    });
+    if (dup) throw new Error("déjà importée");
+    var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false, t0: g.firstTime || 0, strava: extra.stravaId || 0 };
+    var it = { act: act, file: fname, near: [], nearLm: [], zone: null, scanning: true };
+    items.push(it);
+    scanItem(it);
+    return it;
+  }
   function importFiles(files, sportChoice, dateChoice) {
     if (!pending) pending = { items: [], errors: [], newCells: new Set() };
     var items = pending.items, errs = pending.errors, chain = Promise.resolve(), total = files.length, k = 0;
@@ -1186,29 +1373,8 @@ body.sheet-open #gradeBox { display: none; }
         .then(function () { return readFile(f); })
         .then(function (buf) { return stepUI(k, total, f.name, 30, "Décodage de la trace…").then(function () { return parseAny(buf); }); })
         .then(function (g) { return stepUI(k, total, f.name, 60, "Calcul des hexagones…").then(function () { return g; }); })
-        .then(function (g) {
-        if (g.sport === "moteur" || isMotor(f.name + " " + g.name)) throw new Error("sport motorisé : seuls les sports sans moteur sont acceptés");
-        if (g.route) throw new Error("itinéraire sans horodatage : seules les traces enregistrées sont acceptées");
-        if (g.pts.length < 2) throw new Error("aucun point de trace");
-        var timed = 0, back = 0;
-        g.pts.forEach(function (x, i) { if (x.t !== null) { timed++; if (i && g.pts[i - 1].t !== null && x.t < g.pts[i - 1].t) back++; } });
-        if (timed < g.pts.length * 0.95) throw new Error("trace sans horodatage : impossible à contrôler");
-        if (back > g.pts.length * 0.02) throw new Error("horodatage incohérent (retours dans le temps)");
-        var base = f.name.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit)$/i, "");
-        var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
-        var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
-        var date = g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice);
-        var b = buildLines(smoothPts(g.pts), SPORTS[sport].vmax);
-        if (!b.lines.length) throw new Error("trace entièrement filtrée (vitesse ou sauts GPS)");
-        if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents : trace refusée");
-        var name = g.name && !/^suuntoapp-/i.test(g.name) ? g.name : SPORTS[sport].label + " du " + fmtDate(date);
-        var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) { return a.date === date && Math.abs(a.dist - b.dist) < 20 && a.name === name; });
-        if (dup) throw new Error("déjà importée");
-        var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false };
-        var it = { act: act, file: f.name, near: [], nearLm: [], zone: null, scanning: true };
-        items.push(it);
-        scanItem(it);
-      }).catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
+        .then(function (g) { ingestTrack(g, f.name, sportChoice, dateChoice, items); })
+        .catch(function (err) { errs.push({ file: f.name, msg: err.message }); });
     });
     return chain.then(function () {
       computePreview();
@@ -1266,7 +1432,7 @@ body.sheet-open #gradeBox { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v29";
+  var BUILD = "25/10/2026 · v30";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
@@ -1988,6 +2154,10 @@ body.sheet-open #gradeBox { display: none; }
     importFiles(fs, ($("sp") && $("sp").value) || "autre", ($("dt") && $("dt").value) || todayISO());
   });
   function initExtras() {
+    stravaReturn().then(function (ok) {
+      if (ok && stravaConnected()) stravaSync({ manual: true });
+      else setTimeout(function () { if (stravaConnected() && S.strava.auto && Date.now() / 1000 - (S.strava.checkedAt || 0) > 1800) stravaSync({}); }, 6000);
+    });
     $("gradeChk").checked = !!S.gradeOutlines; $("gradeLegend").hidden = !S.gradeOutlines;
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
     if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
@@ -2237,6 +2407,7 @@ body.sheet-open #gradeBox { display: none; }
     var bm = [["relief", "Relief ombré (discret)"], ["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
+      stravaSettingsHTML() +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="diagbtn">Diagnostic de connexion</button><pre class="diag" id="diagout" hidden></pre></div>' +
@@ -2296,9 +2467,10 @@ body.sheet-open #gradeBox { display: none; }
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
     $("diagbtn").addEventListener("click", runDiagnostic);
+    bindStrava();
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
-      var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: S })], { type: "application/json" });
+      var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: Object.assign({}, S, { strava: undefined }) })], { type: "application/json" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "hexplore-sauvegarde.json"; document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     });
@@ -2311,7 +2483,7 @@ body.sheet-open #gradeBox { display: none; }
           if (!a || !Array.isArray(a.lines) || !a.date) return;
           var dup = S.activities.some(function (x) { return x.date === a.date && Math.abs(x.dist - a.dist) < 20 && x.name === a.name; });
           if (dup) return;
-          S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines, trust: a.trust === "non" ? "non" : "ok", summits: Array.isArray(a.summits) ? a.summits : [], sumDone: !!a.sumDone, landmarks: Array.isArray(a.landmarks) ? a.landmarks : [], lmDone: !!a.lmDone, poiV: a.poiV === 2 ? 2 : 0 });
+          S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines, trust: a.trust === "non" ? "non" : "ok", summits: Array.isArray(a.summits) ? a.summits : [], sumDone: !!a.sumDone, landmarks: Array.isArray(a.landmarks) ? a.landmarks : [], lmDone: !!a.lmDone, poiV: a.poiV === 2 ? 2 : 0, t0: +a.t0 || 0, strava: +a.strava || 0 });
           added++;
         });
         rebuild(); save(); fitAll(); renderDrawer(); toast(added + " course" + (added > 1 ? "s" : "") + " importée" + (added > 1 ? "s" : ""));
@@ -2320,7 +2492,7 @@ body.sheet-open #gradeBox { display: none; }
     });
     $("wipe").addEventListener("click", function () {
       if (!window.confirm("Effacer toutes les courses et le territoire découvert ? Cette action est définitive.")) return;
-      S.activities = []; selected = null; rebuild(); save(); draw(); renderDrawer();
+      S.activities = []; S.strava.lastSync = 0; selected = null; rebuild(); save(); draw(); renderDrawer();
     });
     $("sback").addEventListener("click", function () { drawerView = "profile"; renderDrawer(); });
   }
