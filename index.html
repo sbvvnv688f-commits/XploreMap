@@ -376,7 +376,7 @@ body.sheet-open #gradeBox { display: none; }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30 } };
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -405,7 +405,7 @@ body.sheet-open #gradeBox { display: none; }
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
         S.gradeOutlines = !!o.gradeOutlines;
-        S.strava = Object.assign({ clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30 }, o.strava && typeof o.strava === "object" ? o.strava : {});
+        S.strava = Object.assign({ clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 }, o.strava && typeof o.strava === "object" ? o.strava : {});
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
   }
@@ -751,7 +751,9 @@ body.sheet-open #gradeBox { display: none; }
     if (stravaBusy || !stravaConnected()) return Promise.resolve();
     stravaBusy = true; stravaStatus("Synchronisation avec Strava…");
     var nowS = Math.floor(Date.now() / 1000), cursor = S.strava.lastSync || 0, first = !cursor;
-    var after = cursor ? Math.max(0, cursor - 3600) : nowS - (S.strava.days || 30) * 86400;
+    if (opts.backfillDays) S.strava.bf = nowS - opts.backfillDays * 86400;   // récupération de l’historique : on repart de cette date
+    var bfMode = !!(opts.backfillDays || opts.backfillContinue), after = bfMode ? Math.max(0, S.strava.bf || 0) : (cursor ? Math.max(0, cursor - 3600) : nowS - (S.strava.days || 30) * 86400);
+    var rest = 0, bfT = after;
     var all = [], hadPending = !!(pending && pending.items.length), lastT = cursor, processed = 0, limited = false, errs = 0;
     if (!pending) pending = { items: [], errors: [], newCells: new Set() };
     var items = pending.items, before = items.length;
@@ -767,11 +769,11 @@ body.sheet-open #gradeBox { display: none; }
       var chain = Promise.resolve();
       all.forEach(function (a) {
         chain = chain.then(function () {
-          if (limited) return;
+          if (limited) { rest++; return; }
           var t = Date.parse(a.start_date) / 1000;
-          if (S.activities.some(function (x) { return x.strava === a.id; }) || items.some(function (x) { return x.act.strava === a.id; })) { lastT = Math.max(lastT, t); return; }
-          if (stravaSkip(a)) { lastT = Math.max(lastT, t); return; }
-          if (processed >= STV_MAX) { limited = true; return; }
+          if (S.activities.some(function (x) { return x.strava === a.id; }) || items.some(function (x) { return x.act.strava === a.id; })) { lastT = Math.max(lastT, t); bfT = Math.max(bfT, t); return; }
+          if (stravaSkip(a)) { lastT = Math.max(lastT, t); bfT = Math.max(bfT, t); return; }
+          if (processed >= STV_MAX) { limited = true; rest++; return; }
           processed++; stravaStatus("Strava : récupération de « " + (a.name || "sortie") + " »…");
           return stravaApi("activities/" + a.id + "/streams?keys=latlng,time,altitude,heartrate,cadence&key_by_type=true").then(function (st) {
             ingestTrack(stravaTrack(a, st), (a.name || "Strava") + ".strava", "autre", String(a.start_date_local || a.start_date).slice(0, 10), items, { stravaId: a.id });
@@ -779,22 +781,25 @@ body.sheet-open #gradeBox { display: none; }
             if (e && (e.status === 429 || e.expired)) throw e;
             if (/déjà importée/.test(e.message)) return;   // déjà présente (importée par fichier, par exemple) : on l’ignore sans bruit
             errs++; pending.errors.push({ file: a.name || ("Strava " + a.id), msg: e.message });
-          }).then(function () { lastT = Math.max(lastT, t); });
+          }).then(function () { lastT = Math.max(lastT, t); bfT = Math.max(bfT, t); });
         });
       });
       return chain;
     }).then(function () {
-      S.strava.lastSync = lastT; S.strava.checkedAt = nowS; save();
+      S.strava.lastSync = lastT; S.strava.checkedAt = nowS;
+      if (bfMode) S.strava.bf = limited ? bfT : 0;   // 0 : historique entièrement récupéré
+      save();
       var added = items.length - before;
       if (!hadPending && !added && !pending.errors.length) pending = null; else computePreview();
-      var msg = added ? "Strava : " + added + " nouvelle" + (added > 1 ? "s" : "") + " sortie" + (added > 1 ? "s" : "") : "Strava : aucune nouvelle sortie";
-      stravaStatus(msg + (limited ? " (il en reste à récupérer : relance dans quelques minutes)" : "") + ".");
+      var msg = added ? "Strava : " + added + (bfMode ? " sortie" + (added > 1 ? "s" : "") + " récupérée" + (added > 1 ? "s" : "") : " nouvelle" + (added > 1 ? "s" : "") + " sortie" + (added > 1 ? "s" : "")) : "Strava : aucune nouvelle sortie";
+      var more = limited ? " Il en reste environ " + rest + " : touche « Continuer la récupération » dans les Réglages." : "";
+      stravaStatus(msg + "." + more);
       if (added) {
         if (S.strava.auto && !first && !opts.manual && !hadPending) { commitPending(); toast(msg + " ajoutée" + (added > 1 ? "s" : "") + "."); }
         else {
           var ls = []; items.forEach(function (it) { ls = ls.concat(it.act.lines); }); if (ls.length) fitLines(ls);
           draw(); if (current !== "add") openTab("add"); else render();
-          toast(msg + " : vérifie et valide l’import.");
+          toast(msg + " : vérifie et valide l’import." + more);
         }
       } else if (opts.manual) toast(msg + ".");
       if (errs) toast(errs + " sortie" + (errs > 1 ? "s" : "") + " Strava ignorée" + (errs > 1 ? "s" : "") + " (voir l’aperçu).");
@@ -812,6 +817,9 @@ body.sheet-open #gradeBox { display: none; }
       h += '<p class="note">Connecté' + (s.athlete ? ' : ' + esc(s.athlete) : '') + (s.lastSync ? ' · dernière sortie récupérée le ' + new Date(s.lastSync * 1000).toLocaleDateString("fr-FR") : '') + '.</p>' +
         '<div class="drawer-sec"><button class="btn block" id="stvsync">Synchroniser maintenant</button></div>' +
         (s.lastSync ? '' : '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>') +
+        '<div class="field"><label for="stvbfd">Récupérer des sorties plus anciennes</label><select id="stvbfd">' + [[365, "12 derniers mois"], [1095, "3 dernières années"], [3650, "Tout l’historique (10 ans)"]].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join("") + '</select></div>' +
+        '<div class="drawer-sec"><button class="btn ghost block" id="stvbf">Récupérer l’historique</button>' + (s.bf ? '<button class="btn block" id="stvbfc">Continuer la récupération</button>' : '') + '</div>' +
+        '<p class="note">La récupération se fait par lots de 40 sorties pour respecter les limites de Strava ; chaque lot est à valider avant le suivant.</p>' +
         '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="stvauto"' + (s.auto ? ' checked' : '') + '><span>Ajouter automatiquement les nouvelles sorties</span></label>' +
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
     } else {
@@ -829,6 +837,8 @@ body.sheet-open #gradeBox { display: none; }
     if (dy) dy.addEventListener("change", function () { S.strava.days = +dy.value; save(); });
     if (au) au.addEventListener("change", function () { S.strava.auto = au.checked; save(); });
     var cn = $("stvconnect"); if (cn) cn.addEventListener("click", function () { if (id) S.strava.clientId = id.value.trim(); if (rl) S.strava.relay = rl.value.trim(); stravaConnect(); });
+    var bf = $("stvbf"); if (bf) bf.addEventListener("click", function () { stravaSync({ manual: true, backfillDays: +$("stvbfd").value }); });
+    var bc = $("stvbfc"); if (bc) bc.addEventListener("click", function () { stravaSync({ manual: true, backfillContinue: true }); });
     var sy = $("stvsync"); if (sy) sy.addEventListener("click", function () { stravaSync({ manual: true }); });
     var dc = $("stvdisc"); if (dc) dc.addEventListener("click", function () { S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; save(); renderDrawer(); toast("Strava déconnecté."); });
   }
@@ -1435,7 +1445,7 @@ body.sheet-open #gradeBox { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v31";
+  var BUILD = "25/10/2026 · v32";
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
   function aggInfo() {
