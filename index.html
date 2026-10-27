@@ -285,9 +285,30 @@ body.sheet-open #poicard { display: none; }
 body.sheet-open #gradeBox { display: none; }
 .gradechk { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 3px solid var(--outline); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 13px; font-weight: 600; box-shadow: 2px 2px 0 var(--outline); cursor: pointer; }
 .gradechk input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
-.gradelegend { margin-top: 6px; padding: 6px 10px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); font-size: 12px; line-height: 1.6; }
+.gradelegend { padding: 6px 10px; border: 2.5px solid var(--outline); border-right: 0; border-radius: 14px 0 0 14px; background: var(--panel); color: var(--ink); font-size: 12px; line-height: 1.6; }
 .gradelegend[hidden] { display: none; }
 .gradelegend i { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border-radius: 4px; border: 3px solid; background: rgba(43, 31, 74, 0.35); }
+.gl-wrap { display: flex; align-items: stretch; margin-bottom: 6px; }
+.gl-wrap[hidden] { display: none; }
+.gl-wrap.off .gl-t { display: none; }   /* légende repliée : seuls les carrés de couleur restent */
+.gl-wrap.off .gradelegend { padding: 6px 7px; }
+.gl-wrap.off .gradelegend i { margin-right: 0; }
+.gl-tab { position: relative; flex: none; width: 16px; padding: 0; border: 2.5px solid var(--outline); border-radius: 0 14px 14px 0; background: var(--accent); cursor: pointer; }
+.gl-tab::before { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; border-left: 2.5px solid var(--outline); border-bottom: 2.5px solid var(--outline); transform: translate(-30%, -50%) rotate(45deg); }
+.gl-wrap.off .gl-tab::before { transform: translate(-70%, -50%) rotate(225deg); }
+#cellcard { left: 12px; right: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 14px); padding: 10px 12px; max-height: 44vh; overflow-y: auto; background: var(--panel); color: var(--ink); border: 3px solid var(--outline); border-radius: 18px; box-shadow: 4px 4px 0 var(--outline); z-index: 9; }
+#cellcard[hidden] { display: none; }
+body.sheet-open #cellcard { display: none; }
+.cc-toggle { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.cc-caret { font-size: 18px; transition: transform 0.2s; }
+.cc-toggle[aria-expanded="false"] .cc-caret { transform: rotate(-90deg); }
+.cc-list { display: grid; gap: 6px; margin-top: 8px; }
+.cc-list[hidden] { display: none; }
+.cc-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: 2.5px solid var(--outline); border-radius: 12px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.cc-row[aria-pressed="true"] { background: var(--accent); box-shadow: 2px 2px 0 var(--outline); }
+.cc-d { font-weight: 700; }
+.cc-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-k { color: var(--muted); }
 .warn { font-size: 13px; color: var(--muted); }
 </style>
 </head>
@@ -320,7 +341,8 @@ body.sheet-open #gradeBox { display: none; }
   <button class="pill" data-per="week" aria-pressed="false">Semaine</button>
 </div>
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
-<div class="float" id="gradeBox"><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label><div class="gradelegend" id="gradeLegend" hidden><div><i style="border-color:#8a5a2e"></i>5 visites · bois</div><div><i style="border-color:#cd7f32"></i>20 · bronze</div><div><i style="border-color:#e6ebf2"></i>50 · argent</div><div><i style="border-color:#ffd23f"></i>100 · or</div><div><i style="border-color:#8ff3ff"></i>200 · diamant</div><div><i style="border-color:#ff6a1a"></i>500 · flamme 🔥</div></div></div>
+<div class="float" id="gradeBox"><div class="gl-wrap" id="glWrap" hidden><div class="gradelegend" id="gradeLegend"><div><i style="border-color:#8a5a2e"></i><span class="gl-t">5 visites · bois</span></div><div><i style="border-color:#cd7f32"></i><span class="gl-t">20 · bronze</span></div><div><i style="border-color:#e6ebf2"></i><span class="gl-t">50 · argent</span></div><div><i style="border-color:#ffd23f"></i><span class="gl-t">100 · or</span></div><div><i style="border-color:#8ff3ff"></i><span class="gl-t">200 · diamant</span></div><div><i style="border-color:#ff6a1a"></i><span class="gl-t">500 · flamme 🔥</span></div></div><button class="gl-tab" id="glTab" aria-label="Masquer les textes de la légende" aria-expanded="true"></button></div><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label></div>
+<div class="float" id="cellcard" hidden role="dialog" aria-label="Sorties dans cet hexagone"></div>
 <div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
 
 <div class="float" id="hint" hidden>
@@ -376,7 +398,7 @@ body.sheet-open #gradeBox { display: none; }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -405,7 +427,7 @@ body.sheet-open #gradeBox { display: none; }
         S.lastBackup = +o.lastBackup || 0;
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
-        S.gradeOutlines = !!o.gradeOutlines;
+        S.gradeChosen = !!o.gradeChosen; S.gradeOutlines = S.gradeChosen ? !!o.gradeOutlines : true; S.legendOff = !!o.legendOff;   // contours actifs par défaut tant que l’utilisateur n’a pas choisi
         S.strava = Object.assign({ clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 }, o.strava && typeof o.strava === "object" ? o.strava : {});
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
@@ -721,9 +743,13 @@ body.sheet-open #gradeBox { display: none; }
     }
     ctx.restore();
   }
-  $("gradeChk").addEventListener("change", function () {
-    S.gradeOutlines = this.checked; $("gradeLegend").hidden = !this.checked; save(); draw();
-  });
+  function applyLegend() {
+    var w = $("glWrap"), t = $("glTab");
+    w.hidden = !S.gradeOutlines; w.classList.toggle("off", !!S.legendOff);
+    t.setAttribute("aria-expanded", S.legendOff ? "false" : "true"); t.setAttribute("aria-label", S.legendOff ? "Afficher les textes de la légende" : "Masquer les textes de la légende");
+  }
+  $("gradeChk").addEventListener("change", function () { S.gradeOutlines = this.checked; S.gradeChosen = true; applyLegend(); save(); draw(); });
+  $("glTab").addEventListener("click", function () { S.legendOff = !S.legendOff; applyLegend(); save(); });
   /* ================= Strava : synchronisation des sorties ================= */
   var stravaBusy = false, STV_MAX = 40;
   function stravaReady() { return !!(S.strava.clientId && S.strava.relay); }
@@ -1026,6 +1052,7 @@ body.sheet-open #gradeBox { display: none; }
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
       if (a) { strokeLines(a.lines, css("--outline"), 4.4, 1); strokeLines(a.lines, css("--pink"), 2.4, 1); }
     }
+    drawCellSel(ag);
     drawScaleBar();
   }
   function drawScaleBar() {
@@ -1133,8 +1160,11 @@ body.sheet-open #gradeBox { display: none; }
   }
   var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://lz4.overpass-api.de/api/interpreter"], lastPoiError = "";
   var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 2000, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve(), OVP_ABORT_MS = window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000, ovpBest = 0, HEDGE_MS = window.__HEDGE_MS !== undefined ? window.__HEDGE_MS : Math.min(12000, Math.round((window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000) / 4));   // ovpBest : dernier serveur ayant répondu
+  var ovpFails = 0, ovpDownUntil = 0, OVP_DOWN_MS = window.__DOWN_MS !== undefined ? window.__DOWN_MS : 600000;   // après deux échecs de suite, Overpass est mis de côté dix minutes
   function overpassFetch(q, deadline) {   // requêtes espacées et relancées sur plusieurs serveurs ; délai maximal optionnel
+    if (OVP_DOWN_MS && Date.now() < ovpDownUntil) return Promise.reject(new Error("serveurs OpenStreetMap indisponibles"));
     var run = ovpGate.then(function () { return overpassTry(q, deadline); });
+    run.then(function () { ovpFails = 0; }, function (e) { if (!(e && /^délai dépassé$/.test(e.message))) { ovpFails++; if (ovpFails >= 2) ovpDownUntil = Date.now() + OVP_DOWN_MS; } });
     function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
     ovpGate = run.then(pause, pause);
     return run;
@@ -1182,6 +1212,74 @@ body.sheet-open #gradeBox { display: none; }
     return lat === undefined || lon === undefined ? null : [lat, lon];
   }
   function tileOf(ll) { return Math.floor(ll[0] / 0.1) + "_" + Math.floor(ll[1] / 0.1); }
+  /* ===== Source de secours : Wikipédia (articles géolocalisés) quand les serveurs OpenStreetMap ne répondent pas ===== */
+  var WP_API = "https://fr.wikipedia.org/w/api.php", WP_GAP_MS = window.__WP_GAP !== undefined ? window.__WP_GAP : 120, wpGate = Promise.resolve(), wpCache = new Map(), poiViaWiki = false;
+  var WP_SKIP = /^(city|adm\dst|railwaystation|airport|river|waterbody|isle|forest|edu|event|camera)$/, WP_NOT = /^(commune|village|hameau|ville|quartier|massif|chaîne|vallée|lac|rivière|cours d|station|refuge|forêt|parc|col\b|gare|route|aéroport|département|région|communauté|canton|île)/;
+  function wpCall(params, deadline) {   // API MediaWiki anonyme (origin=*) ; appels espacés
+    var qs = "format=json&formatversion=2&origin=*&" + Object.keys(params).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); }).join("&");
+    var run = wpGate.then(function () {
+      if (deadline && Date.now() > deadline) throw new Error("délai dépassé");
+      var ctl = typeof AbortController !== "undefined" ? new AbortController() : null, to = ctl ? setTimeout(function () { ctl.abort(); }, 25000) : 0;
+      return fetch(WP_API + "?" + qs, { signal: ctl ? ctl.signal : undefined }).then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }, function (e) { clearTimeout(to); throw e; });
+    });
+    function pause() { return new Promise(function (r) { setTimeout(r, WP_GAP_MS); }); }
+    wpGate = run.then(pause, pause);
+    return run;
+  }
+  function wpClass(title, desc, type) {   // classe un article : sommet, lieu remarquable ou rien
+    var t = String(title || "").toLowerCase(), d = String(desc || "").toLowerCase(), both = t + " · " + d;
+    if (/\b(cascade|chutes? d.eau)\b/.test(both)) return { t: "lm", kind: "Cascade", ic: "💧" };
+    if (/\b(grotte|gouffre|aven|caverne)\b/.test(both)) return { t: "lm", kind: "Grotte", ic: "🕳️" };
+    if (type === "glacier" || /\bglacier\b/.test(d)) return { t: "lm", kind: "Glacier", ic: "🧊" };
+    if (/(source thermale|sources? chaudes?)/.test(both)) return { t: "lm", kind: "Source chaude", ic: "♨️" };
+    var peakDesc = /^(sommet|pic\b|aiguille|dent\b|dôme|piton|cime|montagne|mont\b|colline|pointe|rocher|roc\b|tête|crête|crêt\b|puy\b|ballon)/.test(d);
+    var peakTitle = /^(le |la |les |l')?(mont|pic|aiguille|dent|dôme|piton|cime|tête|pointe|roc|rocher|montagne|crêt|puy|ballon)\b/.test(t) && !WP_NOT.test(d);
+    if (type === "mountain" || peakDesc || peakTitle) return { t: "peak" };
+    if (/\b(château|chateau|fort|forteresse|donjon|citadelle|manoir|maison forte)\b/.test(both)) return { t: "lm", kind: "Château ou fort", ic: "🏰" };
+    if (/\b(ruines?|vestiges)\b/.test(both)) return { t: "lm", kind: "Ruines", ic: "🏛️" };
+    if (/\b(archéologique|dolmen|menhir|mégalithe|oppidum|tumulus)\b/.test(both)) return { t: "lm", kind: "Site archéologique", ic: "🏺" };
+    if (/\b(belvédère|point de vue|table d.orientation)\b/.test(both)) return { t: "lm", kind: "Belvédère", ic: "🔭" };
+    if (/\b(monument|mémorial|statue|stèle|calvaire|obélisque)\b/.test(both)) return { t: "lm", kind: "Monument", ic: "🗿" };
+    if (/\b(abbaye|prieuré|ermitage|chartreuse)\b/.test(both)) return { t: "lm", kind: "Site historique", ic: "🏛️" };
+    return null;
+  }
+  function wpTile(k, deadline) {   // articles géolocalisés d’une zone de 0,1°, classés ; résultat mémorisé
+    if (wpCache.has(k)) return wpCache.get(k);
+    var pp = k.split("_"), la = +pp[0] * 0.1, lo = +pp[1] * 0.1;
+    var bbox = (la + 0.101).toFixed(4) + "|" + (lo - 0.001).toFixed(4) + "|" + (la - 0.001).toFixed(4) + "|" + (lo + 0.101).toFixed(4);   // haut|gauche|bas|droite
+    var p = wpCall({ action: "query", list: "geosearch", gsbbox: bbox, gslimit: 500, gsprop: "type" }, deadline).then(function (j) {
+      var gs = (j && j.query && j.query.geosearch) || [], cand = gs.filter(function (g) { return g && g.title && typeof g.lat === "number" && !WP_SKIP.test(g.type || ""); });
+      var out = [], chain = Promise.resolve();
+      function add(g, c, wd) { if (c) out.push({ id: "w" + g.pageid, title: g.title, name: g.title.replace(/\s*\([^)]*\)\s*$/, ""), lat: g.lat, lon: g.lon, t: c.t, kind: c.kind, ic: c.ic, wd: wd || "" }); }
+      for (var i = 0; i < cand.length; i += 50) (function (ch) {
+        chain = chain.then(function () {
+          return wpCall({ action: "query", prop: "description|pageprops", ppprop: "wikibase_item", pageids: ch.map(function (g) { return g.pageid; }).join("|") }, deadline).then(function (r) {
+            var by = {}; ((r && r.query && r.query.pages) || []).forEach(function (pg) { by[pg.pageid] = pg; });
+            ch.forEach(function (g) { var pg = by[g.pageid] || {}; add(g, wpClass(g.title, pg.description, g.type), pg.pageprops && pg.pageprops.wikibase_item); });
+          }, function () { ch.forEach(function (g) { add(g, wpClass(g.title, "", g.type), ""); }); });   // description indisponible : classement par le titre seul
+        });
+      })(cand.slice(i, i + 50));
+      return chain.then(function () { return out; });
+    });
+    wpCache.set(k, p); p.catch(function () { wpCache.delete(k); });
+    return p;
+  }
+  function wpFill(need, cache, kind, deadline) {
+    var chain = Promise.resolve();
+    need.forEach(function (k) {
+      chain = chain.then(function () { return wpTile(k, deadline); }).then(function (items) {
+        cache.set(k, []);
+        items.forEach(function (it) {
+          if (it.t !== kind) return;
+          var arr = cache.get(tileOf([it.lat, it.lon]));
+          if (!arr || arr.some(function (x) { return x.id === it.id; })) return;
+          if (kind === "peak") arr.push({ id: it.id, name: it.name, lat: it.lat, lng: it.lon, ele: null, wp: "fr:" + it.title, wd: it.wd });
+          else arr.push({ id: it.id, name: it.name, lat: it.lat, lng: it.lon, kind: it.kind, ic: it.ic, wp: "fr:" + it.title, wd: it.wd });
+        });
+      });
+    });
+    return chain.then(function () { poiViaWiki = true; });
+  }
   function fetchBatch(need, deadline) {   // sommets nommés : requête très légère
     var q = need.map(function (k) { return 'node["natural"="peak"]["name"]' + tileBB(k); }).join("");
     return overpassFetch("[out:json][timeout:50];(" + q + ");out qt;", deadline).then(function (j) {
@@ -1192,7 +1290,7 @@ body.sheet-open #gradeBox { display: none; }
         var arr = peakCache.get(tileOf(ll));
         if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: ll[0], lng: ll[1], ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
       });
-    });
+    }).catch(function (e) { return wpFill(need, peakCache, "peak", deadline).catch(function () { throw e; }); });
   }
   var LM_FILTERS = ['"tourism"="attraction"', '"tourism"="viewpoint"', '"natural"="waterfall"', '"natural"="cave_entrance"', '"natural"="hot_spring"', '"natural"="glacier"'];
   function lmUnion(bb) {   // valeurs exactes (indexées) : bien plus rapide qu’une expression régulière sur la valeur
@@ -1223,7 +1321,7 @@ body.sheet-open #gradeBox { display: none; }
           var got = [], c2 = Promise.resolve();
           subBBs(k).forEach(function (bb) { c2 = c2.then(function () { return lmRun(bb, deadline).then(function (j) { got.push(j); }); }); });
           return c2.then(function () { lmCache.set(k, []); got.forEach(ingestLm); });
-        });
+        }).catch(function (e) { return wpFill([k], lmCache, "lm", deadline).catch(function () { throw e; }); });
       });
     });
     return chain;
@@ -1527,7 +1625,7 @@ body.sheet-open #gradeBox { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v37";
+  var BUILD = "25/10/2026 · v40";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
@@ -1736,11 +1834,78 @@ body.sheet-open #gradeBox { display: none; }
     if (!c || c.hidden) return;
     c.hidden = true; cardKey = ""; focusPoi = null; draw();
   }
+  var cellSel = null, cellPickedSel = false;
+  function cellActs(id) {   // sorties dont le couloir de 50 m traverse l’hexagone (à défaut : celles dont un cercle bonus le couvre)
+    var out = [];
+    S.activities.forEach(function (a) { var c = actCorridor(a); if (c.has ? c.has(id) : c.indexOf(id) >= 0) out.push({ a: a, bonus: false }); });
+    if (!out.length) S.activities.forEach(function (a) { if (actCells(a).has(id)) out.push({ a: a, bonus: true }); });
+    out.sort(function (x, y) { return x.a.date < y.a.date ? 1 : x.a.date > y.a.date ? -1 : y.a.id - x.a.id; });
+    return out;
+  }
+  function pickCell(x, y) {   // hexagone exploré sous le doigt (ou le plus proche, à moins de 16 px)
+    var ag = aggInfo(); if (ag.wFine <= 0) return null;
+    var ll = unproject(x, y), c0 = h3.latLngToCell(ll[0], ll[1], RES);
+    if (dispCells.has(c0)) return c0;
+    var kr = Math.max(1, Math.min(6, Math.ceil(16 / Math.max(2, 49 / ag.mpp)))), best = null, bd = 16;
+    h3.gridDisk(c0, kr).forEach(function (id) {
+      if (!dispCells.has(id)) return;
+      var cc = centerOf(id), p = toScreen(cc[0], cc[1]), d = Math.hypot(p[0] - x, p[1] - y);
+      if (d < bd) { bd = d; best = id; }
+    });
+    return best;
+  }
+  function drawCellSel(ag) {
+    if (!cellSel || !ag || ag.wFine <= 0 || !dispCells.has(cellSel)) return;
+    var b = boundary(cellSel);
+    ctx.beginPath();
+    for (var i = 0; i < b.length; i++) { var p = toScreen(b[i][0], b[i][1]); if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); }
+    ctx.closePath(); ctx.lineJoin = "round";
+    ctx.lineWidth = 5; ctx.strokeStyle = css("--outline"); ctx.stroke();
+    ctx.lineWidth = 2.4; ctx.strokeStyle = "#ffffff"; ctx.stroke(); ctx.lineJoin = "miter";
+  }
+  function closeCellCard() {
+    var c = $("cellcard");
+    if (!c || c.hidden) return;
+    c.hidden = true; cellSel = null;
+    if (cellPickedSel) { selected = null; cellPickedSel = false; }
+    draw();
+  }
+  function showCellCard(id) {
+    var list = cellActs(id), c = $("cellcard");
+    if (!list.length) return false;
+    var days = {}; list.forEach(function (x) { days[x.a.date] = 1; });
+    var nd = Object.keys(days).length, k = levelIdx(nd);
+    var rows = list.map(function (x) {
+      var a = x.a, sp = SPORTS[a.sport] || {};
+      return '<button class="cc-row" data-cact="' + a.id + '" aria-pressed="' + (selected === a.id ? "true" : "false") + '"><span class="cc-d">' + fmtDate(a.date) + '</span><span class="cc-n">' + (sp.ic ? sp.ic + " " : "") + esc(a.name) + (x.bonus ? " · cercle bonus" : "") + '</span><span class="cc-k">' + fmt(a.dist / 1000, 1) + ' km</span></button>';
+    }).join("");
+    c.innerHTML = '<div class="pc-top"><button class="cc-toggle" id="cctoggle" aria-expanded="true" aria-controls="cclist"><span class="pc-t">⬡ ' + list.length + ' sortie' + (list.length > 1 ? "s" : "") + ' dans cet hexagone</span><span class="cc-caret" aria-hidden="true">▾</span></button><button class="pc-x" id="cellcardx" aria-label="Fermer">✕</button></div>' +
+      '<div class="pc-s">' + nd + ' jour' + (nd > 1 ? "s" : "") + ' de visite' + (k >= 0 ? " · " + MASTERY[k].ic + " " + MASTERY[k].name : "") + '</div>' +
+      '<div class="cc-list" id="cclist">' + rows + '</div>';
+    closePoiCard(); cellSel = id; c.hidden = false;
+    $("cellcardx").addEventListener("click", closeCellCard);
+    $("cctoggle").addEventListener("click", function () { var l = $("cclist"); l.hidden = !l.hidden; this.setAttribute("aria-expanded", l.hidden ? "false" : "true"); });
+    c.querySelectorAll("[data-cact]").forEach(function (b) {
+      b.addEventListener("click", function () {   // touche une sortie : sa trace s’affiche ; une seconde touche la masque
+        var aid = parseInt(b.dataset.cact, 10);
+        selected = selected === aid ? null : aid; cellPickedSel = selected !== null;
+        c.querySelectorAll("[data-cact]").forEach(function (x) { x.setAttribute("aria-pressed", selected === parseInt(x.dataset.cact, 10) ? "true" : "false"); });
+        draw();
+      });
+    });
+    draw();
+    return true;
+  }
   function hitPeak(x, y) {
     var best = null, bd = 26;
     peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
-    if (!best) { closePoiCard(); return; }
-    showPoiCard(best.p, !!best.lm, best.reached);
+    if (!best) {
+      closePoiCard();
+      var cid = pickCell(x, y);
+      if (cid && showCellCard(cid)) return;
+      closeCellCard(); return;
+    }
+    closeCellCard(); showPoiCard(best.p, !!best.lm, best.reached);
   }
   function poiCard(key, it, icon, sub, right) {
     poiIdx[key] = it;
@@ -2088,6 +2253,7 @@ body.sheet-open #gradeBox { display: none; }
       };
     }
     OVERPASS.forEach(function (u, i) { chain = chain.then(function () { return test("Serveur Overpass " + (i + 1) + " (" + u.split("/")[2] + ")", ovp(u)); }); });
+    chain = chain.then(function () { return test("Wikipédia (recherche par position)", function () { return wpCall({ action: "query", list: "geosearch", gscoord: lat + "|" + lon, gsradius: 5000, gslimit: 50, gsprop: "type" }).then(function (j) { var g = (j.query && j.query.geosearch) || []; return g.length + " articles géolocalisés dans 5 km"; }); }); });
     chain = chain.then(function () { return test("Wikipédia", function () { return fetch("https://fr.wikipedia.org/api/rest_v1/page/summary/France").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return "accessible"; }); }); });
     chain = chain.then(function () { return test("geo.api.gouv.fr", function () { return fetch("https://geo.api.gouv.fr/communes?lat=" + lat + "&lon=" + lon + "&fields=nom").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return j.length ? j[0].nom : "hors France"; }); }); });
     chain.then(function () {
@@ -2146,6 +2312,7 @@ body.sheet-open #gradeBox { display: none; }
     if (autoScanBusy || (typeof navigator.onLine === "boolean" && !navigator.onLine)) return;
     if (analysisPriority > 0) { setTimeout(function () { autoScan(force); }, 4000); return; }   // un import est en cours : il passe en priorité
     if (force !== true && Date.now() - autoScanAt < 60000) return;
+    if (force === true) { ovpDownUntil = 0; ovpFails = 0; }   // nouvel essai explicite : on réinterroge d’abord OpenStreetMap
     var todo = pendingAnalysis();
     if (!todo.length) { autoScanTry = 0; return; }
     autoScanAt = Date.now(); autoScanBusy = true;
@@ -2256,7 +2423,7 @@ body.sheet-open #gradeBox { display: none; }
       if (ok && stravaConnected()) stravaSync({ manual: true });
       else setTimeout(function () { if (stravaConnected() && S.strava.auto && Date.now() / 1000 - (S.strava.checkedAt || 0) > 1800) stravaSync({}); }, 6000);
     });
-    $("gradeChk").checked = !!S.gradeOutlines; $("gradeLegend").hidden = !S.gradeOutlines;
+    $("gradeChk").checked = !!S.gradeOutlines; applyLegend();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
     if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
     if (/^https?:$/.test(location.protocol)) fetch(location.pathname, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
@@ -2515,7 +2682,7 @@ body.sheet-open #gradeBox { display: none; }
       '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
       '<p class="note">Version de l’appli : ' + BUILD + '</p>' +
       '<p class="note">Stockage de l’appli : ' + storageInfo() + '</p>' +
-      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.</p>' +
+      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.' + (poiViaWiki ? ' Source de secours utilisée : Wikipédia (les serveurs OpenStreetMap ne répondent pas ; seuls les sommets et lieux ayant un article sont trouvés).' : '') + '</p>' +
       (/claude|anthropic/i.test(location.hostname) ? '<p class="note">Cette page est un aperçu : les recherches en ligne (sommets, lieux, communes, résumés Wikipédia) y sont bloquées. Ouvre l’appli à son adresse hébergée.</p>' : '') +
       '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
       '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
