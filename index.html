@@ -1006,8 +1006,9 @@ body.sheet-open #gradeBox { display: none; }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
     exploreRefresh();
     var ag = aggInfo();
-    tinyHex = ag.wFine > 0 && 49 / ag.mpp < 4; tinyS = Math.max(1.4, 49 / ag.mpp * 1.05);
     var vis = ag.wFine > 0 ? visCells() : [];
+    if (vis.length > FINE_MAX_CELLS) { ag = aggInfo(true); vis = []; }   // trop d’hexagones à l’écran : bascule en vue agrégée pour rester fluide
+    tinyHex = ag.wFine > 0 && 49 / ag.mpp < 6; tinyS = Math.max(1.4, 49 / ag.mpp * 1.05);
     var onImg = drawTiles(ag.wAgg > 0 ? aggIds(ag) : vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
@@ -1130,31 +1131,47 @@ body.sheet-open #gradeBox { display: none; }
     if (t.tourism === "viewpoint") return ["Belvédère", "🔭"];
     return ["Site remarquable", "⭐"];
   }
-  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"], lastPoiError = "";
-  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 1200, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve(), OVP_ABORT_MS = window.__ABORT_MS !== undefined ? window.__ABORT_MS : 35000, ovpBest = 0;   // ovpBest : dernier serveur ayant répondu
+  var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://lz4.overpass-api.de/api/interpreter"], lastPoiError = "";
+  var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 2000, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve(), OVP_ABORT_MS = window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000, ovpBest = 0, HEDGE_MS = window.__HEDGE_MS !== undefined ? window.__HEDGE_MS : Math.min(12000, Math.round((window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000) / 4));   // ovpBest : dernier serveur ayant répondu
   function overpassFetch(q, deadline) {   // requêtes espacées et relancées sur plusieurs serveurs ; délai maximal optionnel
     var run = ovpGate.then(function () { return overpassTry(q, deadline); });
     function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
     ovpGate = run.then(pause, pause);
     return run;
   }
-  function overpassTry(q, deadline) {
-    var body = "data=" + encodeURIComponent(q), tries = 0;
-    function attempt() {
-      if (deadline && Date.now() > deadline) throw new Error("délai dépassé");
-      var idx = (ovpBest + tries) % OVERPASS.length, url = OVERPASS[idx], ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-      var to = ctl ? setTimeout(function () { ctl.abort(); }, deadline ? Math.max(3000, Math.min(OVP_ABORT_MS, deadline - Date.now())) : OVP_ABORT_MS) : 0;
-      return fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
-        .then(function (r) { clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (j) { if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark); ovpBest = idx; return j; })
-        .catch(function (e) {
-          clearTimeout(to); lastPoiError = friendlyErr(e); tries++;
-          if (tries >= (/serveur trop lent/.test(lastPoiError) ? OVERPASS.length : OVERPASS.length + 2) || (deadline && Date.now() > deadline) || lastPoiError === "délai dépassé") throw e;
-          var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * tries : 0;
-          return new Promise(function (res) { setTimeout(res, (OVP_GAP_MS ? 700 * tries : 0) + extra); }).then(attempt);
-        });
-    }
-    return attempt();
+  function overpassTry(q, deadline) {   // requête « doublée » : si un serveur tarde, le suivant est interrogé en parallèle ; le premier qui répond gagne
+    var body = "data=" + encodeURIComponent(q), maxLaunch = OVERPASS.length + 1;
+    return new Promise(function (resolve, reject) {
+      var launched = 0, running = 0, settled = false, ctls = [], timers = [], lastErr = null;
+      function done(fn, v) {
+        if (settled) return; settled = true;
+        timers.forEach(clearTimeout); ctls.forEach(function (c) { try { c.abort(); } catch (e) { /* ignoré */ } });
+        fn(v);
+      }
+      function launch() {
+        if (settled || launched >= maxLaunch) return;
+        if (deadline && Date.now() > deadline) { done(reject, new Error("délai dépassé")); return; }
+        var idx = (ovpBest + launched) % OVERPASS.length, n = ++launched, ctl = typeof AbortController !== "undefined" ? new AbortController() : null, to = 0;
+        running++;
+        if (ctl) { ctls.push(ctl); to = setTimeout(function () { ctl.abort(); }, deadline ? Math.max(3000, Math.min(OVP_ABORT_MS, deadline - Date.now())) : OVP_ABORT_MS); timers.push(to); }
+        fetch(OVERPASS[idx], { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body, signal: ctl ? ctl.signal : undefined })
+          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+          .then(function (j) {
+            if (j && j.remark && /error|timed out|memory|rate|too many/i.test(j.remark)) throw new Error("Overpass : " + j.remark);
+            clearTimeout(to); ovpBest = idx; done(resolve, j);
+          })
+          .catch(function (e) {
+            clearTimeout(to); running--; if (settled) return;
+            lastPoiError = friendlyErr(e); lastErr = e;
+            if (launched < maxLaunch && !(deadline && Date.now() > deadline)) {
+              var extra = /HTTP (429|503|504)/.test(lastPoiError) ? Math.round(OVP_GAP_MS * 1.7) * n : 0;
+              timers.push(setTimeout(launch, (OVP_GAP_MS ? 700 * n : 0) + extra));
+            } else if (running === 0) done(reject, lastErr);
+          });
+        if (launched < maxLaunch) timers.push(setTimeout(launch, HEDGE_MS));   // serveur lent : on interroge aussi le suivant sans attendre
+      }
+      launch();
+    });
   }
   function tileBB(k) {
     var p = k.split("_"), la = +p[0], lo = +p[1];
@@ -1167,7 +1184,7 @@ body.sheet-open #gradeBox { display: none; }
   function tileOf(ll) { return Math.floor(ll[0] / 0.1) + "_" + Math.floor(ll[1] / 0.1); }
   function fetchBatch(need, deadline) {   // sommets nommés : requête très légère
     var q = need.map(function (k) { return 'node["natural"="peak"]["name"]' + tileBB(k); }).join("");
-    return overpassFetch("[out:json][timeout:30];(" + q + ");out qt;", deadline).then(function (j) {
+    return overpassFetch("[out:json][timeout:50];(" + q + ");out qt;", deadline).then(function (j) {
       need.forEach(function (k) { peakCache.set(k, []); });
       (j.elements || []).forEach(function (el) {
         var t = el.tags, ll = elLatLon(el);
@@ -1196,7 +1213,7 @@ body.sheet-open #gradeBox { display: none; }
       if (arr && !arr.some(function (x) { return x.id === id; })) { var kd = lmKind(t); arr.push({ id: id, name: t.name, lat: ll[0], lng: ll[1], kind: kd[0], ic: kd[1], wp: t.wikipedia || "", wd: t.wikidata || "" }); }
     });
   }
-  function lmRun(bb, deadline) { return overpassFetch("[out:json][timeout:25];(" + lmUnion(bb) + ");out center qt;", deadline); }
+  function lmRun(bb, deadline) { return overpassFetch("[out:json][timeout:50];(" + lmUnion(bb) + ");out center qt;", deadline); }
   function fetchLmBatch(need, deadline) {   // lieux référencés : une zone à la fois ; si le serveur peine, la zone est découpée en quatre
     var chain = Promise.resolve();
     need.forEach(function (k) {
@@ -1510,13 +1527,13 @@ body.sheet-open #gradeBox { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v35";
-  var FINE_MAX_MPP = 30, tinyHex = false, tinyS = 1.5;   // 30 m par pixel ≈ échelle de 2 km sur un téléphone
+  var BUILD = "25/10/2026 · v37";
+  var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
-  function aggInfo() {
+  function aggInfo(force) {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
-    if (mpp <= FINE_MAX_MPP) return { wFine: 1, wAgg: 0, mpp: mpp };   // hexagones à leur taille minimale, sans teinte, jusqu’à l’échelle d’environ 2 km
+    if (!force && mpp <= FINE_MAX_MPP) return { wFine: 1, wAgg: 0, mpp: mpp };   // hexagones à leur taille minimale, sans teinte, jusqu’à l’échelle d’environ 2 km
     var res = 10;
     while (res > MIN_AGG_RES && EDGE_M[res] / mpp < 7) res--;
     return { wFine: 0, wAgg: 1, res: res, mpp: mpp };   // niveau agrégé : teinte pleine, aucune superposition avec les hexagones fins
@@ -1553,7 +1570,8 @@ body.sheet-open #gradeBox { display: none; }
       ids.push(id);
     });
     buildCellsPath(ctx, ids);
-    ctx.globalAlpha = (onImg ? 0.45 : 0.65) * ag.wAgg; ctx.fillStyle = PALE_YELLOW; ctx.fill();
+    var far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.18 : 0.3, a1 = onImg ? 0.5 : 0.7;   // plus on dézoome, plus le jaune se renforce (toujours translucide)
+    ctx.globalAlpha = (a0 + (a1 - a0) * far) * ag.wAgg; ctx.fillStyle = PALE_YELLOW; ctx.fill();
     if (EDGE_M[ag.res] / ag.mpp >= 10) {
       buildCellsPath(ctx, ids);
       ctx.globalAlpha = (onImg ? 0.35 : 0.5) * ag.wAgg; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
@@ -2132,6 +2150,8 @@ body.sheet-open #gradeBox { display: none; }
     if (!todo.length) { autoScanTry = 0; return; }
     autoScanAt = Date.now(); autoScanBusy = true;
     var found = 0, ok = 0, chain = Promise.resolve();
+    var allKeys = {}; todo.forEach(function (a) { tileKeysOf(a.lines || []).forEach(function (k) { allKeys[k] = 1; }); });
+    chain = chain.then(function () { return fetchPeaks(Object.keys(allKeys), Date.now() + 900000); }).catch(function () { /* l’analyse course par course réessaiera */ });   // les sommets d’abord, pour toutes les courses : requêtes légères, puis les lieux
     todo.forEach(function (a) {
       chain = chain.then(function () { return quiet(); }).then(function () { return analyzeActivity(a); }).then(function (r) { if (r.ok) { ok++; found += r.ns + r.nl; } });
     });
