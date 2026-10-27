@@ -288,6 +288,8 @@ body.sheet-open #gradeBox { display: none; }
 .gradelegend { padding: 6px 10px; border: 2.5px solid var(--outline); border-right: 0; border-radius: 14px 0 0 14px; background: var(--panel); color: var(--ink); font-size: 12px; line-height: 1.6; }
 .gradelegend[hidden] { display: none; }
 .gradelegend i { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border-radius: 4px; border: 3px solid; background: rgba(43, 31, 74, 0.35); }
+details.advanced { margin-top: 10px; }
+details.advanced summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .gl-wrap { display: flex; align-items: stretch; margin-bottom: 6px; }
 .gl-wrap[hidden] { display: none; }
 .gl-wrap.off .gl-t { display: none; }   /* légende repliée : seuls les carrés de couleur restent */
@@ -398,7 +400,8 @@ body.sheet-open #cellcard { display: none; }
   };
 
   /* ================= état ================= */
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Portulan et de son relais (aucun secret ici)
+  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -428,7 +431,9 @@ body.sheet-open #cellcard { display: none; }
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
         S.gradeChosen = !!o.gradeChosen; S.gradeOutlines = S.gradeChosen ? !!o.gradeOutlines : true; S.legendOff = !!o.legendOff;   // contours actifs par défaut tant que l’utilisateur n’a pas choisi
-        S.strava = Object.assign({ clientId: "", relay: "", access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 }, o.strava && typeof o.strava === "object" ? o.strava : {});
+        S.strava = Object.assign({ clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 }, o.strava && typeof o.strava === "object" ? o.strava : {});
+        if (!S.strava.clientId) S.strava.clientId = STRAVA_ID;
+        if (!S.strava.relay) S.strava.relay = STRAVA_RELAY;   // préremplis pour tous les utilisateurs
       }
     } catch (e) { /* stockage indisponible ou corrompu */ }
   }
@@ -725,14 +730,16 @@ body.sheet-open #cellcard { display: none; }
     for (i = 0; i < vis.length; i++) { var d = visits.get(vis[i]); if (!d) continue; k = levelIdx(d.length); if (k >= 1) { groups[k].push(vis[i]); any = true; } }
     groups[6] = groups[6].filter(function (id) { var b = boundary(id)[0], q = toScreen(b[0], b[1]); return q[0] > -30 && q[0] < W + 30 && q[1] > -30 && q[1] < H + 30; });   // animation seulement si une flamme est réellement à l’écran
     if (!any) return;
-    var scale = Math.max(0.55, Math.min(1.7, 49 / ag.mpp / 28));
+    var hexPx = 49 / ag.mpp, scale = Math.max(0.28, Math.min(1.7, hexPx / 28)), animate = hexPx >= 10, tinySave = tinyHex;   // traits plus fins quand les hexagones sont petits ; flamme animée seulement quand elle est bien visible
+    tinyHex = false;   // les hexagones gradés sont peu nombreux : on garde leur vraie forme
     ctx.save(); ctx.lineJoin = "round"; ctx.globalAlpha = 1;
     for (k = 1; k <= 6; k++) if (groups[k].length) { buildCellsPath(ctx, groups[k]); ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = (GRADES[k].w + 2.2) * scale; ctx.stroke(); }
     for (k = 1; k <= 5; k++) if (groups[k].length) {
       buildCellsPath(ctx, groups[k]); ctx.strokeStyle = GRADES[k].c; ctx.lineWidth = GRADES[k].w * scale; ctx.stroke();
       if (k === 5) { ctx.strokeStyle = "rgba(255,255,255,0.95)"; ctx.lineWidth = 0.9 * scale; ctx.stroke(); }   // éclat du diamant
     }
-    if (groups[6].length) {   // flamme : contour qui vacille, avec lueur et liseré lumineux qui défile
+    if (groups[6].length && !animate) { buildCellsPath(ctx, groups[6]); ctx.strokeStyle = "#ff6a1a"; ctx.lineWidth = GRADES[6].w * scale; ctx.stroke(); }   // petite échelle : flamme fixe, sans animation
+    else if (groups[6].length) {   // flamme : contour qui vacille, avec lueur et liseré lumineux qui défile
       var t = Date.now() / 1000, pulse = 0.5 + 0.5 * Math.sin(t * 7);
       buildCellsPath(ctx, groups[6]);
       ctx.shadowColor = "rgba(255,110,20,0.95)"; ctx.shadowBlur = 6 + 8 * pulse;
@@ -741,7 +748,7 @@ body.sheet-open #cellcard { display: none; }
       ctx.strokeStyle = "#fff1a8"; ctx.lineWidth = 1.3 * scale; ctx.stroke();
       clearTimeout(flameTimer); flameTimer = setTimeout(draw, 66);
     }
-    ctx.restore();
+    ctx.restore(); tinyHex = tinySave;
   }
   function applyLegend() {
     var w = $("glWrap"), t = $("glTab");
@@ -891,10 +898,11 @@ body.sheet-open #cellcard { display: none; }
         '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="stvauto"' + (s.auto ? ' checked' : '') + '><span>Ajouter automatiquement les nouvelles sorties</span></label>' +
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
     } else {
-      h += '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
-        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://portulan-relay.….workers.dev" autocomplete="off"></div>' +
-        '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
-        '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>';
+      h += '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
+        '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>' +
+        '<details class="advanced"><summary>Paramètres techniques (déjà renseignés)</summary>' +
+        '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
+        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://portulan-relay.….workers.dev" autocomplete="off"></div></details>';
     }
     return h + '<p class="note" id="stvstatus"></p><p class="note">Powered by Strava</p>';
   }
@@ -1045,7 +1053,7 @@ body.sheet-open #cellcard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    if (S.gradeOutlines && ag.wFine > 0 && vis.length && 49 / ag.mpp >= 10) drawGrades(vis, ag);
+    if (S.gradeOutlines && ag.wFine > 0 && vis.length) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawAgg(ag, onImg);
     drawOverlays();
     if (selected !== null) {
@@ -1160,11 +1168,11 @@ body.sheet-open #cellcard { display: none; }
   }
   var OVERPASS = ["https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://lz4.overpass-api.de/api/interpreter"], lastPoiError = "";
   var OVP_GAP_MS = window.__OVP_GAP !== undefined ? window.__OVP_GAP : 2000, AUTO_RETRY_MS = window.__RETRY_MS !== undefined ? window.__RETRY_MS : 45000, ovpGate = Promise.resolve(), OVP_ABORT_MS = window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000, ovpBest = 0, HEDGE_MS = window.__HEDGE_MS !== undefined ? window.__HEDGE_MS : Math.min(12000, Math.round((window.__ABORT_MS !== undefined ? window.__ABORT_MS : 60000) / 4));   // ovpBest : dernier serveur ayant répondu
-  var ovpFails = 0, ovpDownUntil = 0, OVP_DOWN_MS = window.__DOWN_MS !== undefined ? window.__DOWN_MS : 600000;   // après deux échecs de suite, Overpass est mis de côté dix minutes
+  var ovpFails = 0, ovpDownUntil = 0, OVP_DOWN_MS = window.__DOWN_MS !== undefined ? window.__DOWN_MS : 600000, OVP_REQ_MAX_MS = window.__REQ_MAX !== undefined ? window.__REQ_MAX : 40000;   // une requête Overpass dure 40 s au plus ; au premier échec, Overpass est mis de côté dix minutes
   function overpassFetch(q, deadline) {   // requêtes espacées et relancées sur plusieurs serveurs ; délai maximal optionnel
     if (OVP_DOWN_MS && Date.now() < ovpDownUntil) return Promise.reject(new Error("serveurs OpenStreetMap indisponibles"));
-    var run = ovpGate.then(function () { return overpassTry(q, deadline); });
-    run.then(function () { ovpFails = 0; }, function (e) { if (!(e && /^délai dépassé$/.test(e.message))) { ovpFails++; if (ovpFails >= 2) ovpDownUntil = Date.now() + OVP_DOWN_MS; } });
+    var run = ovpGate.then(function () { return overpassTry(q, Math.min(deadline || Infinity, Date.now() + OVP_REQ_MAX_MS)); });
+    run.then(function () { ovpFails = 0; ovpDownUntil = 0; }, function () { ovpFails++; if (OVP_DOWN_MS) ovpDownUntil = Date.now() + OVP_DOWN_MS; });
     function pause() { return new Promise(function (r) { setTimeout(r, OVP_GAP_MS); }); }
     ovpGate = run.then(pause, pause);
     return run;
@@ -1290,7 +1298,7 @@ body.sheet-open #cellcard { display: none; }
         var arr = peakCache.get(tileOf(ll));
         if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: ll[0], lng: ll[1], ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
       });
-    }).catch(function (e) { return wpFill(need, peakCache, "peak", deadline).catch(function () { throw e; }); });
+    }).catch(function (e) { return wpFill(need, peakCache, "peak", Date.now() + 120000).catch(function () { throw e; }); });   // le repli a son propre délai : celui de la course est peut-être déjà écoulé
   }
   var LM_FILTERS = ['"tourism"="attraction"', '"tourism"="viewpoint"', '"natural"="waterfall"', '"natural"="cave_entrance"', '"natural"="hot_spring"', '"natural"="glacier"'];
   function lmUnion(bb) {   // valeurs exactes (indexées) : bien plus rapide qu’une expression régulière sur la valeur
@@ -1321,7 +1329,7 @@ body.sheet-open #cellcard { display: none; }
           var got = [], c2 = Promise.resolve();
           subBBs(k).forEach(function (bb) { c2 = c2.then(function () { return lmRun(bb, deadline).then(function (j) { got.push(j); }); }); });
           return c2.then(function () { lmCache.set(k, []); got.forEach(ingestLm); });
-        }).catch(function (e) { return wpFill([k], lmCache, "lm", deadline).catch(function () { throw e; }); });
+        }).catch(function (e) { return wpFill([k], lmCache, "lm", Date.now() + 120000).catch(function () { throw e; }); });
       });
     });
     return chain;
@@ -1625,7 +1633,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v40";
+  var BUILD = "25/10/2026 · v43";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", map: null };
@@ -2255,10 +2263,12 @@ body.sheet-open #cellcard { display: none; }
     OVERPASS.forEach(function (u, i) { chain = chain.then(function () { return test("Serveur Overpass " + (i + 1) + " (" + u.split("/")[2] + ")", ovp(u)); }); });
     chain = chain.then(function () { return test("Wikipédia (recherche par position)", function () { return wpCall({ action: "query", list: "geosearch", gscoord: lat + "|" + lon, gsradius: 5000, gslimit: 50, gsprop: "type" }).then(function (j) { var g = (j.query && j.query.geosearch) || []; return g.length + " articles géolocalisés dans 5 km"; }); }); });
     chain = chain.then(function () { return test("Wikipédia", function () { return fetch("https://fr.wikipedia.org/api/rest_v1/page/summary/France").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return "accessible"; }); }); });
+    chain = chain.then(function () { return test("Repli Wikipédia sur la zone de ta dernière course", function () { return wpTile(tileOf(ref), Date.now() + 60000).then(function (items) { var p = items.filter(function (t) { return t.t === "peak"; }).length; return p + " sommets et " + (items.length - p) + " lieux reconnus"; }); }); });
     chain = chain.then(function () { return test("geo.api.gouv.fr", function () { return fetch("https://geo.api.gouv.fr/communes?lat=" + lat + "&lon=" + lon + "&fields=nom").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (j) { return j.length ? j[0].nom : "hors France"; }); }); });
     chain.then(function () {
       var done = S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length;
       rows.push("— Version : " + BUILD + " · hôte : " + location.hostname + " · en ligne : " + (navigator.onLine !== false ? "oui" : "non"));
+      rows.push("— Serveurs OpenStreetMap : " + (OVP_DOWN_MS && Date.now() < ovpDownUntil ? "mis de côté jusqu’à " + new Date(ovpDownUntil).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : "actifs") + " · source de secours Wikipédia utilisée : " + (poiViaWiki ? "oui" : "non"));
       rows.push("— Courses analysées : " + done + " / " + S.activities.length + (lastPoiError ? " · dernière erreur : " + lastPoiError : ""));
       S.activities.filter(function (a) { return a.poiErr; }).slice(0, 5).forEach(function (a) { rows.push("— Échec : " + a.name + " (" + a.date + ") : " + a.poiErr); });
       rows.push("— Sommets : " + summitList().length + " · lieux : " + landmarkList().length);
