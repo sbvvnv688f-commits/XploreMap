@@ -1005,7 +1005,8 @@ body.sheet-open #cellcard { display: none; }
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
-    cctx.save(); buildCellsPath(cctx, vis); cctx.clip();
+    var useMask = vis.length > 400;   // beaucoup de cellules : la découpe (clip) est lente sur Safari ; on dessine l’imagerie entière puis on la masque
+    cctx.save(); if (!useMask) { buildCellsPath(cctx, vis); cctx.clip(); }
     var drawn = 0;
     for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) {
       var im = getTile(src, tz, x, y);
@@ -1014,6 +1015,11 @@ body.sheet-open #cellcard { display: none; }
       gctx.drawImage(im, left, top, s, s); cctx.drawImage(im, left, top, s, s); drawn++;
     }
     cctx.restore();
+    if (useMask && drawn > 0) {
+      if (maskCv.width !== color.width || maskCv.height !== color.height) { maskCv.width = color.width; maskCv.height = color.height; }
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H); buildCellsPath(mctx, vis); mctx.fillStyle = "#000"; mctx.fill();
+      cctx.save(); cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskCv, 0, 0); cctx.restore();
+    }
     return drawn > 0;
   }
   function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
@@ -1042,7 +1048,8 @@ body.sheet-open #cellcard { display: none; }
     var ag = aggInfo();
     var vis = ag.wFine > 0 ? visCells() : [];
     if (vis.length > FINE_MAX_CELLS) { ag = aggInfo(true); vis = []; }   // trop d’hexagones à l’écran : bascule en vue agrégée pour rester fluide
-    tinyHex = ag.wFine > 0 && 49 / ag.mpp < 6; tinyS = Math.max(1.4, 49 / ag.mpp * 1.05);
+    var hexPx = 49 / ag.mpp, light = moving && hexPx < 14;   // en mouvement, hexagones assez petits : carrés simples, pas de contours de grade
+    tinyHex = ag.wFine > 0 && (hexPx < 6 || light); tinyS = Math.max(1.4, hexPx * 1.05);
     var onImg = drawTiles(ag.wAgg > 0 ? aggIds(ag) : vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
@@ -1053,7 +1060,7 @@ body.sheet-open #cellcard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    if (S.gradeOutlines && ag.wFine > 0 && vis.length) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
+    if (S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawAgg(ag, onImg);
     drawOverlays();
     if (selected !== null) {
@@ -1070,7 +1077,7 @@ body.sheet-open #cellcard { display: none; }
     $("scalebar").innerHTML = '<i style="width:' + (m / mPerPx).toFixed(0) + 'px"></i>' + (m >= 1000 ? (m / 1000) + " km" : m + " m");
   }
   function resize() {
-    dpr = window.devicePixelRatio || 1; W = window.innerWidth; H = window.innerHeight;
+    dpr = Math.min(window.devicePixelRatio || 1, 2); W = window.innerWidth; H = window.innerHeight;   // 2 pixels par point au plus : bien moins de pixels qu’à 3×, plus fluide sur les iPhone récents
     [cv, gray, color].forEach(function (c) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); });
     draw();
   }
@@ -1089,7 +1096,7 @@ body.sheet-open #cellcard { display: none; }
       if (lastDist) zoomBy(Math.log2(d / lastDist), (ps[0][0] + ps[1][0]) / 2, (ps[0][1] + ps[1][1]) / 2);
       lastDist = d;
     }
-    requestDraw();
+    markMoving(); requestDraw();
   });
   function zoomBy(dz, px, py) {
     var before = unproject(px, py);
@@ -1097,7 +1104,7 @@ body.sheet-open #cellcard { display: none; }
     var after = toScreen(before[0], before[1]), k = worldScale();
     view.cx += (after[0] - px) / k; view.cy += (after[1] - py) / k;
   }
-  cv.addEventListener("wheel", function (e) { e.preventDefault(); zoomBy(-e.deltaY * 0.0015, e.clientX, e.clientY); requestDraw(); }, { passive: false });
+  cv.addEventListener("wheel", function (e) { e.preventDefault(); zoomBy(-e.deltaY * 0.0015, e.clientX, e.clientY); markMoving(); requestDraw(); }, { passive: false });
   $("zin").addEventListener("click", function () { zoomBy(1, W / 2, H / 2); draw(); });
   $("zout").addEventListener("click", function () { zoomBy(-1, W / 2, H / 2); draw(); });
   $("fit").addEventListener("click", function () { selected = null; if (S.activities.length) fitAll(); });
@@ -1591,7 +1598,7 @@ body.sheet-open #cellcard { display: none; }
     return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2);
   }
   function refreshDisp() {
-    clearTimeout(revealTimer); dispVer++;
+    clearTimeout(revealTimer); dispVer++; prewarm();
     if (periodF === "all") { dispCells = cells; return; }
     var min = periodMin(); dispCells = new Map();
     cells.forEach(function (info, id) { if (info.date >= min) dispCells.set(id, info); });
@@ -1601,14 +1608,52 @@ body.sheet-open #cellcard { display: none; }
     var days = (Date.now() - Date.parse(info.date)) / 864e5;
     return days <= 7 ? "#ff5d8f" : days <= 30 ? "#ffc933" : days <= 365 ? "#2fcf7e" : "#3aa6a0";
   }
-  function visCells() {
-    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20), out = [];
+  var visIdx = { key: "", map: null }, VIS_BUCKET_RES = 7, moving = false, movingTimer = 0, warmTimer = 0, wasFine = true;
+  var maskCv = document.createElement("canvas"), mctx = maskCv.getContext("2d");
+  function markMoving() {   // pendant un geste : rendu allégé ; rendu complet 160 ms après le dernier mouvement
+    moving = true; clearTimeout(movingTimer);
+    movingTimer = setTimeout(function () { moving = false; requestDraw(); }, 160);
+  }
+  function visIndex() {   // hexagones regroupés par zone de ~1 km : on ne parcourt que les zones visibles
+    var key = dispVer + "|" + dispCells.size;
+    if (visIdx.key === key) return visIdx.map;
+    var m = new Map();
     dispCells.forEach(function (v, id) {
-      var b = boundary(id), lat = b[0][0], lng = b[0][1];
-      if (lat < br[0] - 0.01 || lat > tl[0] + 0.01 || lng < tl[1] - 0.01 || lng > br[1] + 0.01) return;
-      out.push(id);
+      var p = h3.cellToParent(id, VIS_BUCKET_RES), e = m.get(p);
+      if (!e) { var c = centerOf(p); e = { lat: c[0], lng: c[1], ids: [] }; m.set(p, e); }
+      e.ids.push(id);
+    });
+    visIdx = { key: key, map: m };
+    return m;
+  }
+  function visCells() {
+    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20), out = [], mg = EDGE_M[VIS_BUCKET_RES] / 111000 * 1.5 + 0.005;
+    visIndex().forEach(function (e) {
+      if (e.lat < br[0] - mg || e.lat > tl[0] + mg || e.lng < tl[1] - mg * 2 || e.lng > br[1] + mg * 2) return;
+      for (var i = 0; i < e.ids.length; i++) {
+        var c = centerOf(e.ids[i]);
+        if (c[0] < br[0] - 0.002 || c[0] > tl[0] + 0.002 || c[1] < tl[1] - 0.003 || c[1] > br[1] + 0.003) continue;
+        out.push(e.ids[i]);
+      }
     });
     return out;
+  }
+  function prewarm() {   // prépare l’index et les centres pendant les temps morts, pour éviter un à-coup au premier zoom
+    clearTimeout(warmTimer);
+    var key = dispVer;
+    warmTimer = setTimeout(function () {
+      if (key !== dispVer) return;
+      visIndex();
+      var ids = Array.from(dispCells.keys()), i = 0;
+      (function step() {
+        if (key !== dispVer) return;
+        if (moving) { setTimeout(step, 120); return; }
+        var end = Math.min(ids.length, i + 600);
+        for (; i < end; i++) centerOf(ids[i]);
+        if (i < ids.length) { setTimeout(step, 24); return; }
+        [9, 8, 7].forEach(function (r, n) { setTimeout(function () { if (key === dispVer && !moving) aggCells(r); }, 80 * (n + 1)); });   // niveaux agrégés proches du seuil, prêts avant le premier dézoom
+      })();
+    }, 800);
   }
   function buildCellsPath(c, ids) {
     c.beginPath();
@@ -1633,26 +1678,30 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v43";
+  var BUILD = "25/10/2026 · v45";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
-  var aggCache = { key: "", map: null };
+  var aggCache = { key: "", byRes: {} };
   function aggInfo(force) {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
-    if (!force && mpp <= FINE_MAX_MPP) return { wFine: 1, wAgg: 0, mpp: mpp };   // hexagones à leur taille minimale, sans teinte, jusqu’à l’échelle d’environ 2 km
+    if (!force) {   // hystérésis : le rendu fin se prolonge de 6 % au-delà du seuil quand on dézoome (pas de va-et-vient), mais il apparaît exactement au seuil quand on zoome
+      if (mpp <= FINE_MAX_MPP * (wasFine ? 1.06 : 1)) { wasFine = true; return { wFine: 1, wAgg: 0, mpp: mpp }; }
+      wasFine = false;
+    }   // hexagones à leur taille minimale, sans teinte, jusqu’à l’échelle d’environ 2 km
     var res = 10;
     while (res > MIN_AGG_RES && EDGE_M[res] / mpp < 7) res--;
     return { wFine: 0, wAgg: 1, res: res, mpp: mpp };   // niveau agrégé : teinte pleine, aucune superposition avec les hexagones fins
   }
   function aggCells(res) {
-    var key = res + "|" + dispCells.size + "|" + dispVer;
-    if (aggCache.key === key) return aggCache.map;
+    var key = dispCells.size + "|" + dispVer;
+    if (aggCache.key !== key) aggCache = { key: key, byRes: {} };
+    if (aggCache.byRes[res]) return aggCache.byRes[res];   // un résultat par niveau : plus de recalcul en passant d’un niveau à l’autre
     var m = new Map();
     dispCells.forEach(function (info, id) {
       var p = h3.cellToParent(id, res), e = m.get(p);
       if (e) e.n++; else m.set(p, { n: 1, info: info });
     });
-    aggCache = { key: key, map: m };
+    aggCache.byRes[res] = m;
     return m;
   }
   function aggIds(ag) {
