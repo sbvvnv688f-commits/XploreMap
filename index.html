@@ -418,7 +418,10 @@ body.sheet-open #cellcard { display: none; }
       if (o && Array.isArray(o.activities)) {
         S.name = o.name || S.name; S.rad = 1;   // rayon de découverte fixe (1 hexagone, environ 50 m)
         S.basemap = SOURCES[o.basemap] || o.basemap === "none" ? o.basemap : "esri";
-        S.activities = o.activities; S.activities.forEach(function (a) { if (a && Array.isArray(a.lines)) a.lines = a.lines.map(decLine); });
+        S.activities = o.activities; S.activities.forEach(function (a) {
+          if (a && Array.isArray(a.lines)) a.lines = a.lines.map(decLine);
+          if (a && ((a.summits || []).concat(a.landmarks || [])).some(isWikiPoi)) a.poiPartial = true;   // analysée avec la source de secours : à refaire dès qu’OpenStreetMap répond
+        });
         S.nextId = o.nextId || (o.activities.length + 1);
         S.city = typeof o.city === "string" ? o.city : ""; S.dept = typeof o.dept === "string" ? o.dept : "";
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
@@ -1265,7 +1268,7 @@ body.sheet-open #cellcard { display: none; }
     var p = wpCall({ action: "query", list: "geosearch", gsbbox: bbox, gslimit: 500, gsprop: "type" }, deadline).then(function (j) {
       var gs = (j && j.query && j.query.geosearch) || [], cand = gs.filter(function (g) { return g && g.title && typeof g.lat === "number" && !WP_SKIP.test(g.type || ""); });
       var out = [], chain = Promise.resolve();
-      function add(g, c, wd) { if (c) out.push({ id: "w" + g.pageid, title: g.title, name: g.title.replace(/\s*\([^)]*\)\s*$/, ""), lat: g.lat, lon: g.lon, t: c.t, kind: c.kind, ic: c.ic, wd: wd || "" }); }
+      function add(g, c, wd) { if (c) out.push({ id: "wp" + g.pageid, title: g.title, name: g.title.replace(/\s*\([^)]*\)\s*$/, ""), lat: g.lat, lon: g.lon, t: c.t, kind: c.kind, ic: c.ic, wd: wd || "" }); }
       for (var i = 0; i < cand.length; i += 50) (function (ch) {
         chain = chain.then(function () {
           return wpCall({ action: "query", prop: "description|pageprops", ppprop: "wikibase_item", pageids: ch.map(function (g) { return g.pageid; }).join("|") }, deadline).then(function (r) {
@@ -1283,11 +1286,11 @@ body.sheet-open #cellcard { display: none; }
     var chain = Promise.resolve();
     need.forEach(function (k) {
       chain = chain.then(function () { return wpTile(k, deadline); }).then(function (items) {
-        cache.set(k, []);
+        var base = []; base.src = "wp"; cache.set(k, base);   // marque : données issues de la source de secours (incomplètes)
         items.forEach(function (it) {
           if (it.t !== kind) return;
           var arr = cache.get(tileOf([it.lat, it.lon]));
-          if (!arr || arr.some(function (x) { return x.id === it.id; })) return;
+          if (!arr || arr.src !== "wp" || arr.some(function (x) { return x.id === it.id; })) return;
           if (kind === "peak") arr.push({ id: it.id, name: it.name, lat: it.lat, lng: it.lon, ele: null, wp: "fr:" + it.title, wd: it.wd });
           else arr.push({ id: it.id, name: it.name, lat: it.lat, lng: it.lon, kind: it.kind, ic: it.ic, wp: "fr:" + it.title, wd: it.wd });
         });
@@ -1678,7 +1681,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v45";
+  var BUILD = "25/10/2026 · v46";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -1758,9 +1761,9 @@ body.sheet-open #cellcard { display: none; }
   }
   function findPois(lines, misses, lmMisses, deadline) {   // sommets et lieux sont cherchés séparément : l’un peut réussir si l’autre échoue
     var keys = tileKeysOf(lines), res = { sm: [], lm: [], np: 0, nl: 0, smErr: null, lmErr: null };
-    return fetchPeaks(keys, deadline).then(function () { res.sm = detectSummits(lines, peaksFor(keys), misses); res.np = peaksFor(keys).length; }, function (e) { res.smErr = e; })
+    return fetchPeaks(keys, deadline).then(function () { res.sm = detectSummits(lines, peaksFor(keys), misses); res.np = peaksFor(keys).length; res.smPartial = keys.some(function (k) { var c = peakCache.get(k); return !!c && c.src === "wp"; }); }, function (e) { res.smErr = e; })
       .then(function () { return fetchLandmarks(keys, deadline); })
-      .then(function () { res.lm = detectLandmarks(lines, lmFor(keys), lmMisses); res.nl = lmFor(keys).length; }, function (e) { res.lmErr = e; })
+      .then(function () { res.lm = detectLandmarks(lines, lmFor(keys), lmMisses); res.nl = lmFor(keys).length; res.lmPartial = keys.some(function (k) { var c = lmCache.get(k); return !!c && c.src === "wp"; }); }, function (e) { res.lmErr = e; })
       .then(function () { if (res.smErr && res.lmErr) throw res.smErr; return res; });
   }
   function landmarkList() {
@@ -2347,10 +2350,29 @@ body.sheet-open #cellcard { display: none; }
     if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return "réseau injoignable";
     return m || "réseau";
   }
+  /* Fusion des sommets et lieux : une découverte n’est jamais perdue (ni par un recalcul avec des données incomplètes, ni par un import) */
+  function poiNameKey(n) { return String(n || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim(); }
+  function isWikiPoi(p) { return /^wp\d/.test(String(p.id)); }   // « wp » + n° d’article ; les identifiants OpenStreetMap des lieux commencent par n, w ou r suivi d’un nombre
+  function samePoi(x, y) {
+    if (x.id === y.id) return true;
+    if (haversine([x.lat, x.lng], [y.lat, y.lng]) > 400) return false;
+    var kx = poiNameKey(x.name), ky = poiNameKey(y.name);
+    return !!kx && !!ky && (kx === ky || kx.indexOf(ky) >= 0 || ky.indexOf(kx) >= 0);
+  }
+  function mergePois(old, fresh, partial) {
+    var out = (fresh || []).slice();
+    (old || []).forEach(function (o) {
+      var k = -1, i;
+      for (i = 0; i < out.length; i++) if (samePoi(o, out[i])) { k = i; break; }
+      if (k >= 0) { if (!isWikiPoi(o) && isWikiPoi(out[k])) out[k] = o; return; }   // même lieu : on garde la fiche OpenStreetMap (altitude connue)
+      if (partial || isWikiPoi(o)) out.push(o);   // données incomplètes : rien n’est retiré ; données complètes : seules les entrées Wikipédia restent
+    });
+    return out;
+  }
   function applyPois(a, r) {
-    if (!r.smErr) { a.summits = r.sm; a.sumDone = true; }
-    if (!r.lmErr) { a.landmarks = r.lm; a.lmDone = true; }
-    if (!r.smErr && !r.lmErr) { a.poiV = 2; delete a.poiErr; }
+    if (!r.smErr) { a.summits = mergePois(a.summits, r.sm, r.smPartial); a.sumDone = true; }
+    if (!r.lmErr) { a.landmarks = mergePois(a.landmarks, r.lm, r.lmPartial); a.lmDone = true; }
+    if (!r.smErr && !r.lmErr) { a.poiV = 2; delete a.poiErr; if (r.smPartial || r.lmPartial) a.poiPartial = true; else delete a.poiPartial; }
     else a.poiErr = (r.smErr ? "sommets : " : "lieux : ") + friendlyErr(r.smErr || r.lmErr);
   }
   function analyzeActivity(a) {   // ne lève jamais d’exception : une course défaillante ne bloque pas les suivantes
@@ -2361,7 +2383,7 @@ body.sheet-open #cellcard { display: none; }
       }, function (e) { a.poiErr = friendlyErr(e); return { ok: false, ns: 0, nl: 0 }; });
     } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false, ns: 0, nl: 0 }); }
   }
-  function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2) && !scanningSet.has(a); }); }
+  function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2 || (a.poiPartial && !(OVP_DOWN_MS && Date.now() < ovpDownUntil))) && !scanningSet.has(a); }); }   // une analyse faite avec la source de secours est refaite dès qu’OpenStreetMap répond
   function poiFailText() {
     var f = S.activities.filter(function (a) { return a.poiErr && pendingAnalysis().indexOf(a) >= 0; });
     return f.length ? " · " + f.length + " en échec (" + esc(f[0].poiErr) + ")" : "";
@@ -2802,16 +2824,22 @@ body.sheet-open #cellcard { display: none; }
     $("imp").addEventListener("change", function (e) {
       var f = e.target.files && e.target.files[0]; if (!f) return;
       readFile(f).then(function (txt) {
-        var o = JSON.parse(txt), d = o && o.data; if (!d || !Array.isArray(d.activities)) throw new Error("format inconnu");
-        var added = 0;
+        var o = JSON.parse(typeof txt === "string" ? txt : new TextDecoder("utf-8").decode(txt)), d = o && o.data; if (!d || !Array.isArray(d.activities)) throw new Error("format inconnu");   // readFile renvoie un tampon binaire : il faut le décoder en texte
+        var added = 0, restored = 0;
         d.activities.forEach(function (a) {
           if (!a || !Array.isArray(a.lines) || !a.date) return;
-          var dup = S.activities.some(function (x) { return x.date === a.date && Math.abs(x.dist - a.dist) < 20 && x.name === a.name; });
-          if (dup) return;
+          var dup = S.activities.filter(function (x) { return x.date === a.date && Math.abs(x.dist - a.dist) < 20 && x.name === a.name; })[0];
+          if (dup) {   // course déjà présente : on y retrouve les sommets et lieux de la sauvegarde qui lui manquent
+            var n0 = (dup.summits || []).length + (dup.landmarks || []).length;
+            if (Array.isArray(a.summits)) dup.summits = mergePois(dup.summits, a.summits, true);
+            if (Array.isArray(a.landmarks)) dup.landmarks = mergePois(dup.landmarks, a.landmarks, true);
+            restored += (dup.summits || []).length + (dup.landmarks || []).length - n0;
+            return;
+          }
           S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines, trust: a.trust === "non" ? "non" : "ok", summits: Array.isArray(a.summits) ? a.summits : [], sumDone: !!a.sumDone, landmarks: Array.isArray(a.landmarks) ? a.landmarks : [], lmDone: !!a.lmDone, poiV: a.poiV === 2 ? 2 : 0, t0: +a.t0 || 0, strava: +a.strava || 0 });
           added++;
         });
-        rebuild(); save(); fitAll(); renderDrawer(); toast(added + " course" + (added > 1 ? "s" : "") + " importée" + (added > 1 ? "s" : ""));
+        rebuild(); save(); fitAll(); renderDrawer(); toast(added + " course" + (added > 1 ? "s" : "") + " importée" + (added > 1 ? "s" : "") + (restored ? " · " + restored + " sommet" + (restored > 1 ? "s" : "") + " ou lieu" + (restored > 1 ? "x" : "") + " retrouvé" + (restored > 1 ? "s" : "") : ""));
       }).catch(function (err) { toast("Import impossible : " + err.message); });
       e.target.value = "";
     });
