@@ -480,7 +480,7 @@ body.sheet-open #cellcard { display: none; }
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
   var selected = null, current = null, lastResult = "";
-  var rankScope = "monde", rankPeriod = "all", rankSport = "all", listSport = "all";
+  var rankMetric = "km2", listSport = "all";
 
   function loadState() {
     try {
@@ -885,8 +885,8 @@ body.sheet-open #cellcard { display: none; }
     return ensureToken().then(function (tok) { return relayJson("/strava/api/" + path, { headers: { Authorization: "Bearer " + tok } }); });
   }
   function stravaSkip(a) {   // sans GPS, sur home-trainer, saisie manuelle, virtuel, assisté ou motorisé
-    var t = a.sport_type || a.type || "";
-    return !a.start_latlng || a.start_latlng.length !== 2 || !!a.trainer || !!a.manual || /Virtual|^EBike|^EMountainBike|Workout|Weight|Yoga|Crossfit|Elliptical|Stair|Pilates/i.test(t) || isMotor(a.name || "");
+    var t = a.sport_type || a.type || "";   // « Workout » (Entraînement) n’est pas écarté : avec une trace GPS, le sport est demandé à l’import
+    return !a.start_latlng || a.start_latlng.length !== 2 || !!a.trainer || !!a.manual || /Virtual|^EBike|^EMountainBike|Weight|Yoga|Crossfit|Elliptical|Stair|Pilates/i.test(t) || isMotor(a.name || "");
   }
   function stravaTrack(a, st) {
     var ll = st.latlng && st.latlng.data, tm = st.time && st.time.data, al = st.altitude && st.altitude.data, hr = st.heartrate && st.heartrate.data;
@@ -897,7 +897,8 @@ body.sheet-open #cellcard { display: none; }
       if (!p || !isFinite(p[0]) || !isFinite(p[1]) || (p[0] === 0 && p[1] === 0)) continue;
       pts.push({ p: [p[0], p[1]], t: tm && tm[i] !== undefined ? t0 + tm[i] : null, a: al && al[i] !== undefined ? al[i] : null });
     }
-    return { pts: pts, name: a.name || "", firstTime: t0, localDate: String(a.start_date_local || a.start_date).slice(0, 10), sport: guessSport(a.sport_type || a.type || "", null), sensor: !!(a.has_heartrate || (hr && hr.length)) };
+    return { pts: pts, name: a.name || "", firstTime: t0, localDate: String(a.start_date_local || a.start_date).slice(0, 10), sport: guessSport(a.sport_type || a.type || "", null), sensor: !!(a.has_heartrate || (hr && hr.length)),
+      sportAsk: !guessSport((a.sport_type || a.type || "") + " " + (a.name || ""), null) };   // type non reconnu (Entraînement, Autre…) : le sport sera demandé
   }
   function stravaSync(opts) {
     opts = opts || {};
@@ -948,11 +949,11 @@ body.sheet-open #cellcard { display: none; }
       var more = limited ? " Il en reste environ " + rest + " : touche « Continuer la récupération » dans les Réglages." : "";
       stravaStatus(msg + "." + more);
       if (added) {
-        if (S.strava.auto && !first && !opts.manual && !hadPending) { commitPending(); toast(msg + " ajoutée" + (added > 1 ? "s" : "") + "."); }
+        if (S.strava.auto && !first && !opts.manual && !hadPending && !sportMissing().length) { commitPending(); toast(msg + " ajoutée" + (added > 1 ? "s" : "") + "."); }   // sport à choisir : on attend l’utilisateur
         else {
           var ls = []; items.forEach(function (it) { ls = ls.concat(it.act.lines); }); if (ls.length) fitLines(ls);
           draw(); if (current !== "add") openTab("add"); else render();
-          toast(msg + " : vérifie et valide l’import." + more);
+          toast(msg + (sportMissing().length ? " : choisis le sport des sorties non reconnues, puis valide." : " : vérifie et valide l’import.") + more);
         }
       } else if (opts.manual) toast(msg + ".");
       if (errs) toast(errs + " sortie" + (errs > 1 ? "s" : "") + " Strava ignorée" + (errs > 1 ? "s" : "") + " (voir l’aperçu).");
@@ -1255,14 +1256,16 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ===== Amis : invitations par pseudo, partage de la carte ami par ami, carte d’un ami =====
-     Ce qui est partagé : uniquement les hexagones des sorties importées par fichier (jamais celles de Strava, dont l’accord interdit
-     l’affichage à d’autres) hors zone domicile, et quelques compteurs. Jamais de traces, de dates ni de noms de lieux. */
+     Ce qui est partagé : les hexagones hors zone domicile et quelques compteurs. Jamais de traces, de dates ni de noms de lieux.
+     SHARE_STRAVA : l’accord API de Strava interdit l’affichage des données d’un athlète à d’autres. Choix d’Edgar (29/10/2026) :
+     inclure les sorties Strava tant que l’appli reste entre proches ; repasser à false avant toute ouverture plus large. */
   var friends = null, friendsErr = "", friendsBusy = false, friendsAt = 0, friendView = null, mapTimer = 0, mapBusy = false, homePick = null;
   var HOME_RADII = [[300, "300 m"], [500, "500 m"], [1000, "1 km"], [2000, "2 km"]], HOME_MARGIN_M = 30;   // marge d’un demi-hexagone autour du cercle
   function capFirst(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); }
   function homeSet() { return !!(S.home && (S.home.none || S.home.r > 0)); }
   function shareCount() { return friends ? friends.friends.filter(function (f) { return f.iShare; }).length : 0; }
-  function sharedActs() { return realActs().filter(function (a) { return !a.strava; }); }
+  var SHARE_STRAVA = true;
+  function sharedActs() { return realActs().filter(function (a) { return SHARE_STRAVA || !a.strava; }); }
   function sharedCells() {
     var set = new Set();
     sharedActs().forEach(function (a) { actCells(a).forEach(function (c) { set.add(c); }); });
@@ -1301,20 +1304,20 @@ body.sheet-open #cellcard { display: none; }
     friendsAt = Date.now();
     return apiCall("GET", "/friends").then(function (r) { friendsErr = ""; setFriends(r); scheduleMapPush(3000); }, function (e) {
       friendsErr = e.status === 404 ? "Les amis arrivent bientôt : le serveur doit encore être mis à jour." : "Liste d’amis indisponible : " + e.message + ".";
-      if (current === "friends") render();
+      if (current === "friends" || current === "rank") render();
     });
   }
   function setFriends(r) {
     friends = { friends: r.friends || [], incoming: r.incoming || [], outgoing: r.outgoing || [] };
     var b = $("friendBadge"), n = friends.incoming.length; if (b) { b.textContent = n; b.hidden = !n; }
-    if (current === "friends") render();
+    if (current === "friends" || current === "rank") render();
   }
   function friendAction(method, path, body, okMsg) {
     if (friendsBusy) return Promise.resolve(null);
     friendsBusy = true;
     return apiCall(method, path, body).then(function (r) {
       friendsBusy = false; setFriends(r); if (okMsg) toast(typeof okMsg === "function" ? okMsg(r) : okMsg); scheduleMapPush(1500); return r;
-    }, function (e) { friendsBusy = false; toast(capFirst(e.message) + "."); if (current === "friends") render(); return null; });
+    }, function (e) { friendsBusy = false; toast(capFirst(e.message) + "."); if (current === "friends" || current === "rank") render(); return null; });
   }
   function placeLabel(f) { return f.city ? f.city + (f.deptCode ? " · " + f.deptCode + " " + f.deptName : "") : ""; }
   function friendStatsLine(st) {
@@ -1324,11 +1327,12 @@ body.sheet-open #cellcard { display: none; }
   }
   function friendRowHTML(f) {
     var st = f.map && f.map.stats, sees = f.theyShare && f.map;
+    if (st && !st.acts && !st.cells) { st = null; sees = false; f = Object.assign({}, f, { emptyMap: true }); }   // carte publiée mais vide (aucune sortie partageable)
     return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
       (st ? '<span class="v">' + fmtKm2(st.km2 || 0) + '<small>km²</small></span>' : '') + '</div>' +
       (st ? '<div class="fnote">' + esc(friendStatsLine(st)) + '</div>' : '') +
       '<div class="frow-act">' +
-      (sees ? '<button class="linkbtn" data-fview="' + esc(f.id) + '">🗺️ Voir sa carte</button>' : '<span class="fnote">' + (f.theyShare ? "Carte pas encore publiée" : "Ne partage pas sa carte avec toi") + '</span>') +
+      (sees ? '<button class="linkbtn" data-fview="' + esc(f.id) + '">🗺️ Voir sa carte</button>' : '<span class="fnote">' + (f.emptyMap ? (SHARE_STRAVA ? "Partage sa carte, qui ne contient encore aucune sortie" : "Partage sa carte, mais rien n’est encore partageable : ses sorties viennent toutes de Strava") : f.theyShare ? "Carte pas encore publiée" : "Ne partage pas sa carte avec toi") + '</span>') +
       '<label class="gradechk"><input type="checkbox" data-fshare="' + esc(f.id) + '"' + (f.iShare ? " checked" : "") + '><span>Partager ma carte</span></label>' +
       '<button class="del" data-frem="' + esc(f.id) + '" data-fq="Retirer ' + esc(f.pseudo) + ' de tes amis ? Le partage s’arrête dans les deux sens.">Retirer</button></div></div>';
   }
@@ -1338,7 +1342,7 @@ body.sheet-open #cellcard { display: none; }
       : h.none ? "<b>Aucune zone masquée.</b> Tes amis voient aussi les hexagones autour de chez toi."
       : "<b>Rayon de " + (h.r >= 1000 ? fmt(h.r / 1000, h.r % 1000 ? 1 : 0) + " km" : h.r + " m") + " masqué</b> autour du point choisi. Ce point reste sur ton appareil et dans ta sauvegarde privée.";
     return '<div class="homebox" id="homebox"><div class="t" style="font-weight:700">🏠 Zone domicile</div><p class="note" style="margin-top:4px">' + status + '</p>' +
-      '<div class="frow-act">' + rsel + '<button class="linkbtn" data-home="pick">📍 Placer sur la carte</button><button class="linkbtn" data-home="gps">Ma position</button>' +
+      '<div class="frow-act">' + rsel + '<button class="linkbtn" data-home="pick">📍 Placer sur la carte</button>' +
       (h && h.none ? '' : '<button class="linkbtn" data-home="none">Ne rien masquer</button>') + '</div></div>';
   }
   function viewFriends() {
@@ -1356,8 +1360,10 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
     }).join("");
     var n = shareCount(), set = n && homeSet() ? sharedCells() : null;
-    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Le partage se décide ami par ami et reste désactivé tant que tu ne l’actives pas. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates. Les sorties importées depuis Strava ne sont pas partagées.' +
-      (set ? ' Actuellement : <b>' + fmt(set.size, 0) + ' hexagones</b> partagés avec ' + n + ' ami' + (n > 1 ? "s" : "") + '.' : '') + '</p>' + homeHTML();
+    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Le partage se décide ami par ami et reste désactivé tant que tu ne l’actives pas. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates.' + (SHARE_STRAVA ? '' : ' Les sorties importées depuis Strava ne sont pas partagées.') +
+      (set ? ' Actuellement : <b>' + fmt(set.size, 0) + ' hexagones</b> partagés avec ' + n + ' ami' + (n > 1 ? "s" : "") + '.' : '') + '</p>' +
+      (realActs().length && !sharedActs().length ? '<p class="note" style="margin:0 0 10px"><b>Ta carte partagée est vide :</b> toutes tes sorties viennent de la synchronisation Strava, qui n’est pas partagée. Seules les sorties importées depuis un fichier (GPX, TCX, FIT) le sont.</p>' : '') +
+      homeHTML();
     return h;
   }
   function bindFriends() {
@@ -1388,14 +1394,8 @@ body.sheet-open #cellcard { display: none; }
     if (k === "pick") { startHomePick(r); return; }
     if (k === "none") {
       if (!window.confirm("Ne masquer aucune zone ?\nTes amis verront aussi les hexagones autour de chez toi.")) return;
-      S.home = { none: true }; save(); scheduleMapPush(1500); render(); return;
+      S.home = { none: true }; save(); scheduleMapPush(1500); render();
     }
-    if (!navigator.geolocation) { toast("Géolocalisation indisponible sur cet appareil : place la zone sur la carte."); return; }
-    toast("Recherche de ta position…");
-    navigator.geolocation.getCurrentPosition(function (pos) {
-      S.home = { lat: Math.round(pos.coords.latitude * 1e5) / 1e5, lng: Math.round(pos.coords.longitude * 1e5) / 1e5, r: r }; save(); scheduleMapPush(1500); render();
-      toast("Zone domicile définie autour de ta position.");
-    }, function () { toast("Position introuvable : place la zone sur la carte."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
   }
   function startHomePick(r) {   // la carte se déplace sous un viseur fixe : le centre de l’écran devient le centre de la zone
     closeSheet(); closeCellCard(); closePoiCard();
@@ -2018,9 +2018,11 @@ body.sheet-open #cellcard { display: none; }
   }
   function pendingHTML() {
     if (!pending) return "";
-    var tot = 0, h = pending.items.map(function (it) {
+    var tot = 0, h = pending.items.map(function (it, idx) {
       var a = it.act; tot += it.newCells;
-      var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km · ' + sl(a.sport) +
+      var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">Type d’activité non reconnu : choisis le sport</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
+        (it.sportChosen ? '' : '<option value="" selected>Choisir…</option>') + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (it.sportChosen && a.sport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>' : '';
+      var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km' + (it.sportAsk && !it.sportChosen ? '' : ' · ' + sl(a.sport)) + ask +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
         (it.bonusCells ? '<br><span class="peak">dont ' + fmt(it.bonusCells, 0) + ' hexagones bonus (' + fmtKm2(it.bonusCells * AREA_M2 / 1e6) + ' km²) autour des sommets et lieux</span>' : '') + upsText(it.ups || []);
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
@@ -2033,7 +2035,7 @@ body.sheet-open #cellcard { display: none; }
         if (!a.sumDone) s += '<br><span class="warn">Sommets non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement, ou relance « Tout recalculer » dans les Réglages.</span>';
         if (!a.lmDone) s += '<br><span class="warn">Lieux non vérifiés (' + esc(a.poiErr || 'réseau indisponible') + ') : ils seront recherchés automatiquement.</span>';
       }
-      if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence) : comptée dans ton territoire, hors classement.</span>';
+      if (a.trust === "non") s += '<br><span class="warn">Aucune donnée de capteur (fréquence cardiaque, cadence).</span>';
       if (a.skipped) s += '<br><span class="warn">' + a.skipped + ' segments ignorés (vitesse ou sauts GPS)</span>';
       return s + '</div>';
     }).join("");
@@ -2046,8 +2048,11 @@ body.sheet-open #cellcard { display: none; }
     }
     return h;
   }
+  function sportMissing() { return pending ? pending.items.filter(function (it) { return it.sportAsk && !it.sportChosen; }) : []; }
   function commitPending() {
     if (!pending || !pending.items.length) { pending = null; render(); draw(); return; }
+    var miss = sportMissing();
+    if (miss.length) { toast("Choisis le sport de « " + miss[0].act.name + " » avant de valider."); var sel = document.querySelector("[data-psport]"); if (sel) sel.focus(); return; }
     var before = new Set(cells.keys()), known = new Set(reachedSet), newPeaks = [], knownLm = new Set(reachedLm), newLms = [], lines = [];
     pending.items.forEach(function (it) {
       var a = it.act; a.id = S.nextId++; S.activities.push(a); lines = lines.concat(a.lines);
@@ -2138,7 +2143,7 @@ body.sheet-open #cellcard { display: none; }
     });
     if (dup) throw new Error("déjà importée");
     var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false, t0: g.firstTime || 0, strava: extra.stravaId || 0 };
-    var it = { act: act, file: fname, near: [], nearLm: [], zone: null, scanning: true };
+    var it = { act: act, file: fname, near: [], nearLm: [], zone: null, scanning: true, sportAsk: !!g.sportAsk };
     items.push(it);
     scanItem(it);
     return it;
@@ -2254,7 +2259,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "29/10/2026 · v51";
+  var BUILD = "29/10/2026 · v52";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -3092,12 +3097,12 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", friends: "Amis", rank: "Classement" };
+  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", friends: "Amis", rank: "Classement parmi tes amis" };
   function openTab(k) {
     if (current === k) { closeSheet(); return; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
-    if (k === "friends") loadFriends();
+    if (k === "friends" || k === "rank") loadFriends();
     closeDrawer(); current = k; render();
     $("sheet").classList.add("open"); $("sheet").setAttribute("aria-hidden", "false");
     document.body.classList.add("sheet-open"); markTabs();
@@ -3123,7 +3128,7 @@ body.sheet-open #cellcard { display: none; }
       '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
       '<div id="addres">' + pendingHTML() + '</div>' +
       '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
-      '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur restent dans ton territoire mais sont exclues du classement.</p>' +
+      '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur sont signalées « sans capteur » dans la liste.</p>' +
       '<p class="note">Atteindre un sommet nommé (à moins de ' + SUMMIT_REACH_M + ' m) débloque un cercle d’exploration : ' + SUMMIT_BASE_M + ' m de rayon, plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude. Les lieux emblématiques (monuments, châteaux, cascades, sites historiques référencés sur Wikipédia) à moins de ' + LANDMARK_REACH_M + ' m débloquent un cercle de ' + LANDMARK_R + ' m. L’analyse des sommets, des lieux et des communes est automatique à l’ajout (OpenStreetMap et geo.api.gouv.fr, connexion requise).</p>';
   }
   function viewList() {
@@ -3179,41 +3184,41 @@ body.sheet-open #cellcard { display: none; }
     return html;
   }
 
-  /* ---- classement : aperçu avec joueurs fictifs ---- */
-  var FAKE = ["Camille R.", "Noé B.", "Inès L.", "Hugo M.", "Léa D.", "Tom V.", "Manon P.", "Jules F.", "Chloé G.", "Lucas T.", "Sarah K.", "Axel C.", "Zoé H.", "Enzo A.", "Alix N.", "Maé S.", "Louis E.", "Jade O.", "Nils W.", "Eva Q."];
-  var SPORT_WEIGHT = { all: 1, trail: 0.35, course: 0.3, rando: 0.45, velo: 0.6, ski: 0.15, natation: 0.04, pagaie: 0.06, voile: 0.05, roller: 0.08, autre: 0.1 };
-  function fakeBoard(scope, period, sport) {
-    var sp = sport || "all", base = { monde: 160, france: 70, region: 22 }[scope] * (period === "month" ? 0.14 : 1) * (SPORT_WEIGHT[sp] || 0.1), seed = scope.length * 97 + (period === "month" ? 13 : 5);
-    for (var c = 0; c < sp.length; c++) seed += sp.charCodeAt(c) * 31;
-    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
-    return FAKE.map(function (nm, i) { return { name: nm, v: base * Math.pow(0.8, i) * (0.9 + 0.2 * rnd()) }; });
-  }
-  function userScore(period, sport) {
-    var ym = todayISO().slice(0, 7), seen = new Set(), s = 0;
-    sortedActs().filter(function (a) { return a.trust !== "non" && (!sport || sport === "all" || a.sport === sport); }).forEach(function (a) {   // classement : courses avec capteur
-      var n = 0;
-      actCells(a).forEach(function (c) { if (!seen.has(c)) { seen.add(c); n++; } });
-      if (period === "all" || a.date.slice(0, 7) === ym) s += n * AREA_M2 / 1e6;
-    });
-    return s;
-  }
+  /* ---- classement parmi tes amis : leurs chiffres publiés, et les tiens calculés de la même façon (sans ta zone domicile) ---- */
+  var RANK_METRICS = [
+    ["km2", "km²", "km²", function (v) { return fmtKm2(v); }],
+    ["distKm", "Kilomètres", "km", function (v) { return fmt(v, 0); }],
+    ["acts", "Sorties", "sorties", function (v) { return fmt(v, 0); }],
+    ["summits", "Sommets", "sommets", function (v) { return fmt(v, 0); }],
+  ];
   function viewRank() {
-    var me = userScore(rankPeriod, rankSport), board = fakeBoard(rankScope, rankPeriod, rankSport), rank = 1 + board.filter(function (b) { return b.v > me; }).length;
-    var rows = board.map(function (b, i) { return { r: i + 1, name: b.name, v: b.v, me: false }; });
-    rows.splice(rank - 1, 0, { r: rank, name: S.name || "Moi", v: me, me: true });
-    rows.forEach(function (x, i) { x.r = i + 1; });
-    var top = rows.slice(0, 8), meRow = rows.filter(function (x) { return x.me; })[0], extra = meRow.r > 8;
-    function seg(group, items, cur) { return '<div class="seg">' + items.map(function (it) { return '<button data-' + group + '="' + it[0] + '" aria-pressed="' + (cur === it[0]) + '">' + it[1] + '</button>'; }).join("") + '</div>'; }
-    function row(x) { return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + x.r + '</span><span class="main"><span class="t">' + esc(x.name) + (x.me ? " (toi)" : "") + '</span></span><span class="v">' + fmtKm2(x.v) + '<small>km²</small></span></div>'; }
-    return '<div class="banner">Aperçu avec des joueurs fictifs. Un vrai classement mondial ou régional demande des comptes et un serveur ; ton score ci-dessous est réel et ne compte que les courses avec données de capteur.</div>' +
-      seg("sport", [["all", "Tous sports"]].concat(Object.keys(SPORTS).map(function (k) { return [k, sl(k)]; })), rankSport) +
-      seg("scope", [["monde", "Monde"], ["france", "Pays"], ["region", "Région"]], rankScope) +
-      seg("period", [["all", "Total"], ["month", "Ce mois-ci"]], rankPeriod) +
-      top.map(row).join("") + (extra ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(meRow) : "");
+    if (!acct) return "";
+    if (friendsErr) return '<p class="note">' + esc(friendsErr) + '</p>';
+    if (!friends || typeof h3 === "undefined") return '<div class="empty-line">Chargement…</div>';
+    var m = RANK_METRICS.filter(function (x) { return x[0] === rankMetric; })[0] || RANK_METRICS[0], k = m[0];
+    var rows = [{ name: S.name || "Moi", st: sharedStats(sharedCells()), me: true }];
+    friends.friends.forEach(function (f) { if (f.theyShare && f.map && f.map.stats) rows.push({ name: f.pseudo, place: placeLabel(f), st: f.map.stats, me: false }); });
+    var hidden = friends.friends.length - (rows.length - 1);
+    rows.sort(function (a, b) { return (b.st[k] || 0) - (a.st[k] || 0) || (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name)); });
+    var seg = '<div class="seg seg4">' + RANK_METRICS.map(function (x) { return '<button data-rmetric="' + x[0] + '" aria-pressed="' + (x[0] === k) + '">' + x[1] + '</button>'; }).join("") + '</div>';
+    var list = rows.map(function (x) {
+      var v = x.st[k] || 0, r = 1 + rows.filter(function (y) { return (y.st[k] || 0) > v; }).length;   // ex æquo : même rang
+      return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : "") + '</span>' +
+        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + m[3](v) + '<small>' + m[2] + '</small></span></div>';
+    }).join("");
+    return '<p class="note" style="margin:0 0 10px">Toi et les amis qui partagent leur carte avec toi. Tes chiffres sont calculés comme ceux qu’ils voient : sans ta zone domicile.</p>' + seg + list +
+      (rows.length === 1 ? '<div class="empty-line">Aucun ami ne partage encore sa carte avec toi.</div><button class="btn ghost block" id="rankfriends">Inviter des amis</button>' : '') +
+      (hidden > 0 ? '<p class="note">' + hidden + (hidden > 1 ? " amis ne partagent" : " ami ne partage") + ' pas sa carte avec toi : non classé' + (hidden > 1 ? "s" : "") + '.</p>' : '');
   }
 
   function bindSheet() {
     var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
+    document.querySelectorAll("[data-psport]").forEach(function (sel) {
+      sel.addEventListener("change", function () {
+        var it = pending && pending.items[+sel.dataset.psport]; if (!it || !SPORTS[sel.value]) return;
+        it.act.sport = sel.value; it.sportChosen = true; render();
+      });
+    });
     var xb = $("cancel"); if (xb) xb.addEventListener("click", function () { pending = null; render(); draw(); });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
@@ -3241,7 +3246,8 @@ body.sheet-open #cellcard { display: none; }
         rebuild(); save(); draw(); render();
       });
     });
-    document.querySelectorAll("[data-scope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.scope; render(); }); });
+    document.querySelectorAll("[data-rmetric]").forEach(function (b) { b.addEventListener("click", function () { rankMetric = b.dataset.rmetric; render(); }); });
+    var rf = $("rankfriends"); if (rf) rf.addEventListener("click", function () { openTab("friends"); });
     var rs = $("rescanBtn"); if (rs) rs.addEventListener("click", recomputeAll);
     document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
     document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; render(); }); });
@@ -3252,8 +3258,6 @@ body.sheet-open #cellcard { display: none; }
       el.hidden = false; loadInfo(key);
     }); });
     document.querySelectorAll("[data-lsport]").forEach(function (b) { b.addEventListener("click", function () { listSport = b.dataset.lsport; render(); }); });
-    document.querySelectorAll("[data-sport]").forEach(function (b) { b.addEventListener("click", function () { rankSport = b.dataset.sport; render(); }); });
-    document.querySelectorAll("[data-period]").forEach(function (b) { b.addEventListener("click", function () { rankPeriod = b.dataset.period; render(); }); });
   }
   document.querySelectorAll(".tab").forEach(function (t) { t.addEventListener("click", function () { openTab(t.dataset.tab); }); });
   $("sheetClose").addEventListener("click", closeSheet);
