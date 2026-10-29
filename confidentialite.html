@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Xplr · Confidentialité</title>
+<meta name="description" content="Règles de confidentialité de l'application Xplr.">
+<link rel="icon" href="favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #bfe6ff; --panel: #ffffff; --ink: #2b1f4a; --muted: #6a5f8a; --line: #2b1f4a; --accent: #ffc933;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #1b1330; --panel: #2d2147; --ink: #fff3d6; --muted: #b9acd9; --line: #0e0820; }
+}
+:root[data-theme="dark"] { --bg: #1b1330; --panel: #2d2147; --ink: #fff3d6; --muted: #b9acd9; --line: #0e0820; }
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "Fredoka", ui-rounded, "Avenir Next Rounded", "Segoe UI", system-ui, sans-serif;
+  font-size: 17px; line-height: 1.55;
+}
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+header img { width: 56px; height: 56px; border-radius: 14px; border: 3px solid var(--line); }
+h1 { font-size: 30px; margin: 0; line-height: 1.15; }
+.date { color: var(--muted); margin: 2px 0 0; font-size: 15px; }
+section {
+  background: var(--panel); border: 3px solid var(--line); border-radius: 18px;
+  padding: 16px 18px; margin: 0 0 16px; box-shadow: 0 4px 0 var(--line);
+}
+h2 { font-size: 21px; margin: 0 0 8px; }
+p, li { margin: 0 0 8px; }
+ul { padding-left: 20px; margin: 0 0 8px; }
+.short { border-left: 6px solid var(--accent); padding-left: 12px; }
+a { color: inherit; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+.back { display: inline-block; margin-top: 8px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 6px 8px 6px 0; border-top: 1px solid color-mix(in srgb, var(--ink) 20%, transparent); }
+th { font-weight: 600; white-space: nowrap; }
+@media (max-width: 520px) { th { white-space: normal; } h1 { font-size: 26px; } }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <img src="icon-192.png" alt="" width="56" height="56">
+  <div>
+    <h1>Confidentialité</h1>
+    <p class="date">Xplr · mise à jour le 29 octobre 2026</p>
+  </div>
+</header>
+
+<section>
+  <h2>En bref</h2>
+  <ul class="short">
+    <li>Sans compte, tout reste sur ton appareil : aucune donnée ne nous est envoyée.</li>
+    <li>Avec un compte, seule ta sauvegarde est stockée en ligne. Ton adresse e-mail n'est pas conservée.</li>
+    <li>Aucune publicité, aucun outil de mesure d'audience, aucune revente de données.</li>
+    <li>Tu peux supprimer ton compte et toutes tes données en ligne à tout moment, depuis l'appli.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Qui est responsable</h2>
+  <p>Xplr est une application personnelle et non commerciale, éditée par <strong>l’équipe Xplr</strong>. Pour toute question ou demande liée à tes données : <a href="mailto:chave.edgar42@gmail.com">chave.edgar42@gmail.com</a>.</p>
+</section>
+
+<section>
+  <h2>Ce qui reste sur ton appareil</h2>
+  <p>Tes sorties importées (fichiers GPX, TCX, FIT), leurs traces, ta carte d'hexagones, tes sommets, lieux, grades, objectifs et réglages sont enregistrés dans le stockage de ton navigateur. Ils ne quittent pas ton appareil, sauf si tu crées un compte (voir plus bas) ou si tu choisis de partager une image de ta carte.</p>
+  <p>La géolocalisation n'est utilisée que lorsque tu demandes à centrer la carte sur ta position. Elle n'est pas enregistrée.</p>
+  <p>Xplr n'utilise pas de cookies. Le bouton de connexion Google, lorsqu'il s'affiche, est fourni par Google, qui peut déposer ses propres cookies.</p>
+</section>
+
+<section>
+  <h2>Compte et sauvegarde en ligne</h2>
+  <p>Le compte est facultatif. La connexion se fait avec Google, qui confirme seulement ton identité : Xplr ne voit jamais ton mot de passe.</p>
+  <table>
+    <tr><th>Conservé</th><td>L'identifiant technique de ton compte Google, le pseudo que tu choisis, ta sauvegarde (sorties, traces compactées, carte, réglages) et la date de chaque sauvegarde.</td></tr>
+    <tr><th>Non conservé</th><td>Ton adresse e-mail, ton nom, ta photo Google, tes jetons d'accès Strava.</td></tr>
+    <tr><th>Hébergement</th><td>Cloudflare (base de données D1), qui peut traiter les données hors de l'Union européenne.</td></tr>
+    <tr><th>Durée</th><td>Jusqu'à la suppression de ton compte. Une session de connexion expire au bout de 60 jours.</td></tr>
+  </table>
+  <p>Ces données servent uniquement à te permettre de retrouver ta carte sur un autre appareil. Personne d'autre n'y a accès.</p>
+</section>
+
+<section>
+  <h2>Strava</h2>
+  <p>La connexion à Strava est facultative. Elle permet d'importer tes sorties automatiquement. Les jetons d'accès restent sur ton appareil et ne sont jamais inclus dans la sauvegarde en ligne. Un relais hébergé chez Cloudflare transmet les échanges avec Strava sans rien enregistrer.</p>
+  <p>Les sorties importées depuis Strava ne sont jamais montrées à d'autres utilisateurs.</p>
+</section>
+
+<section>
+  <h2>Amis et partage</h2>
+  <p>La fonction amis n'est pas encore disponible. Lorsqu'elle le sera, le partage sera désactivé par défaut et accordé ami par ami. Un ami verra ta carte d'hexagones et tes statistiques, jamais tes traces brutes. La zone autour de ton domicile sera masquée par défaut.</p>
+</section>
+
+<section>
+  <h2>Services utilisés pour afficher la carte</h2>
+  <p>Pour fonctionner, l'appli interroge directement depuis ton appareil les services ci-dessous. Comme tout site web, ils reçoivent ton adresse IP. Certains reçoivent aussi les coordonnées de la zone concernée. Aucun ne reçoit ton identité ni tes traces complètes.</p>
+  <ul>
+    <li><strong>Fonds de carte</strong> : Esri (imagerie satellite et relief) et IGN Géoplateforme (photographies aériennes).</li>
+    <li><strong>Sommets et lieux</strong> : OpenStreetMap (serveurs Overpass), Wikipédia et Wikidata, à partir des zones que tu as parcourues.</li>
+    <li><strong>Communes</strong> : geo.api.gouv.fr, à partir de coordonnées.</li>
+    <li><strong>Recherche d'adresse</strong> : Nominatim (OpenStreetMap), avec le texte que tu saisis.</li>
+    <li><strong>Polices et bibliothèque de calcul</strong> : Google Fonts et jsDelivr.</li>
+    <li><strong>Hébergement du site</strong> : GitHub Pages.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Tes droits</h2>
+  <p>Conformément au RGPD, tu peux accéder à tes données, les corriger, les supprimer, t'opposer à leur traitement ou les récupérer.</p>
+  <ul>
+    <li><strong>Supprimer</strong> : Réglages, Compte, « Supprimer mon compte et mes données en ligne ». La suppression est immédiate et définitive.</li>
+    <li><strong>Récupérer</strong> : Réglages, « Exporter mes données (JSON) ».</li>
+    <li><strong>Effacer les données locales</strong> : vider les données du site dans ton navigateur.</li>
+  </ul>
+  <p>Pour toute autre demande, écris à <a href="mailto:chave.edgar42@gmail.com">chave.edgar42@gmail.com</a>. Tu peux aussi adresser une réclamation à la <a href="https://www.cnil.fr/fr/plaintes">CNIL</a>.</p>
+  <p>Le traitement repose sur ton consentement, que tu donnes en créant un compte ou en connectant Strava, et que tu peux retirer à tout moment.</p>
+</section>
+
+<section>
+  <h2>Changements</h2>
+  <p>Cette page sera mise à jour à chaque évolution de l'appli qui touche à tes données, notamment à l'ouverture de la fonction amis. La date en haut de page indique la dernière version.</p>
+  <a class="back" href="./">← Retour à Xplr</a>
+</section>
+</main>
+</body>
+</html>
