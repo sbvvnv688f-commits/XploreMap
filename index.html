@@ -229,8 +229,8 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .bar-fill { height: 100%; background: var(--cell); border-right: 3px solid var(--outline); min-width: 4px; }
 .cup { fill: none; stroke: var(--ink); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .cup.locked { opacity: 0.4; }
-.cups { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 12px; }
-.cups .cup { width: 100%; height: auto; }
+.cups { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 3px; margin-top: 12px; }
+.cups .cup { width: 100%; min-width: 0; height: auto; }
 .locked { padding: 10px 12px; background: var(--panel); border: 3px dashed var(--outline); border-radius: 14px; font-size: 16px; font-weight: 600; min-height: 46px; word-break: break-word; }
 /* ---- barre de la carte, recherche, glisser-déposer ---- */
 #mapbar { top: calc(env(safe-area-inset-top, 0px) + 80px); left: 12px; right: 12px; display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 6px; pointer-events: none; }
@@ -460,6 +460,7 @@ body.sheet-open #cellcard { display: none; }
     pagaie:   { label: "Kayak, aviron, paddle", vmax: 25, ic: "🛶" },
     voile:    { label: "Voile, planche, kite", vmax: 70, ic: "⛵" },
     roller:   { label: "Roller et patin", vmax: 50, ic: "🛼" },
+    parapente: { label: "Parapente", vmax: 90, ic: "🪂" },
     autre:    { label: "Autre sport sans moteur", vmax: 60, ic: "🧭" }
   };
   var SOURCES = {
@@ -473,14 +474,14 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= état ================= */
   var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
-  var S = { name: "", city: "", dept: "", owner: "", home: null, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", owner: "", home: null, rankOptOut: false, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
   var selected = null, current = null, lastResult = "";
-  var rankMetric = "km2", listSport = "all";
+  var rankScope = "all", rankSport = "all", listSport = "all";
 
   function loadState() {
     try {
@@ -497,6 +498,7 @@ body.sheet-open #cellcard { display: none; }
         S.nextId = o.nextId || (o.activities.length + 1);
         S.city = typeof o.city === "string" ? o.city : ""; S.dept = typeof o.dept === "string" ? o.dept : "";
         S.owner = typeof o.owner === "string" ? o.owner : "";   // compte auquel appartiennent ces données
+        S.rankOptOut = o.rankOptOut === true;   // retiré du classement de tous les joueurs
         var hm = o.home;   // zone domicile jamais partagée : { lat, lng, r } ou { none: true }
         S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r) } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
@@ -642,6 +644,7 @@ body.sheet-open #cellcard { display: none; }
     if (sport === 15 || sport === 37 || sport === 41 || sport === 42) return "pagaie";
     if (sport === 32 || sport === 43 || sport === 44) return "voile";
     if (sport === 30) return "roller";
+    if (sport === 26) return "parapente";   // vol libre (hang_gliding), parapente compris
     return null;
   }
   function parseFIT(buf) {
@@ -1283,7 +1286,7 @@ body.sheet-open #cellcard { display: none; }
   function hashStr(t) { var h = 5381, i; for (i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36); }
   function scheduleMapPush(delay) {
     if (!acct || !friends) return;
-    clearTimeout(mapTimer); mapTimer = setTimeout(pushMap, delay === undefined ? 30000 : delay);
+    clearTimeout(mapTimer); mapTimer = setTimeout(function () { pushMap(); pushScore(); }, delay === undefined ? 30000 : delay);   // carte partagée et surface du classement
   }
   function pushMap() {   // publie ma carte partageable si au moins un ami la voit ; la retire sinon
     if (!acct || !friends || mapBusy || typeof h3 === "undefined") return Promise.resolve();
@@ -1686,6 +1689,7 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= import de courses ================= */
   function guessSport(name, fallback) {
+    if (/parapent|paraglid|hang.?glid|deltaplane|vol libre|speed.?fl(y|ying)|speed.?riding/i.test(name)) return "parapente";   // le paramoteur est écarté avant (moteur)
     if (/trail/i.test(name)) return "trail";
     if (/run|course à pied|footing/i.test(name)) return "course";
     if (/swim|natation|nage\b/i.test(name)) return "natation";
@@ -1698,7 +1702,7 @@ body.sheet-open #cellcard { display: none; }
     if (/hik|walk|mountaineer|climb|snowshoe|marche|rando|raquette|escalade/i.test(name)) return "rando";
     return fallback;
   }
-  function isMotor(name) { return /motorcycl|\bmoto\b|motard|\bcar\b|\bdriv|voiture|snowmobile|motoneige|scooter|e-?bike|\bvae\b|\bquad\b|\bkart/i.test(name); }
+  function isMotor(name) { return /motorcycl|\bmoto\b|motard|\bcar\b|\bdriv|voiture|snowmobile|motoneige|scooter|e-?bike|\bvae\b|\bquad\b|\bkart|paramot|\bulm\b|paratrike/i.test(name); }
   function readFile(f) {
     return new Promise(function (res, rej) { var r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = function () { rej(new Error("lecture impossible")); }; r.readAsArrayBuffer(f); });
   }
@@ -2169,7 +2173,7 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= affichage : période, couleurs, révélation ================= */
-  var SPORT_COLOR = { trail: "#ff7a45", course: "#ff5d8f", rando: "#2fcf7e", velo: "#4aa8ff", ski: "#9a7bff", natation: "#19c3d6", pagaie: "#27b5a0", voile: "#6ec6ff", roller: "#ffc933", autre: "#a39bbd" };
+  var SPORT_COLOR = { trail: "#ff7a45", course: "#ff5d8f", rando: "#2fcf7e", velo: "#4aa8ff", ski: "#9a7bff", natation: "#19c3d6", pagaie: "#27b5a0", voile: "#6ec6ff", roller: "#ffc933", parapente: "#e86bff", autre: "#a39bbd" };
   function periodMin() {
     var t = todayISO(), d;
     if (periodF === "year") return t.slice(0, 4) + "-01-01";
@@ -2259,7 +2263,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "29/10/2026 · v52";
+  var BUILD = "29/10/2026 · v53";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -3097,12 +3101,13 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", friends: "Amis", rank: "Classement parmi tes amis" };
+  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", friends: "Amis", rank: "Classement" };
   function openTab(k) {
     if (current === k) { closeSheet(); return; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
-    if (k === "friends" || k === "rank") loadFriends();
+    if (k === "friends") loadFriends();
+    if (k === "rank") loadBoard();
     closeDrawer(); current = k; render();
     $("sheet").classList.add("open"); $("sheet").setAttribute("aria-hidden", "false");
     document.body.classList.add("sheet-open"); markTabs();
@@ -3184,31 +3189,57 @@ body.sheet-open #cellcard { display: none; }
     return html;
   }
 
-  /* ---- classement parmi tes amis : leurs chiffres publiés, et les tiens calculés de la même façon (sans ta zone domicile) ---- */
-  var RANK_METRICS = [
-    ["km2", "km²", "km²", function (v) { return fmtKm2(v); }],
-    ["distKm", "Kilomètres", "km", function (v) { return fmt(v, 0); }],
-    ["acts", "Sorties", "sorties", function (v) { return fmt(v, 0); }],
-    ["summits", "Sommets", "sommets", function (v) { return fmt(v, 0); }],
-  ];
+  /* ---- classement : surface explorée de tous les joueurs, filtrable par amis et par sport (filtres cumulables) ---- */
+  var board = null, boardErr = "", RANK_TOP = 50;
+  function myScore() {   // ma surface au total et par sport, calculée ici (toujours à jour)
+    var all = new Set(), by = {};
+    sharedActs().forEach(function (a) { var s = by[a.sport] || (by[a.sport] = new Set()); actCells(a).forEach(function (c) { all.add(c); s.add(c); }); });
+    var out = { km2: all.size * AREA_M2 / 1e6, bySport: {} };
+    Object.keys(by).forEach(function (k) { out.bySport[k] = by[k].size * AREA_M2 / 1e6; });
+    return out;
+  }
+  function pushScore() {   // publie ma surface (ou la retire si je ne veux pas apparaître)
+    if (!acct || typeof h3 === "undefined") return Promise.resolve();
+    if (S.rankOptOut) {
+      if (acct.scoreSig === "out") return Promise.resolve();
+      return apiCall("DELETE", "/score").then(function () { if (acct) { acct.scoreSig = "out"; saveAcct(); } }, function () {});
+    }
+    var sc = myScore(), sig = JSON.stringify(sc);
+    if (sig === acct.scoreSig) return Promise.resolve();
+    return apiCall("PUT", "/score", sc).then(function () { if (acct) { acct.scoreSig = sig; saveAcct(); } }, function () {});
+  }
+  function loadBoard() {
+    if (!acct) return Promise.resolve();
+    return pushScore().then(function () { return apiCall("GET", "/leaderboard"); }).then(function (r) { board = r.players || []; boardErr = ""; if (current === "rank") render(); }, function (e) {
+      boardErr = e.status === 404 ? "Le classement arrive bientôt : le serveur doit encore être mis à jour." : "Classement indisponible : " + e.message + ".";
+      if (current === "rank") render();
+    });
+  }
   function viewRank() {
     if (!acct) return "";
-    if (friendsErr) return '<p class="note">' + esc(friendsErr) + '</p>';
-    if (!friends || typeof h3 === "undefined") return '<div class="empty-line">Chargement…</div>';
-    var m = RANK_METRICS.filter(function (x) { return x[0] === rankMetric; })[0] || RANK_METRICS[0], k = m[0];
-    var rows = [{ name: S.name || "Moi", st: sharedStats(sharedCells()), me: true }];
-    friends.friends.forEach(function (f) { if (f.theyShare && f.map && f.map.stats) rows.push({ name: f.pseudo, place: placeLabel(f), st: f.map.stats, me: false }); });
-    var hidden = friends.friends.length - (rows.length - 1);
-    rows.sort(function (a, b) { return (b.st[k] || 0) - (a.st[k] || 0) || (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name)); });
-    var seg = '<div class="seg seg4">' + RANK_METRICS.map(function (x) { return '<button data-rmetric="' + x[0] + '" aria-pressed="' + (x[0] === k) + '">' + x[1] + '</button>'; }).join("") + '</div>';
-    var list = rows.map(function (x) {
-      var v = x.st[k] || 0, r = 1 + rows.filter(function (y) { return (y.st[k] || 0) > v; }).length;   // ex æquo : même rang
-      return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : "") + '</span>' +
-        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + m[3](v) + '<small>' + m[2] + '</small></span></div>';
-    }).join("");
-    return '<p class="note" style="margin:0 0 10px">Toi et les amis qui partagent leur carte avec toi. Tes chiffres sont calculés comme ceux qu’ils voient : sans ta zone domicile.</p>' + seg + list +
-      (rows.length === 1 ? '<div class="empty-line">Aucun ami ne partage encore sa carte avec toi.</div><button class="btn ghost block" id="rankfriends">Inviter des amis</button>' : '') +
-      (hidden > 0 ? '<p class="note">' + hidden + (hidden > 1 ? " amis ne partagent" : " ami ne partage") + ' pas sa carte avec toi : non classé' + (hidden > 1 ? "s" : "") + '.</p>' : '');
+    var scope = '<div class="seg">' + [["all", "Tous les joueurs"], ["friends", "Mes amis"]].map(function (x) { return '<button data-rscope="' + x[0] + '" aria-pressed="' + (rankScope === x[0]) + '">' + x[1] + '</button>'; }).join("") + '</div>';
+    var sport = '<div class="field"><label for="rsport">Sport</label><select id="rsport"><option value="all">Tous les sports</option>' + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (rankSport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>';
+    var optOut = '<label class="gradechk" style="margin:14px 0 0"><input type="checkbox" id="rankin"' + (S.rankOptOut ? "" : " checked") + '><span>Apparaître dans le classement</span></label>' +
+      '<p class="note">Tous les joueurs voient ton pseudo, ton département et ta surface explorée ; tes amis voient aussi ta ville. Aucune position ni carte n’est montrée.</p>';
+    if (boardErr) return scope + sport + '<p class="note">' + esc(boardErr) + '</p>' + optOut;
+    if (!board || typeof h3 === "undefined") return scope + sport + '<div class="empty-line">Chargement…</div>' + optOut;
+    var mine = myScore(), meId = acct.user && acct.user.id;
+    var rows = board.filter(function (p) { return !p.me && p.id !== meId; }).map(function (p) { return { name: p.pseudo, place: p.place, friend: p.friend, km2: p.km2, by: p.bySport || {} }; });
+    var meRow = { name: S.name || "Moi", place: S.city ? S.city + (S.dept ? " · " + S.dept : "") : S.dept, me: true, km2: mine.km2, by: mine.bySport };
+    rows.push(meRow);
+    var val = function (x) { return rankSport === "all" ? (x.km2 || 0) : ((x.by && x.by[rankSport]) || 0); };
+    rows = rows.filter(function (x) { return (rankScope !== "friends" || x.friend || x.me) && (x.me || rankSport === "all" || val(x) > 0); });   // filtres cumulables : amis et sport
+    rows.sort(function (a, b) { return val(b) - val(a) || (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name)); });
+    rows.forEach(function (x) { var v = val(x); x.r = 1 + rows.filter(function (y) { return val(y) > v; }).length; });   // ex æquo : même rang
+    function row(x) {
+      return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + x.r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : x.friend ? " · ami" : "") + '</span>' +
+        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + fmtKm2(val(x)) + '<small>km²</small></span></div>';
+    }
+    var top = rows.slice(0, RANK_TOP), me = rows.filter(function (x) { return x.me; })[0];
+    var list = top.map(row).join("") + (me && me.r > RANK_TOP && top.indexOf(me) < 0 ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(me) : "");
+    var alone = rows.length === 1 ? '<div class="empty-line">' + (rankScope === "friends" ? "Aucun ami classé" + (rankSport === "all" ? "" : " dans ce sport") + " pour l’instant." : "Personne d’autre n’est encore classé" + (rankSport === "all" ? "." : " dans ce sport.")) + '</div>' +
+      (rankScope === "friends" ? '<button class="btn ghost block" id="rankfriends">Inviter des amis</button>' : '') : '';
+    return scope + sport + list + alone + (S.rankOptOut ? '<p class="note"><b>Tu n’apparais pas dans le classement :</b> ta ligne n’est visible que par toi.</p>' : '') + optOut;
   }
 
   function bindSheet() {
@@ -3246,7 +3277,9 @@ body.sheet-open #cellcard { display: none; }
         rebuild(); save(); draw(); render();
       });
     });
-    document.querySelectorAll("[data-rmetric]").forEach(function (b) { b.addEventListener("click", function () { rankMetric = b.dataset.rmetric; render(); }); });
+    document.querySelectorAll("[data-rscope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.rscope; render(); }); });
+    var rsel = $("rsport"); if (rsel) rsel.addEventListener("change", function (e) { rankSport = e.target.value; render(); });
+    var rin = $("rankin"); if (rin) rin.addEventListener("change", function (e) { S.rankOptOut = !e.target.checked; save(); pushScore().then(loadBoard); render(); });
     var rf = $("rankfriends"); if (rf) rf.addEventListener("click", function () { openTab("friends"); });
     var rs = $("rescanBtn"); if (rs) rs.addEventListener("click", recomputeAll);
     document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
@@ -3275,14 +3308,16 @@ body.sheet-open #cellcard { display: none; }
     { bg: "#ff6b6b", fg: "#fff", d: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>' }
   ];
   var TROPHIES = [
-    { km: 0.1, name: "Promeneur",   c: "#c9803c" },
-    { km: 0.5, name: "Éclaireur",   c: "#c9803c" },
-    { km: 1,   name: "Randonneur",  c: "#b8c2cc" },
-    { km: 2.5, name: "Pisteur",     c: "#b8c2cc" },
-    { km: 5,   name: "Explorateur", c: "#ffc933" },
-    { km: 10,  name: "Aventurier",  c: "#ffc933" },
-    { km: 25,  name: "Conquérant",  c: "#4fd0ff" },
-    { km: 50,  name: "Légende",     c: "#ff5dd8" }
+    { km: 10,   name: "Promeneur",   c: "#c9803c" },
+    { km: 20,   name: "Éclaireur",   c: "#c9803c" },
+    { km: 50,   name: "Randonneur",  c: "#b8c2cc" },
+    { km: 100,  name: "Pisteur",     c: "#b8c2cc" },
+    { km: 150,  name: "Explorateur", c: "#ffc933" },
+    { km: 200,  name: "Aventurier",  c: "#ffc933" },
+    { km: 300,  name: "Baroudeur",   c: "#4fd0ff" },
+    { km: 500,  name: "Conquérant",  c: "#4fd0ff" },
+    { km: 700,  name: "Pionnier",    c: "#ff5dd8" },
+    { km: 1000, name: "Légende",     c: "#a46dff" }
   ];
   var drawerView = "profile", picker = false;
 
