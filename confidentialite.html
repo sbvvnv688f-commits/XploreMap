@@ -81,12 +81,12 @@ th { font-weight: 600; white-space: nowrap; }
   <h2>Compte et sauvegarde en ligne</h2>
   <p>Un compte est nécessaire pour utiliser Xplr. La connexion se fait avec Google, qui confirme seulement ton identité : Xplr ne voit jamais ton mot de passe. À la première connexion, tu choisis un pseudo et ta ville ; le département est déduit de la ville.</p>
   <table>
-    <tr><th>Conservé</th><td>L'identifiant technique de ton compte Google, le pseudo que tu choisis, ta ville et ton département, ta sauvegarde (sorties, traces compactées, carte, réglages) et la date de chaque sauvegarde.</td></tr>
+    <tr><th>Conservé</th><td>L'identifiant technique de ton compte Google, le pseudo que tu choisis, ta ville et ton département, ta sauvegarde (sorties, traces compactées, carte, réglages) et la date de chaque sauvegarde. Si tu as des amis : la liste de tes amis et invitations, tes choix de partage et, tant que tu partages avec au moins un ami, ta carte partageable (hexagones et compteurs).</td></tr>
     <tr><th>Non conservé</th><td>Ton adresse e-mail, ton nom, ta photo Google, tes jetons d'accès Strava.</td></tr>
     <tr><th>Hébergement</th><td>Cloudflare (base de données D1), qui peut traiter les données hors de l'Union européenne.</td></tr>
     <tr><th>Durée</th><td>Jusqu'à la suppression de ton compte. Une session de connexion expire au bout de 60 jours.</td></tr>
   </table>
-  <p>Ces données servent uniquement à faire fonctionner ton compte et à te permettre de retrouver ta carte sur un autre appareil. Personne d'autre n'y a accès. Ta ville et ton département serviront plus tard aux amis et aux classements locaux ; cette page sera mise à jour avant.</p>
+  <p>Ces données servent uniquement à faire fonctionner ton compte, à te permettre de retrouver ta carte sur un autre appareil et à la montrer aux amis que tu choisis. Ta sauvegarde n'est accessible qu'à toi.</p>
 </section>
 
 <section>
@@ -97,7 +97,15 @@ th { font-weight: 600; white-space: nowrap; }
 
 <section>
   <h2>Amis et partage</h2>
-  <p>La fonction amis n'est pas encore disponible. Lorsqu'elle le sera, le partage sera désactivé par défaut et accordé ami par ami. Un ami verra ta carte d'hexagones et tes statistiques, jamais tes traces brutes. La zone autour de ton domicile sera masquée par défaut.</p>
+  <p>Tu peux inviter quelqu'un avec son pseudo. Toute personne qui connaît ton pseudo peut t'envoyer une invitation ; elle voit alors ton pseudo, ta ville et ton département, rien d'autre. Tant que tu n'acceptes pas, vous n'êtes pas amis.</p>
+  <p>Le partage de ta carte est <strong>désactivé par défaut</strong> et se décide <strong>ami par ami</strong>. Un ami avec qui tu partages voit :</p>
+  <ul>
+    <li>les hexagones de 50 m que tu as découverts avec des sorties importées par fichier ;</li>
+    <li>des compteurs : km² découverts, nombre d'hexagones, de sorties, kilomètres, nombre de sommets et de lieux, trophée.</li>
+  </ul>
+  <p>Il ne voit jamais tes traces, tes dates, le nom de tes sorties, ni les sommets et lieux eux-mêmes. Les sorties importées depuis Strava ne sont jamais partagées.</p>
+  <p>Avant tout partage, tu choisis une <strong>zone domicile</strong> : un cercle (300 m à 2 km) dont les hexagones ne sont jamais envoyés. Le centre de ce cercle reste sur ton appareil et dans ta sauvegarde privée. Tu peux aussi choisir explicitement de ne rien masquer.</p>
+  <p>Arrêter le partage, retirer un ami ou supprimer ton compte coupe l'accès immédiatement. Quand tu ne partages plus avec personne, ta carte partageable est retirée du serveur, au plus tard à ta prochaine ouverture de l'appli.</p>
 </section>
 
 <section>
@@ -127,7 +135,7 @@ th { font-weight: 600; white-space: nowrap; }
 
 <section>
   <h2>Changements</h2>
-  <p>Cette page sera mise à jour à chaque évolution de l'appli qui touche à tes données, notamment à l'ouverture de la fonction amis. La date en haut de page indique la dernière version.</p>
+  <p>Cette page sera mise à jour à chaque évolution de l'appli qui touche à tes données, notamment avant l'ouverture d'un classement. La date en haut de page indique la dernière version.</p>
   <a class="back" href="./">← Retour à Xplr</a>
 </section>
 </main>

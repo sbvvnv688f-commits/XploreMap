@@ -313,6 +313,48 @@ details.advanced summary { cursor: pointer; font-size: 13px; color: var(--muted)
 .sugg small { font-weight: 500; color: var(--muted); }
 .sugg button:hover small, .sugg button:focus-visible small { color: inherit; }
 .sugg p { margin: 0; padding: 10px 12px; font-size: 14px; color: var(--muted); }
+/* ---- amis ---- */
+.tab-badge { position: absolute; top: 4px; left: calc(50% + 6px); z-index: 2; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--pink); color: #ffffff; border: 2px solid var(--outline); font-size: 11px; font-weight: 700; line-height: 14px; text-align: center; }
+.tab-badge[hidden] { display: none; }
+.inv { display: flex; gap: 8px; }
+.inv input { flex: 1; min-width: 0; }
+.inv .btn { padding: 8px 16px; }
+.frow { border-top: 2px dashed color-mix(in srgb, var(--outline) 28%, transparent); padding: 12px 0; }
+.frow:first-of-type { border-top: 0; }
+.frow-top { display: flex; align-items: center; gap: 12px; }
+.frow-top .main { flex: 1; min-width: 0; }
+.frow .t { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.frow .s { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.frow .v { text-align: right; font-weight: 700; font-size: 19px; font-variant-numeric: tabular-nums; }
+.frow .v small { display: block; font-weight: 500; font-size: 12px; color: var(--muted); }
+.frow .del { font-size: 12px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
+.frow-act { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.frow-act .gradechk { box-shadow: none; }
+.linkbtn:disabled { opacity: 0.45; box-shadow: none; }
+.fnote { font-size: 12.5px; color: var(--muted); }
+.homebox { border: 3px solid var(--outline); border-radius: 18px; padding: 12px; background: var(--panel); }
+.homebox .frow-act { margin-top: 10px; }
+#fvbar, #homebar {
+  top: calc(env(safe-area-inset-top, 0px) + 80px); left: 12px; right: 12px; z-index: 6; display: flex; align-items: center; gap: 10px;
+  padding: 8px 8px 8px 14px; border: 3px solid var(--outline); border-radius: 18px; box-shadow: 3px 3px 0 var(--outline);
+}
+#fvbar { background: #a46dff; color: #0b0529; }
+#homebar { background: var(--panel); color: var(--ink); flex-wrap: wrap; }
+#fvbar[hidden], #homebar[hidden], #homecross[hidden] { display: none; }
+.fv-t { flex: 1; min-width: 0; }
+.fv-t b { display: block; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fv-t small { display: block; font-size: 12.5px; font-weight: 500; }
+#fvbar .btn, #homebar .btn { padding: 8px 14px; font-size: 14px; }
+#fvbar .btn { background: var(--panel); color: var(--ink); }
+#homebar .fv-t { flex-basis: 100%; }
+#homebar select { padding: 6px 8px; border: 3px solid var(--outline); border-radius: 12px; background: var(--panel); font-size: 14px; font-weight: 600; }
+body.friend-view #chip { background: #a46dff; color: #0b0529; }
+body.friend-view #mapbar, body.friend-view #gradeBox, body.friend-view #hint,
+body.home-pick #mapbar, body.home-pick #gradeBox, body.home-pick #hint, body.home-pick #cellcard, body.home-pick #poicard { display: none; }
+#homecross { position: fixed; left: 50%; top: 50%; z-index: 6; width: 30px; height: 30px; margin: -15px 0 0 -15px; pointer-events: none; }
+#homecross::before, #homecross::after { content: ""; position: absolute; background: var(--outline); border: 1.5px solid #ffffff; }
+#homecross::before { left: 13px; top: 0; width: 4px; height: 30px; }
+#homecross::after { top: 13px; left: 0; height: 4px; width: 30px; }
 .gl-wrap { display: flex; align-items: stretch; margin-bottom: 6px; }
 .gl-wrap[hidden] { display: none; }
 .gl-wrap.off .gl-t { display: none; }   /* légende repliée : seuls les carrés de couleur restent */
@@ -389,8 +431,13 @@ body.sheet-open #cellcard { display: none; }
   <button class="tab" data-tab="list" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>Courses</span></button>
   <button class="tab" data-tab="stats" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Stats</span></button>
   <button class="tab" data-tab="goals" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></svg><span>Succès</span></button>
+  <button class="tab" data-tab="friends" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.6"/><path d="M15.6 14.2c2.4.2 4.2 1.8 4.8 4.8"/></svg><span>Amis</span><b class="tab-badge" id="friendBadge" hidden>0</b></button>
   <button class="tab" data-tab="rank" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 14v4M8 20h8"/></svg><span>Classement</span></button>
 </nav>
+
+<div class="float" id="fvbar" hidden role="status"></div>
+<div class="float" id="homebar" hidden role="dialog" aria-label="Zone domicile"></div>
+<div id="homecross" hidden aria-hidden="true"></div>
 
 <div id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle"><div class="gate-card" id="gateCard"></div></div>
 
@@ -426,7 +473,7 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= état ================= */
   var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
-  var S = { name: "", city: "", dept: "", owner: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", owner: "", home: null, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -450,6 +497,8 @@ body.sheet-open #cellcard { display: none; }
         S.nextId = o.nextId || (o.activities.length + 1);
         S.city = typeof o.city === "string" ? o.city : ""; S.dept = typeof o.dept === "string" ? o.dept : "";
         S.owner = typeof o.owner === "string" ? o.owner : "";   // compte auquel appartiennent ces données
+        var hm = o.home;   // zone domicile jamais partagée : { lat, lng, r } ou { none: true }
+        S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r) } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
         S.onboarded = !!o.onboarded;
@@ -500,7 +549,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function savedReplacer(k, v) { return k === "lines" && Array.isArray(v) ? encLines(v) : v; }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(S, savedReplacer)); storeWarnAt = 0; scheduleBackup(); return true; }
+    try { localStorage.setItem(KEY, JSON.stringify(S, savedReplacer)); storeWarnAt = 0; scheduleBackup(); scheduleMapPush(); return true; }
     catch (e) {
       try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { info: {} }), savedReplacer)); return true; }   // repli : sans les résumés Wikipédia (simple cache, retéléchargeable)
       catch (e2) { /* toujours impossible */ }
@@ -1034,7 +1083,7 @@ body.sheet-open #cellcard { display: none; }
     acctSyncing = true; applyProfile(); hideGate();
     return afterLogin(acct.user).then(function () {
       acctSyncing = false; if (!acct) return;
-      acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI();
+      acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends();
     }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
@@ -1184,7 +1233,7 @@ body.sheet-open #cellcard { display: none; }
     apiCall("PUT", "/me", body).then(function (u) {
       if (!profileDone(u)) throw new Error("le serveur n’a pas enregistré la ville (mise à jour du serveur en attente)");
       acct.user = u; saveAcct(); gateNote("");
-      if (gateMode === "edit" || acctSynced()) { applyProfile(); hideGate(); renderDrawer(); toast("Profil enregistré."); return; }
+      if (gateMode === "edit" || acctSynced()) { applyProfile(); hideGate(); renderDrawer(); toast("Profil enregistré."); loadFriends(); return; }
       return startSession();
     }).catch(function (e) {
       if (!acct) { showGate("login"); return; }   // session expirée pendant la saisie
@@ -1201,7 +1250,214 @@ body.sheet-open #cellcard { display: none; }
       if (!profileDone(u)) { if (!gateMode) showGate("profile"); } else if (!gateMode) applyProfile();
     }, function () { if (!acct) showGate("login"); });   // hors ligne : la session locale reste ouverte
     window.addEventListener("online", function () { if (gateMode === "login") { setAcctMsg(""); initGoogleButton(); } });
+    if (acct && profileDone(acct.user) && acctSynced()) loadFriends();
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && acct && !gateMode && Date.now() - friendsAt > 60000) loadFriends(); });
   }
+
+  /* ===== Amis : invitations par pseudo, partage de la carte ami par ami, carte d’un ami =====
+     Ce qui est partagé : uniquement les hexagones des sorties importées par fichier (jamais celles de Strava, dont l’accord interdit
+     l’affichage à d’autres) hors zone domicile, et quelques compteurs. Jamais de traces, de dates ni de noms de lieux. */
+  var friends = null, friendsErr = "", friendsBusy = false, friendsAt = 0, friendView = null, mapTimer = 0, mapBusy = false, homePick = null;
+  var HOME_RADII = [[300, "300 m"], [500, "500 m"], [1000, "1 km"], [2000, "2 km"]], HOME_MARGIN_M = 30;   // marge d’un demi-hexagone autour du cercle
+  function capFirst(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); }
+  function homeSet() { return !!(S.home && (S.home.none || S.home.r > 0)); }
+  function shareCount() { return friends ? friends.friends.filter(function (f) { return f.iShare; }).length : 0; }
+  function sharedActs() { return realActs().filter(function (a) { return !a.strava; }); }
+  function sharedCells() {
+    var set = new Set();
+    sharedActs().forEach(function (a) { actCells(a).forEach(function (c) { set.add(c); }); });
+    if (S.home && !S.home.none) {
+      var hc = [S.home.lat, S.home.lng], lim = S.home.r + HOME_MARGIN_M;
+      set.forEach(function (c) { if (haversine(hc, centerOf(c)) <= lim) set.delete(c); });
+    }
+    return set;
+  }
+  function sharedStats(set) {
+    var acts = sharedActs(), dist = 0, sm = new Set(), lm = new Set(), km2 = set.size * AREA_M2 / 1e6;
+    acts.forEach(function (a) { dist += a.dist || 0; (a.summits || []).forEach(function (s) { sm.add(s.id); }); (a.landmarks || []).forEach(function (l) { lm.add(l.id); }); });
+    return { km2: km2, cells: set.size, acts: acts.length, distKm: dist / 1000, summits: sm.size, landmarks: lm.size, level: levelOf(km2) };
+  }
+  function hashStr(t) { var h = 5381, i; for (i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0; return h.toString(36); }
+  function scheduleMapPush(delay) {
+    if (!acct || !friends) return;
+    clearTimeout(mapTimer); mapTimer = setTimeout(pushMap, delay === undefined ? 30000 : delay);
+  }
+  function pushMap() {   // publie ma carte partageable si au moins un ami la voit ; la retire sinon
+    if (!acct || !friends || mapBusy || typeof h3 === "undefined") return Promise.resolve();
+    if (!shareCount() || !homeSet()) {
+      if (!acct.mapSig) return Promise.resolve();
+      mapBusy = true;
+      return apiCall("DELETE", "/map").then(function () { mapBusy = false; if (acct) { acct.mapSig = ""; saveAcct(); } }, function () { mapBusy = false; });
+    }
+    var set = sharedCells(), ids = Array.from(set).sort(), st = sharedStats(set), txt = ids.join(","), sig = hashStr(txt) + "|" + JSON.stringify(st);
+    if (sig === acct.mapSig) return Promise.resolve();
+    mapBusy = true;
+    return packText(txt).then(function (p) {
+      return apiCall("PUT", "/map", { enc: p.enc === "gzip-b64" ? "gzip-b64" : "list", data: p.data, cells: ids.length, stats: st });
+    }).then(function () { mapBusy = false; if (acct) { acct.mapSig = sig; saveAcct(); } }, function () { mapBusy = false; });
+  }
+  function loadFriends() {
+    if (!acct) return Promise.resolve();
+    friendsAt = Date.now();
+    return apiCall("GET", "/friends").then(function (r) { friendsErr = ""; setFriends(r); scheduleMapPush(3000); }, function (e) {
+      friendsErr = e.status === 404 ? "Les amis arrivent bientôt : le serveur doit encore être mis à jour." : "Liste d’amis indisponible : " + e.message + ".";
+      if (current === "friends") render();
+    });
+  }
+  function setFriends(r) {
+    friends = { friends: r.friends || [], incoming: r.incoming || [], outgoing: r.outgoing || [] };
+    var b = $("friendBadge"), n = friends.incoming.length; if (b) { b.textContent = n; b.hidden = !n; }
+    if (current === "friends") render();
+  }
+  function friendAction(method, path, body, okMsg) {
+    if (friendsBusy) return Promise.resolve(null);
+    friendsBusy = true;
+    return apiCall(method, path, body).then(function (r) {
+      friendsBusy = false; setFriends(r); if (okMsg) toast(typeof okMsg === "function" ? okMsg(r) : okMsg); scheduleMapPush(1500); return r;
+    }, function (e) { friendsBusy = false; toast(capFirst(e.message) + "."); if (current === "friends") render(); return null; });
+  }
+  function placeLabel(f) { return f.city ? f.city + (f.deptCode ? " · " + f.deptCode + " " + f.deptName : "") : ""; }
+  function friendStatsLine(st) {
+    if (!st) return "";
+    return fmtKm2(st.km2 || 0) + " km² · " + fmt(st.acts || 0, 0) + " sortie" + (st.acts > 1 ? "s" : "") + " · " + fmt(st.distKm || 0, 0) + " km" +
+      (st.summits ? " · ▲ " + st.summits : "") + (st.landmarks ? " · " + st.landmarks + " lieu" + (st.landmarks > 1 ? "x" : "") : "");
+  }
+  function friendRowHTML(f) {
+    var st = f.map && f.map.stats, sees = f.theyShare && f.map;
+    return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
+      (st ? '<span class="v">' + fmtKm2(st.km2 || 0) + '<small>km²</small></span>' : '') + '</div>' +
+      (st ? '<div class="fnote">' + esc(friendStatsLine(st)) + '</div>' : '') +
+      '<div class="frow-act">' +
+      (sees ? '<button class="linkbtn" data-fview="' + esc(f.id) + '">🗺️ Voir sa carte</button>' : '<span class="fnote">' + (f.theyShare ? "Carte pas encore publiée" : "Ne partage pas sa carte avec toi") + '</span>') +
+      '<label class="gradechk"><input type="checkbox" data-fshare="' + esc(f.id) + '"' + (f.iShare ? " checked" : "") + '><span>Partager ma carte</span></label>' +
+      '<button class="del" data-frem="' + esc(f.id) + '" data-fq="Retirer ' + esc(f.pseudo) + ' de tes amis ? Le partage s’arrête dans les deux sens.">Retirer</button></div></div>';
+  }
+  function homeHTML() {
+    var h = S.home, rsel = '<select id="homer" aria-label="Rayon de la zone">' + HOME_RADII.map(function (o) { return '<option value="' + o[0] + '"' + ((h && h.r === o[0]) || (!(h && h.r) && o[0] === 500) ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>';
+    var status = !h ? "<b>Non définie.</b> Elle est obligatoire avant de partager ta carte : les hexagones autour de chez toi ne seront jamais montrés."
+      : h.none ? "<b>Aucune zone masquée.</b> Tes amis voient aussi les hexagones autour de chez toi."
+      : "<b>Rayon de " + (h.r >= 1000 ? fmt(h.r / 1000, h.r % 1000 ? 1 : 0) + " km" : h.r + " m") + " masqué</b> autour du point choisi. Ce point reste sur ton appareil et dans ta sauvegarde privée.";
+    return '<div class="homebox" id="homebox"><div class="t" style="font-weight:700">🏠 Zone domicile</div><p class="note" style="margin-top:4px">' + status + '</p>' +
+      '<div class="frow-act">' + rsel + '<button class="linkbtn" data-home="pick">📍 Placer sur la carte</button><button class="linkbtn" data-home="gps">Ma position</button>' +
+      (h && h.none ? '' : '<button class="linkbtn" data-home="none">Ne rien masquer</button>') + '</div></div>';
+  }
+  function viewFriends() {
+    if (!acct) return "";
+    var h = '<div class="field"><label for="finv">Inviter un ami par son pseudo</label><div class="inv"><input type="text" id="finv" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="pseudo"><button class="btn" id="finvok">Inviter</button></div></div>' +
+      '<p class="note" style="margin-top:-4px">Ton pseudo : <b>' + esc((acct.user && acct.user.pseudo) || "") + '</b>. Donne-le à tes amis pour qu’ils t’invitent.</p>';
+    if (friendsErr) return h + '<p class="note">' + esc(friendsErr) + '</p>';
+    if (!friends) return h + '<div class="empty-line">Chargement…</div>';
+    if (friends.incoming.length) h += '<h3>Invitations reçues</h3>' + friends.incoming.map(function (f) {
+      return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
+        '<button class="linkbtn" data-facc="' + esc(f.id) + '">Accepter</button><button class="del" data-frem="' + esc(f.id) + '">Refuser</button></div></div>';
+    }).join("");
+    h += '<h3>Mes amis</h3>' + (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
+    if (friends.outgoing.length) h += '<h3>Invitations envoyées</h3>' + friends.outgoing.map(function (f) {
+      return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
+    }).join("");
+    var n = shareCount(), set = n && homeSet() ? sharedCells() : null;
+    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Le partage se décide ami par ami et reste désactivé tant que tu ne l’actives pas. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates. Les sorties importées depuis Strava ne sont pas partagées.' +
+      (set ? ' Actuellement : <b>' + fmt(set.size, 0) + ' hexagones</b> partagés avec ' + n + ' ami' + (n > 1 ? "s" : "") + '.' : '') + '</p>' + homeHTML();
+    return h;
+  }
+  function bindFriends() {
+    var inp = $("finv"), go = $("finvok");
+    function invite() {
+      var p = inp.value.trim().toLowerCase(); if (!p) { inp.focus(); return; }
+      friendAction("POST", "/friends/invite", { pseudo: p }, function (r) { return r.result === "accepted" ? "Vous êtes maintenant amis avec " + p + "." : "Invitation envoyée à " + p + "."; });
+    }
+    if (go) go.addEventListener("click", invite);
+    if (inp) inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); invite(); } });
+    document.querySelectorAll("[data-facc]").forEach(function (b) { b.addEventListener("click", function () { friendAction("POST", "/friends/accept", { id: b.dataset.facc }, "Invitation acceptée."); }); });
+    document.querySelectorAll("[data-frem]").forEach(function (b) {
+      b.addEventListener("click", function () { if (b.dataset.fq && !window.confirm(b.dataset.fq)) return; friendAction("POST", "/friends/remove", { id: b.dataset.frem }); });
+    });
+    document.querySelectorAll("[data-fshare]").forEach(function (b) {
+      b.addEventListener("change", function () {
+        if (b.checked && !homeSet()) { b.checked = false; toast("Définis d’abord ta zone domicile (en bas de cette page)."); var hb = $("homebox"); if (hb) hb.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+        friendAction("PUT", "/friends/share", { id: b.dataset.fshare, share: b.checked }, b.checked ? "Ta carte est partagée avec cet ami." : "Partage arrêté.");
+      });
+    });
+    document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
+    var hr = $("homer");
+    if (hr) hr.addEventListener("change", function () { if (S.home && !S.home.none) { S.home.r = +hr.value; save(); scheduleMapPush(1500); render(); } });
+    document.querySelectorAll("[data-home]").forEach(function (b) { b.addEventListener("click", function () { homeAction(b.dataset.home); }); });
+  }
+  function homeAction(k) {
+    var r = +(($("homer") || {}).value || 500);
+    if (k === "pick") { startHomePick(r); return; }
+    if (k === "none") {
+      if (!window.confirm("Ne masquer aucune zone ?\nTes amis verront aussi les hexagones autour de chez toi.")) return;
+      S.home = { none: true }; save(); scheduleMapPush(1500); render(); return;
+    }
+    if (!navigator.geolocation) { toast("Géolocalisation indisponible sur cet appareil : place la zone sur la carte."); return; }
+    toast("Recherche de ta position…");
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      S.home = { lat: Math.round(pos.coords.latitude * 1e5) / 1e5, lng: Math.round(pos.coords.longitude * 1e5) / 1e5, r: r }; save(); scheduleMapPush(1500); render();
+      toast("Zone domicile définie autour de ta position.");
+    }, function () { toast("Position introuvable : place la zone sur la carte."); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
+  }
+  function startHomePick(r) {   // la carte se déplace sous un viseur fixe : le centre de l’écran devient le centre de la zone
+    closeSheet(); closeCellCard(); closePoiCard();
+    homePick = { r: r || 500 };
+    if (S.home && !S.home.none) { view.cx = mercX(S.home.lng); view.cy = mercY(S.home.lat); }
+    view.z = Math.max(view.z, 15);   // assez près pour voir le cercle et placer le viseur sur une maison
+    document.body.classList.add("home-pick"); $("homecross").hidden = false;
+    var bar = $("homebar");
+    bar.innerHTML = '<div class="fv-t"><b>Zone domicile</b><small>Déplace la carte pour placer ta maison sous le viseur.</small></div>' +
+      '<select id="homepr" aria-label="Rayon">' + HOME_RADII.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === homePick.r ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>' +
+      '<button class="btn" id="homeok">Valider</button><button class="btn ghost" id="homeno">Annuler</button>';
+    bar.hidden = false;
+    $("homepr").addEventListener("change", function (e) { homePick.r = +e.target.value; draw(); });
+    $("homeok").addEventListener("click", function () { endHomePick(true); });
+    $("homeno").addEventListener("click", function () { endHomePick(false); });
+    draw();
+  }
+  function endHomePick(ok) {
+    if (!homePick) return;
+    if (ok) {
+      var c = unproject(W / 2, H / 2);
+      S.home = { lat: Math.round(c[0] * 1e5) / 1e5, lng: Math.round(c[1] * 1e5) / 1e5, r: homePick.r }; save(); scheduleMapPush(1500);
+      toast("Zone domicile enregistrée : elle ne sera jamais partagée.");
+    }
+    homePick = null; document.body.classList.remove("home-pick"); $("homecross").hidden = true; $("homebar").hidden = true; $("homebar").innerHTML = "";
+    draw();
+    if (ok) openTab("friends");
+  }
+  function drawHomeCircle() {
+    var mid = unproject(W / 2, H / 2), mPerPx = 40075016.7 * Math.cos(mid[0] * Math.PI / 180) / worldScale(), rp = homePick.r / mPerPx;
+    ctx.beginPath(); ctx.arc(W / 2, H / 2, rp, 0, 2 * Math.PI);
+    ctx.globalAlpha = 0.22; ctx.fillStyle = "#a46dff"; ctx.fill();
+    ctx.globalAlpha = 1; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.strokeStyle = css("--outline"); ctx.stroke(); ctx.setLineDash([]);
+  }
+  function openFriendMap(id) {
+    var f = friends && friends.friends.filter(function (x) { return x.id === id; })[0]; if (!f) return;
+    toast("Chargement de la carte de " + f.pseudo + "…");
+    apiCall("GET", "/friends/map?id=" + encodeURIComponent(id)).then(function (r) {
+      if (!r.map) { toast(f.pseudo + " n’a pas encore publié sa carte."); return; }
+      return (r.map.enc === "gzip-b64" ? unpackText("gzip-b64", r.map.data) : Promise.resolve(r.map.data)).then(function (txt) {
+        var m = new Map(), info = { sport: "autre", date: "1970-01-01" };
+        String(txt || "").split(",").forEach(function (c) { if (c && h3.isValidCell(c) && h3.getResolution(c) === RES) m.set(c, info); });
+        enterFriendView(f, m, r.map.stats || {});
+      });
+    }).catch(function (e) { toast("Carte indisponible : " + e.message + "."); });
+  }
+  function enterFriendView(f, m, st) {
+    friendView = { id: f.id, pseudo: f.pseudo, cells: m, stats: st };
+    closeSheet(); closeCellCard(); closePoiCard(); selected = null; peakHits = [];
+    document.body.classList.add("friend-view");
+    var bar = $("fvbar");
+    bar.innerHTML = '<div class="fv-t"><b>Carte de ' + esc(f.pseudo) + '</b><small>' + esc(friendStatsLine(st) || placeLabel(f)) + '</small></div><button class="btn" id="fvclose">Ma carte</button>';
+    bar.hidden = false; $("fvclose").addEventListener("click", exitFriendView);
+    refreshDisp(); updateChip();
+    if (m.size) fitCells(m); else draw();
+  }
+  function exitFriendView() {
+    if (!friendView) return;
+    friendView = null; document.body.classList.remove("friend-view"); $("fvbar").hidden = true; $("fvbar").innerHTML = "";
+    refreshDisp(); updateChip(); draw();
+  }
+  function fitCells(m) { var pts = []; m.forEach(function (v, id) { pts.push(centerOf(id)); }); if (pts.length) fitLines([pts]); draw(); }
   function stravaSettingsHTML() {
     var s = S.strava, sel = [[30, "30 derniers jours"], [365, "12 derniers mois"], [1095, "3 dernières années"]].map(function (o) { return '<option value="' + o[0] + '"' + (s.days === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     var h = '<h3>Strava</h3>';
@@ -1256,6 +1512,7 @@ body.sheet-open #cellcard { display: none; }
     $("hint").hidden = S.activities.length > 0;
   }
   function updateChip() {
+    if (friendView) { var fn = friendView.cells.size; $("chipKm2").textContent = fmtKm2(fn * AREA_M2 / 1e6); $("chipCells").textContent = fmt(fn, 0) + (fn > 1 ? " hexagones" : " hexagone"); return; }   // carte d’un ami : ses chiffres, pas de trophée
     $("chipKm2").textContent = fmtKm2(totalKm2());
     $("chipCells").textContent = fmt(cells.size, 0) + (cells.size > 1 ? " hexagones" : " hexagone");
     paintAvatar($("avatarMini"));
@@ -1377,10 +1634,11 @@ body.sheet-open #cellcard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    if (S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
+    if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawAgg(ag, onImg);
-    drawOverlays();
-    if (selected !== null) {
+    if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
+    if (homePick) drawHomeCircle();
+    if (!friendView && selected !== null) {
       var a = S.activities.filter(function (x) { return x.id === selected; })[0];
       if (a) { strokeLines(a.lines, css("--outline"), 4.4, 1); strokeLines(a.lines, css("--pink"), 2.4, 1); }
     }
@@ -1424,7 +1682,7 @@ body.sheet-open #cellcard { display: none; }
   cv.addEventListener("wheel", function (e) { e.preventDefault(); zoomBy(-e.deltaY * 0.0015, e.clientX, e.clientY); markMoving(); requestDraw(); }, { passive: false });
   $("zin").addEventListener("click", function () { zoomBy(1, W / 2, H / 2); draw(); });
   $("zout").addEventListener("click", function () { zoomBy(-1, W / 2, H / 2); draw(); });
-  $("fit").addEventListener("click", function () { selected = null; if (S.activities.length) fitAll(); });
+  $("fit").addEventListener("click", function () { selected = null; if (friendView) fitCells(friendView.cells); else if (S.activities.length) fitAll(); });
 
   /* ================= import de courses ================= */
   function guessSport(name, fallback) {
@@ -1916,6 +2174,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function refreshDisp() {
     clearTimeout(revealTimer); dispVer++; prewarm();
+    if (friendView) { dispCells = friendView.cells; return; }
     if (periodF === "all") { dispCells = cells; return; }
     var min = periodMin(); dispCells = new Map();
     cells.forEach(function (info, id) { if (info.date >= min) dispCells.set(id, info); });
@@ -1995,7 +2254,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "29/10/2026 · v50";
+  var BUILD = "29/10/2026 · v51";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -2271,6 +2530,7 @@ body.sheet-open #cellcard { display: none; }
     return true;
   }
   function hitPeak(x, y) {
+    if (friendView || homePick) return;   // carte d’un ami ou choix de la zone domicile : pas de fiches
     var best = null, bd = 26;
     peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
     if (!best) {
@@ -2832,9 +3092,12 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", rank: "Classement" };
+  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Succès et sommets", friends: "Amis", rank: "Classement" };
   function openTab(k) {
     if (current === k) { closeSheet(); return; }
+    if (homePick) endHomePick(false);
+    if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
+    if (k === "friends") loadFriends();
     closeDrawer(); current = k; render();
     $("sheet").classList.add("open"); $("sheet").setAttribute("aria-hidden", "false");
     document.body.classList.add("sheet-open"); markTabs();
@@ -2847,9 +3110,10 @@ body.sheet-open #cellcard { display: none; }
   function render() {
     if (!current) return;
     $("sheetTitle").textContent = TITLES[current];
-    var html = { add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, rank: viewRank }[current]();
+    var html = { add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
     $("sheetBody").innerHTML = html;
     bindSheet();
+    if (current === "friends") bindFriends();
   }
 
   function viewAdd() {
