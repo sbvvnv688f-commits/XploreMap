@@ -57,7 +57,7 @@ th { font-weight: 600; white-space: nowrap; }
 <section>
   <h2>En bref</h2>
   <ul class="short">
-    <li>Sans compte, tout reste sur ton appareil : aucune donnée ne nous est envoyée.</li>
+    <li>Xplr s'utilise avec un compte Google. Tes courses sont enregistrées sur ton appareil et sauvegardées sur ton compte.</li>
     <li>Avec un compte, seule ta sauvegarde est stockée en ligne. Ton adresse e-mail n'est pas conservée.</li>
     <li>Aucune publicité, aucun outil de mesure d'audience, aucune revente de données.</li>
     <li>Tu peux supprimer ton compte et toutes tes données en ligne à tout moment, depuis l'appli.</li>
@@ -71,21 +71,22 @@ th { font-weight: 600; white-space: nowrap; }
 
 <section>
   <h2>Ce qui reste sur ton appareil</h2>
-  <p>Tes sorties importées (fichiers GPX, TCX, FIT), leurs traces, ta carte d'hexagones, tes sommets, lieux, grades, objectifs et réglages sont enregistrés dans le stockage de ton navigateur. Ils ne quittent pas ton appareil, sauf si tu crées un compte (voir plus bas) ou si tu choisis de partager une image de ta carte.</p>
+  <p>Tes sorties importées (fichiers GPX, TCX, FIT), leurs traces, ta carte d'hexagones, tes sommets, lieux, grades, objectifs et réglages sont enregistrés dans le stockage de ton navigateur. Ils sont aussi sauvegardés sur ton compte (voir plus bas). Ils ne sont transmis à personne d'autre, sauf si tu choisis de partager une image de ta carte.</p>
+  <p>Quand tu te déconnectes, une dernière sauvegarde est faite, puis toutes ces données sont effacées de l'appareil : la personne qui l'utilise après toi n'y voit rien.</p>
   <p>La géolocalisation n'est utilisée que lorsque tu demandes à centrer la carte sur ta position. Elle n'est pas enregistrée.</p>
   <p>Xplr n'utilise pas de cookies. Le bouton de connexion Google, lorsqu'il s'affiche, est fourni par Google, qui peut déposer ses propres cookies.</p>
 </section>
 
 <section>
   <h2>Compte et sauvegarde en ligne</h2>
-  <p>Le compte est facultatif. La connexion se fait avec Google, qui confirme seulement ton identité : Xplr ne voit jamais ton mot de passe.</p>
+  <p>Un compte est nécessaire pour utiliser Xplr. La connexion se fait avec Google, qui confirme seulement ton identité : Xplr ne voit jamais ton mot de passe. À la première connexion, tu choisis un pseudo et ta ville ; le département est déduit de la ville.</p>
   <table>
-    <tr><th>Conservé</th><td>L'identifiant technique de ton compte Google, le pseudo que tu choisis, ta sauvegarde (sorties, traces compactées, carte, réglages) et la date de chaque sauvegarde.</td></tr>
+    <tr><th>Conservé</th><td>L'identifiant technique de ton compte Google, le pseudo que tu choisis, ta ville et ton département, ta sauvegarde (sorties, traces compactées, carte, réglages) et la date de chaque sauvegarde.</td></tr>
     <tr><th>Non conservé</th><td>Ton adresse e-mail, ton nom, ta photo Google, tes jetons d'accès Strava.</td></tr>
     <tr><th>Hébergement</th><td>Cloudflare (base de données D1), qui peut traiter les données hors de l'Union européenne.</td></tr>
     <tr><th>Durée</th><td>Jusqu'à la suppression de ton compte. Une session de connexion expire au bout de 60 jours.</td></tr>
   </table>
-  <p>Ces données servent uniquement à te permettre de retrouver ta carte sur un autre appareil. Personne d'autre n'y a accès.</p>
+  <p>Ces données servent uniquement à faire fonctionner ton compte et à te permettre de retrouver ta carte sur un autre appareil. Personne d'autre n'y a accès. Ta ville et ton département serviront plus tard aux amis et aux classements locaux ; cette page sera mise à jour avant.</p>
 </section>
 
 <section>
@@ -105,7 +106,7 @@ th { font-weight: 600; white-space: nowrap; }
   <ul>
     <li><strong>Fonds de carte</strong> : Esri (imagerie satellite et relief) et IGN Géoplateforme (photographies aériennes).</li>
     <li><strong>Sommets et lieux</strong> : OpenStreetMap (serveurs Overpass), Wikipédia et Wikidata, à partir des zones que tu as parcourues.</li>
-    <li><strong>Communes</strong> : geo.api.gouv.fr, à partir de coordonnées.</li>
+    <li><strong>Communes</strong> : geo.api.gouv.fr, à partir de coordonnées, ou du nom ou code postal que tu tapes pour choisir ta ville. Notre serveur l'interroge aussi pour vérifier la commune choisie.</li>
     <li><strong>Recherche d'adresse</strong> : Nominatim (OpenStreetMap), avec le texte que tu saisis.</li>
     <li><strong>Polices et bibliothèque de calcul</strong> : Google Fonts et jsDelivr.</li>
     <li><strong>Hébergement du site</strong> : GitHub Pages.</li>
@@ -116,12 +117,12 @@ th { font-weight: 600; white-space: nowrap; }
   <h2>Tes droits</h2>
   <p>Conformément au RGPD, tu peux accéder à tes données, les corriger, les supprimer, t'opposer à leur traitement ou les récupérer.</p>
   <ul>
-    <li><strong>Supprimer</strong> : Réglages, Compte, « Supprimer mon compte et mes données en ligne ». La suppression est immédiate et définitive.</li>
+    <li><strong>Supprimer</strong> : Réglages, Compte, « Supprimer mon compte ». Le compte, ta sauvegarde en ligne et les données de l'appareil sont effacés immédiatement et définitivement.</li>
     <li><strong>Récupérer</strong> : Réglages, « Exporter mes données (JSON) ».</li>
-    <li><strong>Effacer les données locales</strong> : vider les données du site dans ton navigateur.</li>
+    <li><strong>Effacer les données de l'appareil</strong> : te déconnecter, ou vider les données du site dans ton navigateur.</li>
   </ul>
   <p>Pour toute autre demande, écris à <a href="mailto:chave.edgar42@gmail.com">chave.edgar42@gmail.com</a>. Tu peux aussi adresser une réclamation à la <a href="https://www.cnil.fr/fr/plaintes">CNIL</a>.</p>
-  <p>Le traitement repose sur ton consentement, que tu donnes en créant un compte ou en connectant Strava, et que tu peux retirer à tout moment.</p>
+  <p>Le traitement repose sur ton consentement, que tu donnes en créant ton compte ou en connectant Strava, et que tu peux retirer à tout moment en supprimant ton compte ou en déconnectant Strava.</p>
 </section>
 
 <section>

@@ -291,6 +291,28 @@ body.sheet-open #gradeBox { display: none; }
 details.advanced { margin-top: 10px; }
 details.advanced summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 .gbtn { min-height: 44px; margin: 8px 0; }
+/* ---- écran d’accueil : connexion puis création du profil ---- */
+#gate {
+  position: fixed; inset: 0; z-index: 40; overflow-y: auto; background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+}
+#gate[hidden] { display: none; }
+.gate-card { width: 100%; max-width: 400px; margin: auto; background: var(--panel); border: 3px solid var(--outline); border-radius: 24px; padding: 24px 20px; box-shadow: 5px 5px 0 var(--outline); }
+.gate-logo { display: block; width: 96px; height: 96px; margin: 0 auto 10px; border-radius: 22px; border: 3px solid var(--outline); box-shadow: 3px 3px 0 var(--outline); }
+.gate-card h1 { text-align: center; margin: 0 0 4px; font-size: 30px; font-weight: 700; }
+.gate-tag { text-align: center; color: var(--muted); margin: 0 0 18px; font-size: 15px; line-height: 1.4; }
+.gate-card .gbtn { display: flex; justify-content: center; }
+.gate-card .note a { color: inherit; font-weight: 600; }
+.gate-card .note.center { text-align: center; }
+.sugg { margin-top: 4px; border: 3px solid var(--outline); border-radius: 14px; overflow: hidden; background: var(--panel); }
+.sugg[hidden] { display: none; }
+.sugg button { display: block; width: 100%; padding: 10px 12px; border: 0; background: none; text-align: left; font-size: 16px; font-weight: 600; }
+.sugg button + button { border-top: 1px solid var(--line); }
+.sugg button:hover, .sugg button:focus-visible { background: var(--accent); outline: 0; }
+.sugg small { font-weight: 500; color: var(--muted); }
+.sugg button:hover small, .sugg button:focus-visible small { color: inherit; }
+.sugg p { margin: 0; padding: 10px 12px; font-size: 14px; color: var(--muted); }
 .gl-wrap { display: flex; align-items: stretch; margin-bottom: 6px; }
 .gl-wrap[hidden] { display: none; }
 .gl-wrap.off .gl-t { display: none; }   /* légende repliée : seuls les carrés de couleur restent */
@@ -370,6 +392,8 @@ body.sheet-open #cellcard { display: none; }
   <button class="tab" data-tab="rank" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1a3 3 0 0 0 3 3M17 6h3v1a3 3 0 0 1-3 3M12 14v4M8 20h8"/></svg><span>Classement</span></button>
 </nav>
 
+<div id="gate" hidden role="dialog" aria-modal="true" aria-labelledby="gateTitle"><div class="gate-card" id="gateCard"></div></div>
+
 <div id="scrim" hidden></div>
 <aside id="drawer" aria-label="Profil" aria-hidden="true"></aside>
 
@@ -402,7 +426,7 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= état ================= */
   var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
-  var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", owner: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -425,6 +449,7 @@ body.sheet-open #cellcard { display: none; }
         });
         S.nextId = o.nextId || (o.activities.length + 1);
         S.city = typeof o.city === "string" ? o.city : ""; S.dept = typeof o.dept === "string" ? o.dept : "";
+        S.owner = typeof o.owner === "string" ? o.owner : "";   // compte auquel appartiennent ces données
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
         S.onboarded = !!o.onboarded;
@@ -992,16 +1017,29 @@ body.sheet-open #cellcard { display: none; }
     if (local) return doBackup(true, true);
     return Promise.resolve(null);
   }
+  function acctSynced() {   // première synchronisation faite sur cet appareil (les sessions ouvertes avant la v50 l’ont déjà faite)
+    return !!acct && (acct.synced === true || (acct.synced === undefined && acct.rev !== undefined && acct.rev !== null));
+  }
   function onGoogle(cred, nonce) {
     setAcctMsg("Connexion…");
     apiCall("POST", "/auth/google", { credential: cred, nonce: nonce }).then(function (r) {
-      acct = { token: r.token, expiresAt: r.expiresAt, user: r.user, rev: r.user.backup ? r.user.backup.rev : null, auto: true, suggest: pseudoSuggestion(cred) };
-      saveAcct(); acctMsg = ""; toast("Connecté."); acctSyncing = true;   // pas d’envoi automatique avant la première synchronisation
-      return afterLogin(r.user);
-    }).then(function () { acctSyncing = false; refreshAcctUI(); }, function (e) { acctSyncing = false; setAcctMsg("Connexion impossible : " + e.message); initGoogleButton(); });
+      acct = { token: r.token, expiresAt: r.expiresAt, user: r.user, rev: r.user.backup ? r.user.backup.rev : null, auto: true, synced: false, suggest: pseudoSuggestion(cred) };
+      saveAcct(); acctMsg = "";
+      if (S.owner && S.owner !== r.user.id) { wipeDevice(true); return; }   // données d’un autre compte : jamais mélangées ni envoyées sur celui-ci
+      if (!profileDone(r.user)) { showGate("profile"); return; }
+      return startSession();
+    }, function (e) { setAcctMsg("Connexion impossible : " + e.message); initGoogleButton(); });
+  }
+  function startSession() {   // ouverture de l’appli : première synchronisation, sans envoi automatique avant qu’elle soit faite
+    acctSyncing = true; applyProfile(); hideGate();
+    return afterLogin(acct.user).then(function () {
+      acctSyncing = false; if (!acct) return;
+      acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI();
+    }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
     var box = $("gbtn"); if (!box || acct) return;
+    if (navigator.onLine === false) { setAcctMsg("Pas de connexion internet : la connexion reprendra dès que le réseau revient."); return; }
     apiCall("GET", "/config").then(function (cfg) {
       if (!cfg.googleClientId) { setAcctMsg("La connexion Google n’est pas encore configurée sur le serveur."); return null; }
       return Promise.all([loadGsi(), apiCall("GET", "/auth/nonce")]).then(function (v) {
@@ -1012,40 +1050,157 @@ body.sheet-open #cellcard { display: none; }
     }).catch(function (e) { setAcctMsg("Comptes indisponibles pour le moment (" + e.message + ")."); });
   }
   function accountSettingsHTML() {
-    var h = '<h3>Compte</h3>';
-    if (!acct) {
-      return h + '<p class="note">Un compte sauvegarde tes courses en ligne et te permet de les retrouver sur un autre appareil. Les amis arrivent ensuite. Aucun mot de passe : Google confirme seulement ton identité.</p><div id="gbtn" class="gbtn"></div><p class="note" id="acctmsg">' + esc(acctMsg) + '</p>';
-    }
-    var u = acct.user || {};
+    if (!acct) return "";
+    var u = acct.user || {}, h = '<h3>Compte</h3>';
     h += '<p class="note">Connecté' + (u.pseudo ? ' : <b>' + esc(u.pseudo) + '</b>' : '') + '</p>';
-    if (!u.pseudo) h += '<div class="field"><label for="acctpseudo">Choisis ton pseudo (visible par tes amis)</label><input type="text" id="acctpseudo" value="' + esc(acct.suggest || "") + '" maxlength="20" autocomplete="off" autocapitalize="none"></div><div class="drawer-sec"><button class="btn block" id="acctpseudook">Valider le pseudo</button></div>';
     h += '<p class="note" id="acctinfo">' + (acct.lastBackup ? 'Dernière sauvegarde : ' + new Date(acct.lastBackup).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + '.' : 'Pas encore de sauvegarde sur ce compte.') + '</p>' +
       '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="acctauto"' + (acct.auto !== false ? ' checked' : '') + '><span>Sauvegarde automatique</span></label>' +
       '<p class="note" id="acctmsg">' + esc(acctMsg) + '</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="acctbk">Sauvegarder maintenant</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="acctrs">Restaurer ma sauvegarde</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="acctout">Se déconnecter</button></div>' +
-      '<div class="drawer-sec"><button class="btn danger block" id="acctdel">Supprimer mon compte et mes données en ligne</button></div>';
+      '<div class="drawer-sec"><button class="btn danger block" id="acctdel">Supprimer mon compte</button></div>';
     return h;
   }
   function bindAccount() {
-    if (!acct) { initGoogleButton(); return; }
-    var pk = $("acctpseudook");
-    if (pk) pk.addEventListener("click", function () {
-      apiCall("PUT", "/me", { pseudo: $("acctpseudo").value }).then(function (u) {
-        acct.user = u; saveAcct(); if (!S.name) { S.name = u.pseudo; save(); } toast("Pseudo enregistré : " + u.pseudo); refreshAcctUI();
-      }, function (e) { setAcctMsg(e.message); });
-    });
+    if (!acct) return;
     $("acctauto").addEventListener("change", function (e) { acct.auto = e.target.checked; saveAcct(); if (acct.auto) scheduleBackup(); });
     $("acctbk").addEventListener("click", function () { doBackup(true, false); });
     $("acctrs").addEventListener("click", function () { doRestore(false); });
-    $("acctout").addEventListener("click", function () {
-      apiCall("POST", "/auth/logout").catch(function () { /* le jeton local est de toute façon retiré */ }).then(function () { acct = null; saveAcct(); acctMsg = ""; toast("Déconnecté."); refreshAcctUI(); });
-    });
+    $("acctout").addEventListener("click", logout);
     $("acctdel").addEventListener("click", function () {
-      if (!window.confirm("Supprimer définitivement ton compte et ta sauvegarde en ligne ?\nTes courses restent sur cet appareil. Cette action est irréversible.")) return;
-      apiCall("DELETE", "/me").then(function () { acct = null; saveAcct(); acctMsg = ""; toast("Compte supprimé."); refreshAcctUI(); }, function (e) { setAcctMsg("Suppression impossible : " + e.message); });
+      if (!window.confirm("Supprimer définitivement ton compte, ta sauvegarde en ligne et les données de cet appareil ?\nPour garder tes courses, exporte-les d’abord (Exporter mes données). Cette action est irréversible.")) return;
+      apiCall("DELETE", "/me").then(function () { wipeDevice(false); }, function (e) { setAcctMsg("Suppression impossible : " + e.message); });
     });
+  }
+  function whenIdle() {   // attend la fin d’une sauvegarde automatique en cours (15 s au plus)
+    return new Promise(function (res) { var t0 = Date.now(); (function w() { if (!bkBusy || Date.now() - t0 > 15000) res(); else setTimeout(w, 300); })(); });
+  }
+  function logout() {
+    if (!window.confirm("Se déconnecter ?\nTes données sont sauvegardées en ligne puis effacées de cet appareil. Tu les retrouveras en te reconnectant.")) return;
+    setAcctMsg("Sauvegarde avant déconnexion…");
+    whenIdle().then(function () { return realActs().length ? doBackup(false, false) : true; }).then(function (ok) {
+      if (!ok && !window.confirm("La sauvegarde en ligne a échoué (" + (acctMsg || "réseau indisponible") + ").\nLes courses non sauvegardées seront perdues sur cet appareil. Se déconnecter quand même ?")) { setAcctMsg(""); return; }
+      return apiCall("POST", "/auth/logout").catch(function () { /* le jeton local est de toute façon retiré */ }).then(function () { wipeDevice(false); });
+    });
+  }
+  function wipeDevice(keepSession) {   // l’appareil redevient vierge : la personne suivante n’y voit rien
+    clearTimeout(bkTimer);
+    if (keepSession !== true) acct = null;   // gardée seulement quand on vient de se connecter sur les données d’un autre compte
+    saveAcct();
+    try { localStorage.removeItem(KEY); } catch (e) { /* stockage indisponible */ }
+    location.reload();
+  }
+
+  /* ===== Écran d’accueil : connexion obligatoire, puis création du profil (pseudo, ville, département) ===== */
+  var GEO_API = window.__GEO || "https://geo.api.gouv.fr", gateMode = "", citySel = null, cityTimer = 0, cityReq = 0, cityHits = [];
+  function profileDone(u) { return !!(u && u.pseudo && u.city); }
+  function deptLabel(u) { return u && u.deptCode ? u.deptCode + " · " + u.deptName : ""; }
+  function applyProfile() {   // le profil du compte fait foi sur cet appareil
+    var u = acct && acct.user; if (!u) return;
+    var next = { name: u.pseudo || "", city: u.city || "", dept: deptLabel(u), owner: u.id || "" }, ch = false;
+    Object.keys(next).forEach(function (k) { if (S[k] !== next[k]) { S[k] = next[k]; ch = true; } });
+    if (ch) { save(); paintAvatar($("avatarMini")); }
+  }
+  function setGateInert(on) {   // rien d’autre n’est accessible derrière l’écran d’accueil
+    Array.prototype.forEach.call(document.body.children, function (el) { if (el.id !== "gate" && el.tagName !== "SCRIPT") { if (on) el.setAttribute("inert", ""); else el.removeAttribute("inert"); } });
+  }
+  function hideGate() { gateMode = ""; clearTimeout(cityTimer); cityReq++; $("gate").hidden = true; $("gateCard").innerHTML = ""; setGateInert(false); }
+  function gateNote(t) { var m = $("gatemsg"); if (m) m.textContent = t || ""; }
+  function showGate(mode) {
+    gateMode = mode; closeDrawer(); closeSheet(); $("gate").hidden = false; setGateInert(true);
+    var c = $("gateCard");
+    if (mode === "login") {
+      c.innerHTML = '<img class="gate-logo" src="icon-192.png" alt="" width="96" height="96"><h1 id="gateTitle">Xplr</h1>' +
+        '<p class="gate-tag">Révèle le territoire, hexagone par hexagone.</p>' +
+        '<div id="gbtn" class="gbtn"></div><p class="note center" id="acctmsg" role="status">' + esc(acctMsg) + '</p>' +
+        '<p class="note center">Aucun mot de passe : Google confirme seulement ton identité.<br><a href="confidentialite.html">Confidentialité</a></p>';
+      initGoogleButton(); return;
+    }
+    var u = (acct && acct.user) || {}, edit = mode === "edit", abroad = !!(u.city && !u.cityCode);
+    citySel = u.cityCode ? { nom: u.city, code: u.cityCode, dc: u.deptCode, dn: u.deptName } : null; cityHits = [];
+    c.innerHTML = '<h1 id="gateTitle">' + (edit ? "Modifier mon profil" : "Crée ton profil") + '</h1>' +
+      '<p class="gate-tag">' + (edit ? "Ton pseudo est visible par tes amis." : "Dernière étape avant de découvrir ta carte.") + '</p>' +
+      '<div class="field"><label for="gpseudo">Pseudo (visible par tes amis)</label><input type="text" id="gpseudo" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" value="' + esc(u.pseudo || (acct && acct.suggest) || "") + '">' +
+      '<p class="note" style="margin-top:4px">3 à 20 caractères : lettres, chiffres, - et _</p></div>' +
+      '<div class="field"><label for="gcity">Ville</label><input type="text" id="gcity" autocomplete="off" spellcheck="false" placeholder="Nom ou code postal" value="' + esc(u.city || "") + '" role="combobox" aria-autocomplete="list" aria-controls="gsugg" aria-expanded="false">' +
+      '<div class="sugg" id="gsugg" role="listbox" aria-label="Communes proposées" hidden></div></div>' +
+      '<label class="gradechk" style="margin:0 0 12px"><input type="checkbox" id="gabroad"' + (abroad ? " checked" : "") + '><span>Je n’habite pas en France</span></label>' +
+      '<div class="field"><label>Département</label><div class="locked" id="gdept"></div></div>' +
+      '<p class="note" id="gatemsg" role="status"></p>' +
+      '<div class="drawer-sec"><button class="btn block" id="gok">' + (edit ? "Enregistrer" : "Créer mon compte") + '</button>' +
+      (edit ? '<button class="btn ghost block" id="gcancel">Annuler</button>' : '<button class="btn ghost block" id="gquit">Utiliser un autre compte Google</button>') + '</div>';
+    showDept();
+    $("gpseudo").addEventListener("input", function (e) {   // minuscules sans accents, comme le serveur les enregistre
+      var v = e.target.value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, "_"); if (v !== e.target.value) e.target.value = v;
+    });
+    $("gcity").addEventListener("input", function () { citySel = null; showDept(); clearTimeout(cityTimer); cityTimer = setTimeout(searchCity, 250); });
+    $("gcity").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); if (cityHits.length && !$("gabroad").checked) pickCity(0); else submitProfile(); } });
+    $("gabroad").addEventListener("change", function () { citySel = null; cityHits = []; renderSugg(); showDept(); if (!$("gabroad").checked) searchCity(); });
+    $("gok").addEventListener("click", submitProfile);
+    var gc = $("gcancel"); if (gc) gc.addEventListener("click", hideGate);
+    var gq = $("gquit"); if (gq) gq.addEventListener("click", function () {   // la session n’a pas encore servi : rien à sauvegarder ni à effacer
+      apiCall("POST", "/auth/logout").catch(function () {}).then(function () { acct = null; saveAcct(); acctMsg = ""; showGate("login"); });
+    });
+    if (!edit) setTimeout(function () { var p = $("gpseudo"); if (p) p.focus(); }, 50);
+  }
+  function showDept() {
+    var d = $("gdept"); if (!d) return;
+    d.textContent = $("gabroad").checked ? "Hors de France" : citySel ? citySel.dc + " · " + citySel.dn : "Choisis ta ville dans la liste";
+    d.style.color = citySel || $("gabroad").checked ? "" : "var(--muted)";
+  }
+  function searchCity() {
+    if (!$("gcity")) return;   // formulaire déjà fermé
+    var q = $("gcity").value.trim();
+    if ($("gabroad").checked || q.length < 2) { cityHits = []; renderSugg(); return; }
+    var id = ++cityReq, param = /^\d{5}$/.test(q) ? "codePostal=" + q : "nom=" + encodeURIComponent(q);
+    fetch(GEO_API + "/communes?" + param + "&fields=nom,code,codeDepartement,departement&boost=population&limit=8").then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status); return r.json();
+    }).then(function (list) {
+      if (id !== cityReq || !$("gcity")) return;   // réponse dépassée par une frappe plus récente
+      cityHits = (Array.isArray(list) ? list : []).filter(function (c) { return c && c.nom && c.code && c.departement; })
+        .map(function (c) { return { nom: c.nom, code: c.code, dc: c.departement.code, dn: c.departement.nom }; });
+      renderSugg(cityHits.length ? "" : "Aucune commune trouvée.");
+    }).catch(function () { if (id === cityReq) { cityHits = []; renderSugg("Liste des communes indisponible : vérifie ta connexion."); } });
+  }
+  function renderSugg(empty) {
+    var box = $("gsugg"), inp = $("gcity"); if (!box) return;
+    if (!cityHits.length && !empty) { box.hidden = true; box.innerHTML = ""; inp.setAttribute("aria-expanded", "false"); return; }
+    box.innerHTML = cityHits.length ? cityHits.map(function (c, i) { return '<button type="button" role="option" data-ci="' + i + '">' + esc(c.nom) + ' <small>' + esc(c.dc + " · " + c.dn) + '</small></button>'; }).join("") : '<p>' + esc(empty) + '</p>';
+    box.hidden = false; inp.setAttribute("aria-expanded", cityHits.length ? "true" : "false");
+    box.querySelectorAll("[data-ci]").forEach(function (b) { b.addEventListener("click", function () { pickCity(+b.dataset.ci); }); });
+  }
+  function pickCity(i) {
+    var c = cityHits[i]; if (!c) return;
+    citySel = c; $("gcity").value = c.nom; cityHits = []; renderSugg(); showDept(); gateNote("");
+  }
+  function submitProfile() {
+    var p = $("gpseudo").value.trim(), ab = $("gabroad").checked, cv = $("gcity").value.trim().replace(/\s+/g, " "), btn = $("gok");
+    if (!/^[a-z0-9_-]{3,20}$/.test(p)) { gateNote("Pseudo : 3 à 20 caractères (lettres, chiffres, - et _)."); return; }
+    if (ab && !cv) { gateNote("Indique ta ville."); return; }
+    if (!ab && !citySel) { gateNote("Choisis ta ville dans la liste proposée."); return; }
+    var body = ab ? { pseudo: p, city: cv, cityCode: "" } : { pseudo: p, cityCode: citySel.code };
+    btn.disabled = true; gateNote("Enregistrement…");
+    apiCall("PUT", "/me", body).then(function (u) {
+      if (!profileDone(u)) throw new Error("le serveur n’a pas enregistré la ville (mise à jour du serveur en attente)");
+      acct.user = u; saveAcct(); gateNote("");
+      if (gateMode === "edit" || acctSynced()) { applyProfile(); hideGate(); renderDrawer(); toast("Profil enregistré."); return; }
+      return startSession();
+    }).catch(function (e) {
+      if (!acct) { showGate("login"); return; }   // session expirée pendant la saisie
+      if ($("gok")) { $("gok").disabled = false; gateNote("Enregistrement impossible : " + e.message); }
+    });
+  }
+  function bootAccount() {   // au lancement : écran de connexion, création du profil, ou ouverture directe de l’appli
+    if (!acct) showGate("login");
+    else if (!profileDone(acct.user)) showGate("profile");
+    else if (!acctSynced()) startSession();
+    else applyProfile();
+    if (acct) apiCall("GET", "/me").then(function (u) {   // profil à jour (modifié depuis un autre appareil ?) et session encore valide
+      if (!acct) return; acct.user = u; saveAcct();
+      if (!profileDone(u)) { if (!gateMode) showGate("profile"); } else if (!gateMode) applyProfile();
+    }, function () { if (!acct) showGate("login"); });   // hors ligne : la session locale reste ouverte
+    window.addEventListener("online", function () { if (gateMode === "login") { setAcctMsg(""); initGoogleButton(); } });
   }
   function stravaSettingsHTML() {
     var s = S.strava, sel = [[30, "30 derniers jours"], [365, "12 derniers mois"], [1095, "3 dernières années"]].map(function (o) { return '<option value="' + o[0] + '"' + (s.days === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
@@ -1840,7 +1995,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v49";
+  var BUILD = "29/10/2026 · v50";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -2905,6 +3060,7 @@ body.sheet-open #cellcard { display: none; }
       '<button class="avatar big" id="avatarBtn" aria-label="Changer ma photo ou mon icône"></button>' +
       '<div class="caption">Touche l’image pour la modifier</div>' + pk +
       recapRow("Pseudo", S.name) + recapRow("Ville", S.city) + recapRow("Département", S.dept) +
+      (acct ? '<button class="btn ghost block" id="editprof">Modifier mon profil</button>' : '') +
       '<h3>Mon trophée</h3>' + trophyHTML() +
       '<div class="drawer-sec"><button class="btn ghost block" id="gosettings">Réglages</button><button class="btn ghost block" id="dclose">Fermer</button></div>';
   }
@@ -2926,7 +3082,7 @@ body.sheet-open #cellcard { display: none; }
       '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.' + (poiViaWiki ? ' Source de secours utilisée : Wikipédia (les serveurs OpenStreetMap ne répondent pas ; seuls les sommets et lieux ayant un article sont trouvés).' : '') + '</p>' +
       (/claude|anthropic/i.test(location.hostname) ? '<p class="note">Cette page est un aperçu : les recherches en ligne (sommets, lieux, communes, résumés Wikipédia) y sont bloquées. Ouvre l’appli à son adresse hébergée.</p>' : '') +
       '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
-      '<p class="note">Tes courses sont stockées uniquement dans ce navigateur. Sans compte ni serveur, elles ne se synchronisent pas entre appareils : utilise l’export pour les déplacer.</p>' +
+      '<p class="note">Tes courses sont enregistrées dans ce navigateur et sauvegardées sur ton compte : reconnecte-toi sur un autre appareil pour les retrouver.</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="sback">Retour au profil</button></div>';
   }
   function squarePhoto(file) {
@@ -2968,6 +3124,7 @@ body.sheet-open #cellcard { display: none; }
     });
     var dc = $("dclose"); if (dc) dc.addEventListener("click", closeDrawer);
     var gs = $("gosettings"); if (gs) gs.addEventListener("click", function () { drawerView = "settings"; renderDrawer(); });
+    var ep = $("editprof"); if (ep) ep.addEventListener("click", function () { showGate("edit"); });
   }
   function bindSettings() {
     $("bmsel").addEventListener("change", function (e) { S.basemap = e.target.value; tilesLoaded = 0; tilesFailed = 0; save(); draw(); });
@@ -3038,6 +3195,7 @@ body.sheet-open #cellcard { display: none; }
     resize(); rebuild(); checkAchievements(true); initExtras();
     if (S.activities.length) fitAll(); else draw();
   }
+  bootAccount();
 })();
 </script>
 </body>
