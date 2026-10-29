@@ -1,13 +1,13 @@
 {
-  "name": "Portulan",
-  "short_name": "Portulan",
+  "name": "Xplr",
+  "short_name": "Xplr",
   "description": "Révèle le territoire, hexagone par hexagone.",
   "lang": "fr",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#0e0c16",
+  "background_color": "#0b0529",
   "theme_color": "#bfe6ff",
   "icons": [
     {

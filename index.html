@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Portulan</title>
+<title>Xplr</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#bfe6ff">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="Portulan">
-<meta name="application-name" content="Portulan">
+<meta name="apple-mobile-web-app-title" content="Xplr">
+<meta name="application-name" content="Xplr">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -290,6 +290,7 @@ body.sheet-open #gradeBox { display: none; }
 .gradelegend i { display: inline-block; width: 13px; height: 13px; margin-right: 7px; vertical-align: -2px; border-radius: 4px; border: 3px solid; background: rgba(43, 31, 74, 0.35); }
 details.advanced { margin-top: 10px; }
 details.advanced summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.gbtn { min-height: 44px; margin: 8px 0; }
 .gl-wrap { display: flex; align-items: stretch; margin-bottom: 6px; }
 .gl-wrap[hidden] { display: none; }
 .gl-wrap.off .gl-t { display: none; }   /* légende repliée : seuls les carrés de couleur restent */
@@ -400,7 +401,7 @@ body.sheet-open #cellcard { display: none; }
   };
 
   /* ================= état ================= */
-  var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Portulan et de son relais (aucun secret ici)
+  var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
   var S = { name: "", city: "", dept: "", photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
@@ -474,7 +475,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function savedReplacer(k, v) { return k === "lines" && Array.isArray(v) ? encLines(v) : v; }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(S, savedReplacer)); storeWarnAt = 0; return true; }
+    try { localStorage.setItem(KEY, JSON.stringify(S, savedReplacer)); storeWarnAt = 0; scheduleBackup(); return true; }
     catch (e) {
       try { localStorage.setItem(KEY, JSON.stringify(Object.assign({}, S, { info: {} }), savedReplacer)); return true; }   // repli : sans les résumés Wikipédia (simple cache, retéléchargeable)
       catch (e2) { /* toujours impossible */ }
@@ -888,6 +889,164 @@ body.sheet-open #cellcard { display: none; }
       if (current === "add") render();
     }).then(function () { stravaBusy = false; });
   }
+  /* ===== Compte (connexion Google) et sauvegarde en ligne ===== */
+  var XPLR_API = window.__API || "https://xplr-api.wjmn9bnkdg.workers.dev", ACCT_KEY = "hexplore:acct:v1";
+  var acct = loadAcct(), acctMsg = "", bkTimer = 0, bkBusy = false, restoring = false, gsiLoading = null, acctSyncing = false;
+  function isDemo(a) { return !!a && (a.demo === true || a.name === "Boucle d’exemple"); }   // la boucle d’exemple n’est pas une vraie course : jamais sauvegardée ni partagée
+  function realActs() { return S.activities.filter(function (a) { return !isDemo(a); }); }
+  function loadAcct() { try { var o = JSON.parse(localStorage.getItem(ACCT_KEY) || "null"); return o && o.token ? o : null; } catch (e) { return null; } }
+  function saveAcct() { try { if (acct) localStorage.setItem(ACCT_KEY, JSON.stringify(acct)); else localStorage.removeItem(ACCT_KEY); } catch (e) { /* ignoré */ } }
+  function apiCall(method, path, body) {
+    var h = {}; if (acct && acct.token) h.Authorization = "Bearer " + acct.token; if (body !== undefined) h["Content-Type"] = "application/json";
+    return fetch(XPLR_API + path, { method: method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.status === 401 && acct && acct.token && path !== "/auth/google") { acct = null; saveAcct(); acctMsg = "Session expirée : reconnecte-toi."; }
+        if (!r.ok) { var e = new Error(j.error || ("HTTP " + r.status)); e.status = r.status; e.body = j; throw e; }
+        return j;
+      });
+    });
+  }
+  function toB64(buf) { var b = new Uint8Array(buf), s = "", i; for (i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return btoa(s); }
+  function fromB64(str) { var bin = atob(str), out = new Uint8Array(bin.length), i; for (i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+  function packText(txt) {   // compression gzip quand le navigateur sait la faire
+    if (typeof CompressionStream === "undefined" || typeof Response === "undefined") return Promise.resolve({ enc: "json", data: txt });
+    var cs = new CompressionStream("gzip"), w = cs.writable.getWriter(); w.write(new TextEncoder().encode(txt)).catch(function () {}); w.close().catch(function () {});
+    return new Response(cs.readable).arrayBuffer().then(function (buf) { return { enc: "gzip-b64", data: toB64(buf) }; });
+  }
+  function unpackText(enc, data) {
+    if (enc !== "gzip-b64") return Promise.resolve(data);
+    if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("navigateur trop ancien pour restaurer"));
+    var ds = new DecompressionStream("gzip"), w = ds.writable.getWriter(); w.write(fromB64(data)).catch(function () {}); w.close().catch(function () {});
+    return new Response(ds.readable).arrayBuffer().then(function (buf) { return new TextDecoder().decode(buf); });
+  }
+  function backupPayload() {   // ce qui part en ligne : jamais les jetons Strava ni les résumés Wikipédia (simple cache)
+    return JSON.stringify(Object.assign({}, S, { activities: realActs(), strava: { clientId: S.strava.clientId, relay: S.strava.relay, lastSync: S.strava.lastSync, auto: S.strava.auto, days: S.strava.days, bf: 0 }, info: {} }), savedReplacer);
+  }
+  function setAcctMsg(t) { acctMsg = t || ""; var m = $("acctmsg"); if (m) m.textContent = acctMsg; }
+  function refreshAcctUI() { if (drawerView === "settings" && $("drawer").classList.contains("open")) renderDrawer(); }
+  function doBackup(manual, force) {
+    clearTimeout(bkTimer);
+    if (!acct || bkBusy || restoring) return Promise.resolve(false);
+    if (!realActs().length) { if (manual) toast("Rien à sauvegarder : aucune course importée."); return Promise.resolve(false); }   // jamais d’envoi d’un état vide qui écraserait la sauvegarde
+    bkBusy = true;
+    return packText(backupPayload()).then(function (p) {
+      var body = { enc: p.enc, data: p.data, activities: realActs().length };
+      if (!force && acct.rev !== undefined && acct.rev !== null) body.baseRev = acct.rev;
+      return apiCall("PUT", "/backup", body);
+    }).then(function (r) {
+      bkBusy = false; acct.rev = r.rev; acct.lastBackup = Date.now(); saveAcct(); acctMsg = "";
+      if (manual) toast("Sauvegarde en ligne effectuée."); refreshAcctUI(); return true;
+    }, function (e) {
+      bkBusy = false;
+      if (e.status === 409) return handleConflict();
+      acctMsg = "Sauvegarde impossible : " + e.message; if (manual) toast(acctMsg); refreshAcctUI(); return false;
+    });
+  }
+  function handleConflict() {
+    if (window.confirm("Une sauvegarde plus récente existe en ligne (un autre appareil ?).\nOK = l’écraser avec les données de cet appareil.\nAnnuler = restaurer la sauvegarde en ligne ici.")) return doBackup(true, true);
+    return doRestore(true);
+  }
+  function scheduleBackup() { if (!acct || acct.auto === false || restoring || acctSyncing) return; clearTimeout(bkTimer); bkTimer = setTimeout(function () { doBackup(false); }, window.__BK_DELAY !== undefined ? window.__BK_DELAY : 20000); }   // une sauvegarde 20 s après le dernier changement
+  function applyBackup(txt) {
+    var keep = Object.assign({}, S.strava); restoring = true;
+    try {
+      localStorage.setItem(KEY, txt); loadState();
+      ["access", "refresh", "exp", "athlete"].forEach(function (k) { if (keep[k]) S.strava[k] = keep[k]; });   // la connexion Strava de cet appareil est conservée
+      selected = null; rebuild(); save(); fitAll(); renderDrawer();
+    } finally { restoring = false; }
+  }
+  function doRestore(skipConfirm) {
+    if (!acct) return Promise.resolve(false);
+    return apiCall("GET", "/backup").then(function (r) {
+      if (!r.backup) { toast("Aucune sauvegarde en ligne."); return false; }
+      if (!skipConfirm && realActs().length && !window.confirm("Remplacer les données de cet appareil (" + realActs().length + " course" + (realActs().length > 1 ? "s" : "") + ") par la sauvegarde en ligne ?")) return false;
+      return unpackText(r.backup.enc, r.backup.data).then(function (txt) {
+        var o = JSON.parse(txt); if (!o || !Array.isArray(o.activities)) throw new Error("sauvegarde illisible");
+        applyBackup(txt); acct.rev = r.backup.rev; acct.lastBackup = r.backup.updatedAt * 1000; saveAcct();
+        toast("Sauvegarde restaurée : " + realActs().length + " course" + (realActs().length > 1 ? "s" : "") + "."); return true;
+      });
+    }).catch(function (e) { toast("Restauration impossible : " + e.message); return false; });
+  }
+  function loadGsi() {
+    if (window.google && window.google.accounts && window.google.accounts.id) return Promise.resolve();
+    if (gsiLoading) return gsiLoading;
+    gsiLoading = new Promise(function (res, rej) {
+      var sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+      sc.onload = function () { res(); }; sc.onerror = function () { gsiLoading = null; rej(new Error("Google injoignable")); }; document.head.appendChild(sc);
+    });
+    return gsiLoading;
+  }
+  function pseudoSuggestion(cred) {
+    try {
+      var p = JSON.parse(new TextDecoder("utf-8").decode(fromB64(cred.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))));   // charge utile en UTF-8 (accents)
+      return String(p.given_name || p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_-]+/g, "").slice(0, 20);
+    } catch (e) { return ""; }
+  }
+  function afterLogin(user) {   // première synchronisation : on ne perd jamais de données sans demander
+    var cloud = user.backup, local = realActs().length;
+    if (cloud && !local) return doRestore(true);
+    if (cloud && local) {
+      if (window.confirm("Une sauvegarde en ligne existe (" + (cloud.activities || 0) + " course" + (cloud.activities > 1 ? "s" : "") + ").\nOK = la restaurer à la place des données de cet appareil.\nAnnuler = garder cet appareil et remplacer la sauvegarde en ligne.")) return doRestore(true);
+      return doBackup(true, true);
+    }
+    if (local) return doBackup(true, true);
+    return Promise.resolve(null);
+  }
+  function onGoogle(cred, nonce) {
+    setAcctMsg("Connexion…");
+    apiCall("POST", "/auth/google", { credential: cred, nonce: nonce }).then(function (r) {
+      acct = { token: r.token, expiresAt: r.expiresAt, user: r.user, rev: r.user.backup ? r.user.backup.rev : null, auto: true, suggest: pseudoSuggestion(cred) };
+      saveAcct(); acctMsg = ""; toast("Connecté."); acctSyncing = true;   // pas d’envoi automatique avant la première synchronisation
+      return afterLogin(r.user);
+    }).then(function () { acctSyncing = false; refreshAcctUI(); }, function (e) { acctSyncing = false; setAcctMsg("Connexion impossible : " + e.message); initGoogleButton(); });
+  }
+  function initGoogleButton() {
+    var box = $("gbtn"); if (!box || acct) return;
+    apiCall("GET", "/config").then(function (cfg) {
+      if (!cfg.googleClientId) { setAcctMsg("La connexion Google n’est pas encore configurée sur le serveur."); return null; }
+      return Promise.all([loadGsi(), apiCall("GET", "/auth/nonce")]).then(function (v) {
+        var nonce = v[1].nonce;
+        window.google.accounts.id.initialize({ client_id: cfg.googleClientId, nonce: nonce, callback: function (resp) { onGoogle(resp.credential, nonce); } });
+        box.innerHTML = ""; window.google.accounts.id.renderButton(box, { theme: "filled_black", size: "large", shape: "pill", text: "continue_with", locale: "fr" });
+      });
+    }).catch(function (e) { setAcctMsg("Comptes indisponibles pour le moment (" + e.message + ")."); });
+  }
+  function accountSettingsHTML() {
+    var h = '<h3>Compte</h3>';
+    if (!acct) {
+      return h + '<p class="note">Un compte sauvegarde tes courses en ligne et te permet de les retrouver sur un autre appareil. Les amis arrivent ensuite. Aucun mot de passe : Google confirme seulement ton identité.</p><div id="gbtn" class="gbtn"></div><p class="note" id="acctmsg">' + esc(acctMsg) + '</p>';
+    }
+    var u = acct.user || {};
+    h += '<p class="note">Connecté' + (u.pseudo ? ' : <b>' + esc(u.pseudo) + '</b>' : '') + '</p>';
+    if (!u.pseudo) h += '<div class="field"><label for="acctpseudo">Choisis ton pseudo (visible par tes amis)</label><input type="text" id="acctpseudo" value="' + esc(acct.suggest || "") + '" maxlength="20" autocomplete="off" autocapitalize="none"></div><div class="drawer-sec"><button class="btn block" id="acctpseudook">Valider le pseudo</button></div>';
+    h += '<p class="note" id="acctinfo">' + (acct.lastBackup ? 'Dernière sauvegarde : ' + new Date(acct.lastBackup).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + '.' : 'Pas encore de sauvegarde sur ce compte.') + '</p>' +
+      '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="acctauto"' + (acct.auto !== false ? ' checked' : '') + '><span>Sauvegarde automatique</span></label>' +
+      '<p class="note" id="acctmsg">' + esc(acctMsg) + '</p>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="acctbk">Sauvegarder maintenant</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="acctrs">Restaurer ma sauvegarde</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="acctout">Se déconnecter</button></div>' +
+      '<div class="drawer-sec"><button class="btn danger block" id="acctdel">Supprimer mon compte et mes données en ligne</button></div>';
+    return h;
+  }
+  function bindAccount() {
+    if (!acct) { initGoogleButton(); return; }
+    var pk = $("acctpseudook");
+    if (pk) pk.addEventListener("click", function () {
+      apiCall("PUT", "/me", { pseudo: $("acctpseudo").value }).then(function (u) {
+        acct.user = u; saveAcct(); if (!S.name) { S.name = u.pseudo; save(); } toast("Pseudo enregistré : " + u.pseudo); refreshAcctUI();
+      }, function (e) { setAcctMsg(e.message); });
+    });
+    $("acctauto").addEventListener("change", function (e) { acct.auto = e.target.checked; saveAcct(); if (acct.auto) scheduleBackup(); });
+    $("acctbk").addEventListener("click", function () { doBackup(true, false); });
+    $("acctrs").addEventListener("click", function () { doRestore(false); });
+    $("acctout").addEventListener("click", function () {
+      apiCall("POST", "/auth/logout").catch(function () { /* le jeton local est de toute façon retiré */ }).then(function () { acct = null; saveAcct(); acctMsg = ""; toast("Déconnecté."); refreshAcctUI(); });
+    });
+    $("acctdel").addEventListener("click", function () {
+      if (!window.confirm("Supprimer définitivement ton compte et ta sauvegarde en ligne ?\nTes courses restent sur cet appareil. Cette action est irréversible.")) return;
+      apiCall("DELETE", "/me").then(function () { acct = null; saveAcct(); acctMsg = ""; toast("Compte supprimé."); refreshAcctUI(); }, function (e) { setAcctMsg("Suppression impossible : " + e.message); });
+    });
+  }
   function stravaSettingsHTML() {
     var s = S.strava, sel = [[30, "30 derniers jours"], [365, "12 derniers mois"], [1095, "3 dernières années"]].map(function (o) { return '<option value="' + o[0] + '"' + (s.days === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     var h = '<h3>Strava</h3>';
@@ -905,7 +1064,7 @@ body.sheet-open #cellcard { display: none; }
         '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>' +
         '<details class="advanced"><summary>Paramètres techniques (déjà renseignés)</summary>' +
         '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
-        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://portulan-relay.….workers.dev" autocomplete="off"></div></details>';
+        '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://….workers.dev" autocomplete="off"></div></details>';
     }
     return h + '<p class="note" id="stvstatus"></p><p class="note">Powered by Strava</p>';
   }
@@ -1681,7 +1840,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* ================= vue agrégée à fort dézoom ================= */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "25/10/2026 · v46";
+  var BUILD = "25/10/2026 · v49";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
   var aggCache = { key: "", byRes: {} };
@@ -2439,15 +2598,15 @@ body.sheet-open #cellcard { display: none; }
       g.font = "700 72px " + fam; g.fillText(fmtKm2(totalKm2()) + " km²", mx, 1190);
       g.font = "500 36px " + fam; g.fillText(fmt(cells.size, 0) + " hexagones · " + st.summits + (st.summits > 1 ? " sommets" : " sommet"), mx, 1245);
       g.fillText(S.name ? S.name : "Explorateur" + (lvl ? " · " + TROPHIES[lvl - 1].name : ""), mx, 1295);
-      g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("Portulan", w - mx, 1295);
+      g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("Xplr", w - mx, 1295);
       return c;
     }
     function out(c) {
       c.toBlob(function (blob) {
         if (!blob) { toast("Création de l’image impossible."); return; }
-        var file = new File([blob], "portulan-carte.png", { type: "image/png" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Ma carte Portulan" }).catch(function () { /* annulé */ }); return; }
-        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "portulan-carte.png"; document.body.appendChild(a); a.click();
+        var file = new File([blob], "xplr-carte.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Ma carte Xplr" }).catch(function () { /* annulé */ }); return; }
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "xplr-carte.png"; document.body.appendChild(a); a.click();
         setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
       }, "image/png");
     }
@@ -2753,6 +2912,7 @@ body.sheet-open #cellcard { display: none; }
     var bm = [["relief", "Relief ombré (discret)"], ["esri", "Satellite (monde)"], ["ign", "Satellite IGN (France)"], ["none", "Aucun fond"]].map(function (o) { return '<option value="' + o[0] + '"' + (S.basemap === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("");
     return '<h2 class="drawer-title">Réglages</h2>' +
       '<div class="field"><label for="bmsel">Fond de carte</label><select id="bmsel">' + bm + '</select></div>' +
+      accountSettingsHTML() +
       stravaSettingsHTML() +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
@@ -2814,11 +2974,12 @@ body.sheet-open #cellcard { display: none; }
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
     $("diagbtn").addEventListener("click", runDiagnostic);
+    bindAccount();
     bindStrava();
     $("exp").addEventListener("click", function () {
       S.lastBackup = Date.now(); save();
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: Object.assign({}, S, { strava: undefined }) })], { type: "application/json" });
-      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "portulan-sauvegarde.json"; document.body.appendChild(a); a.click();
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "xplr-sauvegarde.json"; document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
     });
     $("imp").addEventListener("change", function (e) {
@@ -2872,7 +3033,7 @@ body.sheet-open #cellcard { display: none; }
         demo.push({ p: [45.9 + r * 0.72 * Math.sin(a) + rnd() * 0.00006, 6.13 + r * Math.cos(a) + rnd() * 0.00008], t: null });
       }
       var b = buildLines(demo, 60);
-      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines, summits: [], landmarks: [], sumDone: true, lmDone: true, poiV: 2 });   // exemple : aucune recherche en ligne
+      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", demo: true, sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines, summits: [], landmarks: [], sumDone: true, lmDone: true, poiV: 2 });   // exemple : aucune recherche en ligne
     }
     resize(); rebuild(); checkAchievements(true); initExtras();
     if (S.activities.length) fitAll(); else draw();

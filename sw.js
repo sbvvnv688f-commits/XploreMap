@@ -1,6 +1,6 @@
-/* Portulan : mise en cache de l’application pour un usage hors ligne.
+/* Xplr : mise en cache de l’application pour un usage hors ligne.
    Les fonds de carte et les services externes (sommets, communes, recherche) restent en ligne. */
-var CACHE = "portulan-v5";
+var CACHE = "xplr-v7";
 var H3 = "https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js";
 var SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-32.png", H3];
 
