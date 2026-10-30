@@ -366,6 +366,21 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
 #fvbar { background: var(--pink); color: var(--on-accent); }
 #homebar { background: var(--panel); color: var(--ink); flex-wrap: wrap; }
 #fvbar[hidden], #homebar[hidden], #homecross[hidden] { display: none; }
+#pendbar {
+  top: calc(env(safe-area-inset-top, 0px) + 80px); left: 12px; right: 12px; z-index: 6; display: flex; align-items: center; gap: 8px;
+  padding: 8px 8px 8px 14px; border: 3px solid var(--outline); border-radius: 18px; box-shadow: 3px 3px 0 var(--outline);
+  background: var(--accent); color: var(--on-accent); animation: pendpulse 2.4s ease-in-out infinite;
+}
+#pendbar[hidden], body.friend-view #pendbar, body.sheet-open #pendbar { display: none; }
+body.pend-wait #hint { display: none; }
+#pendbar .btn { padding: 8px 12px; font-size: 12.5px; }
+#pendbar .btn.ghost { background: var(--panel); color: var(--ink); }
+@keyframes pendpulse { 0%, 100% { box-shadow: 3px 3px 0 var(--outline); } 50% { box-shadow: 3px 3px 0 var(--outline), 0 0 0 6px rgba(242, 201, 76, 0.45); } }
+@media (prefers-reduced-motion: reduce) { #pendbar { animation: none; } }
+.pendtop { border-color: var(--outline); background: var(--accent); color: var(--on-accent); padding: 10px 12px 12px; }
+.pendtop b { display: block; font-size: 15.5px; margin-bottom: 2px; }
+.pendtop p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.35; }
+.pendtop .btn { background: var(--panel); color: var(--ink); margin-bottom: 0; }
 .fv-t { flex: 1; min-width: 0; }
 .fv-t b { display: block; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fv-t small { display: block; font-size: 11px; font-weight: 500; }
@@ -450,7 +465,7 @@ body.sheet-open #cellcard { display: none; }
 </section>
 
 <nav id="nav" aria-label="Menu principal">
-  <button class="tab" data-tab="add" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>Ajouter</span></button>
+  <button class="tab" data-tab="add" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>Ajouter</span><b class="tab-badge" id="addBadge" hidden>0</b></button>
   <button class="tab" data-tab="list" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>Courses</span></button>
   <button class="tab" data-tab="stats" aria-selected="false"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Stats</span></button>
   <button class="tab" data-tab="goals" aria-selected="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8"/></svg><span>Succès</span></button>
@@ -459,6 +474,7 @@ body.sheet-open #cellcard { display: none; }
 </nav>
 
 <div class="float" id="fvbar" hidden role="status"></div>
+<div class="float" id="pendbar" hidden role="status"></div>
 <div class="float" id="homebar" hidden role="dialog" aria-label="Zone domicile"></div>
 <div id="homecross" hidden aria-hidden="true"></div>
 
@@ -986,10 +1002,11 @@ body.sheet-open #cellcard { display: none; }
         else {
           var ls = []; items.forEach(function (it) { ls = ls.concat(it.act.lines); }); if (ls.length) fitLines(ls);
           draw(); if (current !== "add") openTab("add"); else render();
-          toast(msg + (sportMissing().length ? " : choisis le sport des sorties non reconnues, puis valide." : " : vérifie et valide l’import.") + more);
+          toast(msg + (sportMissing().length ? " : choisis le sport des sorties non reconnues, puis touche « Valider »." : " : touche « Valider » pour les ajouter à ta carte.") + more);
         }
       } else if (opts.manual) toast(msg + ".");
       if (errs) toast(errs + " sortie" + (errs > 1 ? "s" : "") + " Strava ignorée" + (errs > 1 ? "s" : "") + " (voir l’aperçu).");
+      updatePendBar();
     }).catch(function (e) {
       var m = e && e.status === 429 ? "Limite d’appels Strava atteinte : réessaie dans quelques minutes." : e && e.expired ? "Session Strava expirée : reconnecte-toi dans les Réglages." : "Synchronisation Strava impossible : " + ((e && e.message) || "réseau");
       stravaStatus(m); if (opts.manual || (e && e.expired)) toast(m);
@@ -2283,6 +2300,30 @@ body.sheet-open #cellcard { display: none; }
     }
     return h;
   }
+  function pendLabel() {   // « 2 sorties Strava » / « 1 sortie »
+    var n = pending ? pending.items.length : 0, sv = n && pending.items.every(function (it) { return it.act.strava; });
+    return n + " sortie" + (n > 1 ? "s" : "") + (sv ? " Strava" : "") + " à valider";
+  }
+  var pendKey = "";
+  function updatePendBar() {   // rappel tant que des sorties attendent la validation
+    var n = pending ? pending.items.length : 0, key = n ? pendLabel() + "|" + sportMissing().length : "";
+    var bd = $("addBadge"); if (bd) { bd.textContent = n; bd.hidden = !n; }
+    document.body.classList.toggle("pend-wait", !!n);
+    if (key === pendKey) return;
+    pendKey = key;
+    var bar = $("pendbar"); if (!bar) return;
+    if (!n) { bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.innerHTML = '<div class="fv-t"><b>' + pendLabel() + '</b><small>' + (sportMissing().length ? "Choisis d’abord le sport, puis valide." : "Pas encore sur ta carte : touche « Valider » pour les ajouter.") + '</small></div>' +
+      '<button class="btn" id="pendok">Valider</button><button class="btn ghost" id="pendsee">Voir</button>';
+    bar.hidden = false;
+    $("pendok").addEventListener("click", function () { if (sportMissing().length) openTab("add"); else commitPending(); });
+    $("pendsee").addEventListener("click", function () { if (current !== "add") openTab("add"); });
+  }
+  function pendTopHTML() {
+    if (!pending || !pending.items.length) return "";
+    return '<div class="box pendtop" role="status"><b>' + pendLabel() + '</b><p>Elles ne sont pas encore sur ta carte ni dans tes statistiques : vérifie l’aperçu ci-dessous, puis valide.' +
+      (sportMissing().length ? ' Choisis d’abord le sport des sorties non reconnues.' : '') + '</p><button class="btn block" id="commitTop">Valider l’import</button></div>';
+  }
   function sportMissing() { return pending ? pending.items.filter(function (it) { return it.sportAsk && !it.sportChosen; }) : []; }
   function commitPending() {
     if (!pending || !pending.items.length) { pending = null; render(); draw(); return; }
@@ -2509,7 +2550,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v76";
+  var BUILD = "30/10/2026 · v77";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3034,7 +3075,7 @@ body.sheet-open #cellcard { display: none; }
         peakHits.push({ x: q[0], y: q[1], p: l, reached: true, lm: true });
       });
     }
-    if (pending && pending.items.length) {
+    if (pending && pending.items.length && !friendView) {   // aperçu de l’import : pas sur la carte d’un ami
       var ids = [];
       pending.newCells.forEach(function (id) {
         var b = boundary(id);
@@ -3492,8 +3533,8 @@ body.sheet-open #cellcard { display: none; }
     document.body.classList.add("sheet-open"); markTabs();
   }
   function closeSheet() {
-    current = null; lastResult = ""; if (pending) { pending = null; draw(); } $("sheet").classList.remove("open"); $("sheet").setAttribute("aria-hidden", "true");
-    document.body.classList.remove("sheet-open"); markTabs();
+    current = null; lastResult = ""; if (pending && !pending.items.length) { pending = null; draw(); } $("sheet").classList.remove("open"); $("sheet").setAttribute("aria-hidden", "true");   // import en attente gardé : seul « Annuler » l’abandonne
+    document.body.classList.remove("sheet-open"); markTabs(); updatePendBar();
   }
   function markTabs() { document.querySelectorAll(".tab").forEach(function (t) { t.setAttribute("aria-selected", t.dataset.tab === current ? "true" : "false"); }); }
   function render() {
@@ -3501,13 +3542,13 @@ body.sheet-open #cellcard { display: none; }
     $("sheetTitle").textContent = TITLES[current];
     var html = { add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
     $("sheetBody").innerHTML = html;
-    bindSheet();
+    bindSheet(); updatePendBar();
     if (current === "friends") bindFriends();
   }
 
   function viewAdd() {
     var opts = Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '">' + sl(k) + '</option>'; }).join("");
-    return '<div class="box">' + stravaSettingsHTML() + '</div><h3>Importer des fichiers</h3>' +
+    return pendTopHTML() + '<div class="box">' + stravaSettingsHTML() + '</div><h3>Importer des fichiers</h3>' +
       '<div class="field"><label for="sp">Sport (utilisé si le fichier ne l’indique pas)</label><select id="sp">' + opts + '</select></div>' +
       '<div class="field"><label for="dt">Date (utilisée si le fichier n’en contient pas)</label><input type="date" id="dt" value="' + todayISO() + '"></div>' +
       '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
@@ -3626,6 +3667,7 @@ body.sheet-open #cellcard { display: none; }
 
   function bindSheet() {
     var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
+    var ct = $("commitTop"); if (ct) ct.addEventListener("click", commitPending);
     if (current === "add") bindStrava();
     document.querySelectorAll("[data-psport]").forEach(function (sel) {
       sel.addEventListener("change", function () {
@@ -3633,7 +3675,10 @@ body.sheet-open #cellcard { display: none; }
         it.act.sport = sel.value; it.sportChosen = true; render();
       });
     });
-    var xb = $("cancel"); if (xb) xb.addEventListener("click", function () { pending = null; render(); draw(); });
+    var xb = $("cancel"); if (xb) xb.addEventListener("click", function () {
+      if (pending && pending.items.some(function (it) { return it.act.strava; }) && !window.confirm("Abandonner ces sorties Strava ? Elles ne seront plus proposées à la prochaine synchronisation.")) return;
+      pending = null; render(); draw(); updatePendBar();
+    });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
     var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
