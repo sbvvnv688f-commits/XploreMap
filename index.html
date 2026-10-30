@@ -372,6 +372,7 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
   background: var(--accent); color: var(--on-accent); animation: pendpulse 2.4s ease-in-out infinite;
 }
 #pendbar[hidden], body.friend-view #pendbar, body.sheet-open #pendbar { display: none; }
+.result .prem { float: right; margin: -4px -6px 0 8px; font-size: 11px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
 .row.rrow { cursor: pointer; border: 3px solid var(--outline); border-radius: 16px; padding: 8px 12px; margin: 4px 0 10px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }   /* chaque joueur du classement dans sa boîte */
 .row.me { margin: 4px 0 10px; }
 .row.rrow[aria-expanded="true"] { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: 3px 0 0 var(--outline); }
@@ -2290,7 +2291,7 @@ body.sheet-open #cellcard { display: none; }
       var a = it.act; tot += it.newCells;
       var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">' + (it.sportChosen ? 'Sport choisi ✓ (modifiable)' : 'Type d’activité non reconnu : choisis le sport') + '</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
         (it.sportChosen ? '' : '<option value="" selected>Choisir…</option>') + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (it.sportChosen && a.sport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>' : '';
-      var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km' + (it.sportAsk && !it.sportChosen ? '' : ' · ' + sl(a.sport)) + ask +
+      var s = '<div class="result"><button class="prem" data-prem="' + idx + '" aria-label="Retirer ' + esc(a.name) + ' de l’import">Retirer</button><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km' + (it.sportAsk && !it.sportChosen ? '' : ' · ' + sl(a.sport)) + ask +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
         (it.bonusCells ? '<br><span class="peak">dont ' + fmt(it.bonusCells, 0) + ' hexagones bonus (' + fmtKm2(it.bonusCells * AREA_M2 / 1e6) + ' km²) autour des sommets et lieux</span>' : '') + upsText(it.ups || []);
       a.summits.forEach(function (m) { s += '<br><span class="peak">▲ ' + esc(m.name) + (m.ele !== null ? ' · ' + fmt(m.ele, 0) + ' m' : '') + ' · cercle de ' + m.r + ' m</span>'; });
@@ -2572,7 +2573,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v83";
+  var BUILD = "30/10/2026 · v84";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3704,6 +3705,13 @@ body.sheet-open #cellcard { display: none; }
     var cb = $("commit"); if (cb) cb.addEventListener("click", commitPending);
     var ct = $("commitTop"); if (ct) ct.addEventListener("click", commitPending);
     if (current === "add") bindStrava();
+    document.querySelectorAll("[data-prem]").forEach(function (b) { b.addEventListener("click", function () {   // une sortie enlevée de l’import, les autres restent
+      var it = pending && pending.items[+b.dataset.prem]; if (!it) return;
+      pending.items.splice(pending.items.indexOf(it), 1);
+      if (!pending.items.length && !pending.errors.length) pending = null; else computePreview();
+      toast("« " + it.act.name + " » retirée de l’import." + (it.act.strava ? " Pour la retrouver plus tard : « Récupérer l’historique »." : ""));
+      render(); draw(); updatePendBar();
+    }); });
     document.querySelectorAll("[data-psport]").forEach(function (sel) {
       function pick() {
         var it = pending && pending.items[+sel.dataset.psport]; if (!it || !SPORTS[sel.value]) return;
