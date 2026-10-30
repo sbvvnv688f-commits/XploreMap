@@ -2288,7 +2288,7 @@ body.sheet-open #cellcard { display: none; }
     if (!pending) return "";
     var tot = 0, h = pending.items.map(function (it, idx) {
       var a = it.act; tot += it.newCells;
-      var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">Type d’activité non reconnu : choisis le sport</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
+      var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">' + (it.sportChosen ? 'Sport choisi ✓ (modifiable)' : 'Type d’activité non reconnu : choisis le sport') + '</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
         (it.sportChosen ? '' : '<option value="" selected>Choisir…</option>') + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (it.sportChosen && a.sport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>' : '';
       var s = '<div class="result"><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km' + (it.sportAsk && !it.sportChosen ? '' : ' · ' + sl(a.sport)) + ask +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
@@ -2384,9 +2384,15 @@ body.sheet-open #cellcard { display: none; }
     }
     if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
   }
+  var addRenderWait = false;
+  function renderAddSoon() {   // pas de nouveau rendu pendant qu’une liste de sports est ouverte : le téléphone la refermerait et le choix serait perdu
+    var f = document.activeElement;
+    if (f && f.matches && f.matches("[data-psport]")) { addRenderWait = true; return; }
+    addRenderWait = false; if (current === "add") render();
+  }
   function onItemScanned(it) {
     var a = it.act;
-    if (pending && pending.items.indexOf(it) >= 0) { computePreview(); if (current === "add") render(); draw(); return; }
+    if (pending && pending.items.indexOf(it) >= 0) { computePreview(); if (current === "add") renderAddSoon(); draw(); return; }
     if (S.activities.indexOf(a) < 0) return;   // import annulé entre-temps
     var knownS = new Set(reachedSet), knownL = new Set(reachedLm);
     var newPeaks = (a.summits || []).filter(function (s) { return !knownS.has(s.id); }), newLms = (a.landmarks || []).filter(function (l) { return !knownL.has(l.id); });
@@ -2566,7 +2572,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v82";
+  var BUILD = "30/10/2026 · v83";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3699,10 +3705,15 @@ body.sheet-open #cellcard { display: none; }
     var ct = $("commitTop"); if (ct) ct.addEventListener("click", commitPending);
     if (current === "add") bindStrava();
     document.querySelectorAll("[data-psport]").forEach(function (sel) {
-      sel.addEventListener("change", function () {
+      function pick() {
         var it = pending && pending.items[+sel.dataset.psport]; if (!it || !SPORTS[sel.value]) return;
-        it.act.sport = sel.value; it.sportChosen = true; render();
-      });
+        if (it.sportChosen && it.act.sport === sel.value) return;   // « input » puis « change » : une seule fois
+        it.act.sport = sel.value; it.sportChosen = true; addRenderWait = false;
+        toast("Sport choisi pour « " + it.act.name + " » : " + sl(sel.value) + ".");
+        render();
+      }
+      sel.addEventListener("input", pick); sel.addEventListener("change", pick);
+      sel.addEventListener("blur", function () { if (addRenderWait) setTimeout(renderAddSoon, 0); });
     });
     var xb = $("cancel"); if (xb) xb.addEventListener("click", function () {
       if (pending && pending.items.some(function (it) { return it.act.strava; }) && !window.confirm("Abandonner ces sorties Strava ? Elles ne seront plus proposées à la prochaine synchronisation.")) return;
