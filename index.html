@@ -1086,7 +1086,7 @@ body.sheet-open #cellcard { display: none; }
     acctSyncing = true; applyProfile(); hideGate();
     return afterLogin(acct.user).then(function () {
       acctSyncing = false; if (!acct) return;
-      acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends();
+      acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends(); schedulePushScore();
     }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
@@ -1512,6 +1512,7 @@ body.sheet-open #cellcard { display: none; }
     refreshDisp();
     updateChip();
     $("hint").hidden = S.activities.length > 0;
+    schedulePushScore();
   }
   function updateChip() {
     if (friendView) { var fn = friendView.cells.size; $("chipKm2").textContent = fmtKm2(fn * AREA_M2 / 1e6); $("chipCells").textContent = fmt(fn, 0) + (fn > 1 ? " hexagones" : " hexagone"); return; }   // carte d’un ami : ses chiffres, pas de trophée
@@ -1926,15 +1927,32 @@ body.sheet-open #cellcard { display: none; }
     });
     return chain;
   }
-  function fetchBatch(need, deadline) {   // sommets nommés : requête très légère
+  /* ===== Relais OpenStreetMap : le Worker xplr-api interroge Overpass et garde chaque zone en cache pour tous les joueurs ===== */
+  var relayOff = false;
+  function relayTiles(kind, keys) {
+    if (!acct || !acct.token || relayOff) return Promise.reject(new Error("relais indisponible"));
+    return apiCall("GET", "/osm?kind=" + kind + "&tiles=" + keys.map(encodeURIComponent).join(",")).then(function (j) { return j.tiles || {}; }, function (e) {
+      if (e.status === 404) relayOff = true;   // Worker plus ancien que la version 5 : on n’insiste pas
+      throw e;
+    });
+  }
+  function ingestPeaks(j) {
+    (j.elements || []).forEach(function (el) {
+      var t = el.tags, ll = elLatLon(el);
+      if (!t || !t.name || el.type !== "node" || t.natural !== "peak" || !ll) return;
+      var arr = peakCache.get(tileOf(ll));
+      if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: ll[0], lng: ll[1], ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
+    });
+  }
+  function fetchBatch(need, deadline) {   // sommets nommés : relais d’abord, puis Overpass en direct, puis Wikipédia
     var q = need.map(function (k) { return 'node["natural"="peak"]["name"]' + tileBB(k); }).join("");
-    return overpassFetch("[out:json][timeout:50];(" + q + ");out qt;", deadline).then(function (j) {
+    return relayTiles("peak", need).then(function (tiles) {
       need.forEach(function (k) { peakCache.set(k, []); });
-      (j.elements || []).forEach(function (el) {
-        var t = el.tags, ll = elLatLon(el);
-        if (!t || !t.name || el.type !== "node" || t.natural !== "peak" || !ll) return;
-        var arr = peakCache.get(tileOf(ll));
-        if (arr && !arr.some(function (x) { return x.id === el.id; })) arr.push({ id: el.id, name: t.name, lat: ll[0], lng: ll[1], ele: parseEle(t.ele), wp: t.wikipedia || "", wd: t.wikidata || "" });
+      need.forEach(function (k) { ingestPeaks({ elements: tiles[k] || [] }); });
+    }, function () {
+      return overpassFetch("[out:json][timeout:50];(" + q + ");out qt;", deadline).then(function (j) {
+        need.forEach(function (k) { peakCache.set(k, []); });
+        ingestPeaks(j);
       });
     }).catch(function (e) { return wpFill(need, peakCache, "peak", Date.now() + 120000).catch(function () { throw e; }); });   // le repli a son propre délai : celui de la course est peut-être déjà écoulé
   }
@@ -1962,12 +1980,12 @@ body.sheet-open #cellcard { display: none; }
     var chain = Promise.resolve();
     need.forEach(function (k) {
       chain = chain.then(function () {
-        return lmRun(tileBB(k), deadline).then(function (j) { lmCache.set(k, []); ingestLm(j); }, function (e) {
+        return relayTiles("lm", [k]).then(function (t) { lmCache.set(k, []); ingestLm({ elements: t[k] || [] }); }, function () { return lmRun(tileBB(k), deadline).then(function (j) { lmCache.set(k, []); ingestLm(j); }, function (e) {
           if (!/délai|timed out|memory|HTTP 504/i.test(friendlyErr(e)) || (deadline && Date.now() > deadline)) throw e;
           var got = [], c2 = Promise.resolve();
           subBBs(k).forEach(function (bb) { c2 = c2.then(function () { return lmRun(bb, deadline).then(function (j) { got.push(j); }); }); });
           return c2.then(function () { lmCache.set(k, []); got.forEach(ingestLm); });
-        }).catch(function (e) { var dl = Date.now() + 120000; return wpFill([k], lmCache, "lm", dl).catch(function () { throw e; }).then(function () { return wdFill([k], dl); }); });
+        }); }).catch(function (e) { var dl = Date.now() + 120000; return wpFill([k], lmCache, "lm", dl).catch(function () { throw e; }).then(function () { return wdFill([k], dl); }); });
       });
     });
     return chain;
@@ -2327,7 +2345,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v59";
+  var BUILD = "30/10/2026 · v60";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3391,6 +3409,8 @@ body.sheet-open #cellcard { display: none; }
     Object.keys(by).forEach(function (k) { out.bySport[k] = by[k].size * AREA_M2 / 1e6; });
     return out;
   }
+  var scoreTimer = 0;
+  function schedulePushScore() { clearTimeout(scoreTimer); scoreTimer = setTimeout(function () { if (!friendView) pushScore(); }, 5000); }   // tous les inscrits apparaissent au classement, à jour sans ouvrir l’onglet
   function pushScore() {   // publie ma surface (ou la retire si je ne veux pas apparaître)
     if (!acct || typeof h3 === "undefined") return Promise.resolve();
     if (S.rankOptOut) {
