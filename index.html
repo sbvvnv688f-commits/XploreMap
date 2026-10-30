@@ -1582,7 +1582,7 @@ body.sheet-open #cellcard { display: none; }
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
-    var useMask = vis.length > 400;   // beaucoup de cellules : la découpe (clip) est lente sur Safari ; on dessine l’imagerie entière puis on la masque
+    var painter = typeof vis === "function" ? vis : null, useMask = !!painter || vis.length > 400;   // beaucoup de cellules : la découpe (clip) est lente sur Safari ; on dessine l’imagerie entière puis on la masque
     cctx.save(); if (!useMask) { buildCellsPath(cctx, vis); cctx.clip(); }
     var drawn = 0;
     for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) {
@@ -1594,7 +1594,7 @@ body.sheet-open #cellcard { display: none; }
     cctx.restore();
     if (useMask && drawn > 0) {
       if (maskCv.width !== color.width || maskCv.height !== color.height) { maskCv.width = color.width; maskCv.height = color.height; }
-      mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H); buildCellsPath(mctx, vis); mctx.fillStyle = "#000"; mctx.fill();
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H); if (painter) painter(mctx); else { buildCellsPath(mctx, vis); mctx.fillStyle = "#000"; mctx.fill(); }
       cctx.save(); cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskCv, 0, 0); cctx.restore();
     }
     return drawn > 0;
@@ -1627,8 +1627,7 @@ body.sheet-open #cellcard { display: none; }
     if (vis.length > FINE_MAX_CELLS) { ag = aggInfo(true); vis = []; }   // trop d’hexagones à l’écran : bascule en vue agrégée pour rester fluide
     var hexPx = 49 / ag.mpp, light = moving && hexPx < 14;   // en mouvement, hexagones assez petits : carrés simples, pas de contours de grade
     tinyHex = ag.wFine > 0 && (hexPx < 6 || light); tinyS = Math.max(1.4, hexPx * 1.05);
-    var zids = ag.zone ? zoneIds(ag) : null;   // communes ou départements visités, remplis d’hexagones
-    var onImg = drawTiles(zids || (ag.wAgg > 0 ? aggIds(ag) : vis));
+    var onImg = drawTiles(ag.wAgg > 0 ? farMask(ag) : vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
     fillCells(vis, onImg, ag.wFine);
@@ -1639,7 +1638,7 @@ body.sheet-open #cellcard { display: none; }
     }
     ctx.globalAlpha = 1;
     if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
-    if (zids) drawZones(ag, onImg, zids); else if (ag.wAgg > 0) drawAgg(ag, onImg);
+    if (ag.wAgg > 0) drawFar(ag, onImg);
     if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
     if (homePick) drawHomeCircle();
     if (!friendView && selected !== null) {
@@ -2229,6 +2228,7 @@ body.sheet-open #cellcard { display: none; }
     var key = dispVer;
     warmTimer = setTimeout(function () {
       if (key !== dispVer) return;
+      pyrLevel(11);   // lance la pyramide de densité, prête avant le premier dézoom
       visIndex();
       var ids = Array.from(dispCells.keys()), i = 0;
       (function step() {
@@ -2237,7 +2237,6 @@ body.sheet-open #cellcard { display: none; }
         var end = Math.min(ids.length, i + 600);
         for (; i < end; i++) centerOf(ids[i]);
         if (i < ids.length) { setTimeout(step, 24); return; }
-        [9, 8, 7].forEach(function (r, n) { setTimeout(function () { if (key === dispVer && !moving) aggCells(r); }, 80 * (n + 1)); });   // niveaux agrégés proches du seuil, prêts avant le premier dézoom
       })();
     }, 800);
   }
@@ -2262,205 +2261,157 @@ body.sheet-open #cellcard { display: none; }
     buildCellsPath(ctx, vis); ctx.fillStyle = PALE_YELLOW; ctx.fill();
     ctx.globalAlpha = 1;
   }
-  /* ================= vue agrégée à fort dézoom ================= */
+  /* ================= vue dézoomée : empreinte exacte, puis hexagones dosés =================
+     Au-delà de l’échelle fine, on ne parcourt jamais un élément par petit hexagone : une pyramide de densité
+     (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
+     et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "29/10/2026 · v53";
+  var BUILD = "30/10/2026 · v54";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
-  var MIN_AGG_RES = 3;   // plus gros polygone affiché : niveau H3 3 (≈ 12 393 km² par hexagone)
-  var aggCache = { key: "", byRes: {} };
+  var FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // empreinte jusqu’à ~300 m par pixel (échelle de 20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
     if (!force) {   // hystérésis : le rendu fin se prolonge de 6 % au-delà du seuil quand on dézoome (pas de va-et-vient), mais il apparaît exactement au seuil quand on zoome
-      if (mpp <= FINE_MAX_MPP * (wasFine ? 1.06 : 1)) { wasFine = true; wasZone = ""; return { wFine: 1, wAgg: 0, mpp: mpp }; }
+      if (mpp <= FINE_MAX_MPP * (wasFine ? 1.06 : 1)) { wasFine = true; return { wFine: 1, wAgg: 0, mpp: mpp }; }
       wasFine = false;
-    }   // hexagones à leur taille minimale, sans teinte, jusqu’à l’échelle d’environ 2 km
-    var res = 10;
-    while (res > MIN_AGG_RES && EDGE_M[res] / mpp < 7) res--;
-    var zone = zoneOf(mpp); wasZone = zone || "";
-    return { wFine: 0, wAgg: 1, res: res, mpp: mpp, zone: zone };   // niveau agrégé : teinte pleine, aucune superposition avec les hexagones fins ; au-delà de 2 km, communes puis départements
-  }
-  function aggCells(res) {
-    var key = dispCells.size + "|" + dispVer;
-    if (aggCache.key !== key) aggCache = { key: key, byRes: {} };
-    if (aggCache.byRes[res]) return aggCache.byRes[res];   // un résultat par niveau : plus de recalcul en passant d’un niveau à l’autre
-    var m = new Map();
-    dispCells.forEach(function (info, id) {
-      var p = h3.cellToParent(id, res), e = m.get(p);
-      if (e) e.n++; else m.set(p, { n: 1, info: info });
-    });
-    aggCache.byRes[res] = m;
-    return m;
-  }
-  function aggIds(ag) {
-    var map = aggCells(ag.res), tl = unproject(-20, -20), br = unproject(W + 20, H + 20), mg = EDGE_M[ag.res] / 111000 * 1.6 + 0.01, out = [];
-    map.forEach(function (e, id) {
-      var b = boundary(id), lat = b[0][0], lng = b[0][1];
-      if (lat < br[0] - mg || lat > tl[0] + mg || lng < tl[1] - mg * 2 || lng > br[1] + mg * 2) return;
-      out.push(id);
-    });
-    return out;
-  }
-  function drawAgg(ag, onImg) {
-    var map = aggCells(ag.res), tl = unproject(-20, -20), br = unproject(W + 20, H + 20), kids = Math.pow(7, 11 - ag.res);
-    var mg = EDGE_M[ag.res] / 111000 * 1.6 + 0.01, uni = css("--cell"), groups = {}, ids = [];
-    map.forEach(function (e, id) {
-      var b = boundary(id), lat = b[0][0], lng = b[0][1];
-      if (lat < br[0] - mg || lat > tl[0] + mg || lng < tl[1] - mg * 2 || lng > br[1] + mg * 2) return;
-      var t = Math.min(1, Math.log10(1 + e.n) / Math.log10(1 + kids)), lvl = Math.round(t * 4);
-      var col = S.colorMode === "sport" || S.colorMode === "age" ? colorOf(e.info) : uni, key = col + "|" + lvl;
-      (groups[key] || (groups[key] = { col: col, lvl: lvl, ids: [] })).ids.push(id);
-      ids.push(id);
-    });
-    buildCellsPath(ctx, ids);
-    var far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.18 : 0.3, a1 = onImg ? 0.5 : 0.7;   // plus on dézoome, plus le jaune se renforce (toujours translucide)
-    ctx.globalAlpha = (a0 + (a1 - a0) * far) * ag.wAgg; ctx.fillStyle = PALE_YELLOW; ctx.fill();
-    if (EDGE_M[ag.res] / ag.mpp >= 10) {
-      buildCellsPath(ctx, ids);
-      ctx.globalAlpha = (onImg ? 0.35 : 0.5) * ag.wAgg; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
     }
-    ctx.globalAlpha = 1;
+    return { wFine: 0, wAgg: 1, mpp: mpp };
   }
-  /* ================= communes puis départements visités, au dézoom =================
-     Échelle « 2 km » et au-delà : chaque commune où se trouve au moins un hexagone affiché est remplie d’hexagones.
-     Échelle « 50 km » et au-delà : le département entier. Contours téléchargés une fois (cache du navigateur), jamais sauvegardés. */
-  var ZONE_COMMUNE_MPP = 25, ZONE_DEPT_MPP = 625, wasZone = "";   // 80 px de barre d’échelle = 2 km, puis 50 km
-  var GEO_CACHE = "xplr-geo-v1", DEPT_URL = window.__DEPTS || "https://cdn.jsdelivr.net/gh/gregoiredavid/france-geojson@v2.1.1/departements-version-simplifiee.geojson";
-  var zoneGeo = { com: new Map(), comQueue: [], comLoading: 0, comFailed: new Set(), dep: null, depLoading: false, depFailedAt: 0 };
-  var zoneCover = new Map(), zoneLit = { key: "", com: [], dep: [], missing: [] }, zoneIdsCache = { key: "", ids: [] }, zoneAsked = new Set(), zoneSearching = false;
-  function zoneOf(mpp) {
-    if (friendView) return null;   // les communes d’un ami ne sont pas connues : rendu agrégé classique
-    if (mpp >= ZONE_DEPT_MPP * (wasZone === "dept" ? 0.94 : 1)) return "dept";   // hystérésis : pas de va-et-vient au seuil
-    if (mpp >= ZONE_COMMUNE_MPP * (wasZone ? 0.94 : 1)) return "commune";
+  function smooth(t) { return t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t); }
+  var pyr = { key: "", lv: {} }, pyrJob = 0, PYR_B = 2097152;
+  function pyrLevel(r) {   // niveau prêt, ou null ; (re)lance la construction quand les hexagones affichés changent
+    if (pyr.key !== dispVer + "|" + dispCells.size) pyrStart();
+    return pyr.lv[r] || null;
+  }
+  function pyrStart() {
+    var job = ++pyrJob, src = dispCells, r = 11, prev = null, map = null, it = null, L = null, i = 0;
+    pyr = { key: dispVer + "|" + src.size, lv: {} };
+    function level(n) {   // centres en coordonnées Mercator, rangés par cases d’environ 48 hexagones de côté
+      return { r: r, n: 0, mx: new Float64Array(n), my: new Float64Array(n), cnt: new Float64Array(n), id: new Array(n), g: 48 * Math.sqrt(AREA_M2 * Math.pow(7, 11 - r)) / 40075016.7, buckets: new Map() };
+    }
+    function add(id, n, info) {
+      var c = h3.cellToLatLng(id), x = mercX(c[1]), y = mercY(c[0]), j = L.n++;
+      L.mx[j] = x; L.my[j] = y; L.cnt[j] = n; L.id[j] = id;
+      var key = Math.floor(y / L.g) * PYR_B + Math.floor(x / L.g), a = L.buckets.get(key);
+      if (a) a.push(j); else L.buckets.set(key, [j]);
+    }
+    L = level(src.size); it = src.keys();
+    function step() {
+      if (job !== pyrJob) return;
+      if (moving) { setTimeout(step, 60); return; }
+      var t0 = performance.now();
+      while (performance.now() - t0 < 10) {
+        for (var q = 0; q < 256; q++) {
+          if (it) {   // remplissage du niveau courant
+            var nx = it.next();
+            if (nx.done) {
+              pyr.lv[r] = L; prev = L; it = null; requestDraw();
+              if (--r < MIN_AGG_RES) return;
+              map = new Map(); i = 0; break;
+            }
+            if (r === 11) add(nx.value, 1); else { var e = map.get(nx.value); add(nx.value, e.n); }
+          } else {   // regroupement du niveau précédent dans ses parents
+            if (i >= prev.n) { L = level(map.size); it = map.keys(); break; }
+            var p = h3.cellToParent(prev.id[i], r), m = map.get(p);
+            if (m) m.n += prev.cnt[i]; else map.set(p, { n: prev.cnt[i] });
+            i++;
+          }
+        }
+      }
+      setTimeout(step, 0);
+    }
+    setTimeout(step, 0);
+  }
+  function eachIn(L, pad, fn) {   // indices des centres du niveau L à l’écran (marge de pad pixels)
+    var k = worldScale(), hx = (W / 2 + pad) / k, hy = (H / 2 + pad) / k;
+    var x0 = Math.floor((view.cx - hx) / L.g), x1 = Math.floor((view.cx + hx) / L.g), y0 = Math.floor((view.cy - hy) / L.g), y1 = Math.floor((view.cy + hy) / L.g);
+    function visit(a) { for (var j = 0; j < a.length; j++) fn(a[j]); }
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > L.buckets.size) L.buckets.forEach(function (a, key) { var by = Math.floor(key / PYR_B), bx = key - by * PYR_B; if (bx >= x0 && bx <= x1 && by >= y0 && by <= y1) visit(a); });
+    else for (var y = y0; y <= y1; y++) for (var x = x0; x <= x1; x++) { var a = L.buckets.get(y * PYR_B + x); if (a) visit(a); }
+  }
+  /* empreinte exacte : chaque case explorée devient un petit carré dont l’intensité est la part réellement explorée */
+  var foot = { cv: document.createElement("canvas"), cov: null, px: null, img: null, v: null };
+  function footLevel(mpp) {   // niveau le plus fin dont les centres sont espacés d’au moins 1,5 px ; à défaut, un niveau plus fin déjà prêt
+    var r = 11;
+    while (r > MIN_AGG_RES && Math.sqrt(AREA_M2 * Math.pow(7, 11 - r)) / mpp < 1.5) r--;
+    for (var q = r; q <= Math.min(11, r + 2); q++) { var L = pyrLevel(q); if (L) return L; }
     return null;
   }
-  function bboxOf(polys) {
-    var b = [180, 90, -180, -90];
-    polys.forEach(function (pl) { pl[0].forEach(function (c) { if (c[0] < b[0]) b[0] = c[0]; if (c[1] < b[1]) b[1] = c[1]; if (c[0] > b[2]) b[2] = c[0]; if (c[1] > b[3]) b[3] = c[1]; }); });
-    return b;
-  }
-  function geoFetch(url) {   // contour téléchargé une seule fois par appareil (cache du navigateur), sinon gardé en mémoire
-    var get = function () { return fetch(url); };
-    var p = typeof caches === "undefined" ? get() : caches.open(GEO_CACHE).then(function (c) {
-      return c.match(url).then(function (hit) { return hit || get().then(function (r) { if (r.ok) c.put(url, r.clone()).catch(function () {}); return r; }); });
-    }).catch(get);
-    return p.then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
-  }
-  function zoneGeoFrom(f) { var polys = f && f.geometry ? geomPolys(f.geometry) : []; return polys.length ? { polys: polys, bbox: bboxOf(polys), dep: (f.properties && f.properties.codeDepartement) || "" } : null; }
-  function needCommune(code) {
-    if (zoneGeo.com.has(code) || zoneGeo.comFailed.has(code) || zoneGeo.comQueue.indexOf(code) >= 0) return;
-    zoneGeo.comQueue.push(code); pumpCommunes();
-  }
-  function pumpCommunes() {   // 4 téléchargements à la fois au plus
-    while (zoneGeo.comLoading < 4 && zoneGeo.comQueue.length) {
-      var code = zoneGeo.comQueue.shift(); zoneGeo.comLoading++;
-      (function (code) {
-        geoFetch(GEO_API + "/communes/" + encodeURIComponent(code) + "?fields=code,codeDepartement&format=geojson&geometry=contour").then(function (f) {
-          var g = zoneGeoFrom(f); if (g) zoneGeo.com.set(code, g); else zoneGeo.comFailed.add(code);
-        }, function () { zoneGeo.comFailed.add(code); }).then(function () { zoneGeo.comLoading--; zoneLit.key = ""; pumpCommunes(); requestDraw(); });
-      })(code);
+  function footPaint(mpp) {
+    var w = Math.max(1, Math.round(W)), h = Math.max(1, Math.round(H)), L = footLevel(mpp), fc = foot.cv.getContext("2d");
+    if (foot.cv.width !== w || foot.cv.height !== h || !foot.img) {
+      foot.cv.width = w; foot.cv.height = h; foot.cov = new Float32Array(w * h);
+      foot.img = fc.createImageData(w, h); foot.px = new Uint32Array(foot.img.data.buffer);
     }
-  }
-  function loadDepts() {
-    if (zoneGeo.dep || zoneGeo.depLoading || Date.now() - zoneGeo.depFailedAt < 60000) return;
-    zoneGeo.depLoading = true;
-    geoFetch(DEPT_URL).then(function (j) {
-      var m = new Map();
-      (j.features || []).forEach(function (f) { var g = zoneGeoFrom(f); if (g && f.properties && f.properties.code) m.set(String(f.properties.code), g); });
-      zoneGeo.dep = m; requestDraw();
-    }, function () { zoneGeo.depFailedAt = Date.now(); }).then(function () { zoneGeo.depLoading = false; });
-  }
-  function communeAt(lat, lng) {
-    var hit = null;
-    zoneGeo.com.forEach(function (g, code) {
-      if (hit || lng < g.bbox[0] || lng > g.bbox[2] || lat < g.bbox[1] || lat > g.bbox[3]) return;
-      for (var i = 0; i < g.polys.length; i++) { if (inPoly(lat, lng, g.polys[i])) { hit = code; return; } }
-    });
-    return hit;
-  }
-  function zoneVisited() {   // communes où se trouve au moins un hexagone affiché (respecte le filtre de période)
-    var key = dispVer + "|" + dispCells.size + "|" + zoneGeo.com.size;
-    if (zoneLit.key === key) return zoneLit;
-    Object.keys(S.communes).forEach(needCommune);
-    var groups = new Set(), com = new Set(), missing = [];
-    dispCells.forEach(function (v, id) { groups.add(h3.cellToParent(id, 10)); });   // groupes d’environ 7 hexagones
-    groups.forEach(function (p) {
-      var c = h3.cellToLatLng(p), code = communeAt(c[0], c[1]);
-      if (code) com.add(code); else missing.push(c);
-    });
-    var dep = new Set();
-    com.forEach(function (code) { var d = (zoneGeo.com.get(code) || {}).dep || (S.communes[code] || {}).dep; if (d) dep.add(String(d)); });
-    zoneLit = { key: key, com: Array.from(com), dep: Array.from(dep), missing: missing };
-    if (missing.length && !zoneGeo.comQueue.length && !zoneGeo.comLoading) findMissingCommunes(missing);
-    return zoneLit;
-  }
-  function findMissingCommunes(pts) {   // complète la liste des communes : un appel par zone d’environ 1 km, 20 au plus par passage
-    if (zoneSearching || typeof fetch === "undefined") return;
-    var todo = [];
-    pts.forEach(function (c) { var k = c[0].toFixed(2) + "," + c[1].toFixed(2); if (!zoneAsked.has(k) && todo.length < 20) { zoneAsked.add(k); todo.push(c); } });
-    if (!todo.length) return;
-    zoneSearching = true;
-    var chain = Promise.resolve(), added = 0;
-    todo.forEach(function (c) {
-      chain = chain.then(function () {
-        if (communeAt(c[0], c[1])) return;
-        return fetch(GEO_API + "/communes?lat=" + c[0].toFixed(5) + "&lon=" + c[1].toFixed(5) + "&fields=nom,code,codeDepartement,population,surface&format=geojson&geometry=contour")
-          .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-          .then(function (j) {
-            var f = j && j.features && j.features[0], g = zoneGeoFrom(f); if (!g) return;
-            var code = f.properties.code; zoneGeo.com.set(code, g);
-            if (!S.communes[code]) { S.communes[code] = communeStats(f.properties.nom, g.polys, f.properties); added++; }
-          }).catch(function () { /* hors France ou réseau : ignoré */ });
+    var cov = foot.cov, px = foot.px;
+    foot.v = { cx: view.cx, cy: view.cy, z: view.z, key: dispVer + "|" + dispCells.size, L: L, w: w, h: h };
+    cov.fill(0);
+    if (L) {
+      var k = worldScale(), kids = Math.pow(7, 11 - L.r), s = Math.sqrt(AREA_M2 * kids) / mpp, si = Math.max(1, Math.round(s));
+      var norm = s * s / (si * si) / kids, ox = W / 2 - view.cx * k - si / 2, oy = H / 2 - view.cy * k - si / 2;   // surface conservée malgré l’arrondi du carré
+      eachIn(L, si + 2, function (j) {
+        var x0 = Math.round(L.mx[j] * k + ox), y0 = Math.round(L.my[j] * k + oy), v = L.cnt[j] * norm;
+        var xa = Math.max(0, x0), xb = Math.min(w, x0 + si), yb = Math.min(h, y0 + si);
+        for (var y = Math.max(0, y0); y < yb; y++) for (var x = xa, p = y * w + xa; x < xb; x++, p++) cov[p] += v;
       });
-    });
-    chain.then(function () { zoneSearching = false; if (added) save(); zoneLit.key = ""; requestDraw(); });
+    }
+    var rgb = parseInt(PALE_YELLOW.slice(5, 7) + PALE_YELLOW.slice(3, 5) + PALE_YELLOW.slice(1, 3), 16);   // ordre des octets de l’image : rouge, vert, bleu, alpha
+    for (var p = 0; p < cov.length; p++) { var a = cov[p]; px[p] = a > 0 ? (Math.round(255 * (a >= 1 ? 1 : Math.max(FOOT_FLOOR, a))) << 24) | rgb : 0; }
+    fc.putImageData(foot.img, 0, 0);
   }
-  function zoneCells(kind, code, g, res) {   // hexagones du niveau affiché qui couvrent la zone (au moins un, même pour une petite commune)
-    var key = kind + code + "|" + res, hit = zoneCover.get(key);
-    if (hit) return hit;
-    var out = [];
-    g.polys.forEach(function (pl) { try { out = out.concat(h3.polygonToCells(pl, res, true)); } catch (e) { /* contour invalide : ignoré */ } });
-    if (!out.length) out = [h3.latLngToCell((g.bbox[1] + g.bbox[3]) / 2, (g.bbox[0] + g.bbox[2]) / 2, res)];
-    zoneCover.set(key, out);
-    return out;
+  function footReady(mpp) {   // image calée sur la vue : recalculée à l’arrêt, simplement déplacée pendant un geste
+    var v = foot.v, fresh = v && v.key === dispVer + "|" + dispCells.size && v.w === Math.round(W) && v.h === Math.round(H);
+    if (!fresh || (!moving && (v.cx !== view.cx || v.cy !== view.cy || v.z !== view.z || v.L !== footLevel(mpp)))) footPaint(mpp);
+    var sc = Math.pow(2, view.z - foot.v.z), k = worldScale();
+    return { s: sc, x: W / 2 - W / 2 * sc + (foot.v.cx - view.cx) * k, y: H / 2 - H / 2 * sc + (foot.v.cy - view.cy) * k };
   }
-  function zoneIds(ag) {
-    var lit = zoneVisited(), dept = ag.zone === "dept";
-    if (dept) loadDepts();
-    var key = lit.key + "|" + ag.res + "|" + ag.zone + "|" + (zoneGeo.dep ? 1 : 0);
-    if (zoneIdsCache.key !== key) {
-      var set = new Set(), add = function (c) { set.add(c); };
-      lit.com.forEach(function (code) {
-        var g = zoneGeo.com.get(code), dg = dept && zoneGeo.dep && zoneGeo.dep.get(String(g.dep || (S.communes[code] || {}).dep || ""));
-        if (!dg) zoneCells("c", code, g, ag.res).forEach(add);   // outre-mer ou départements pas encore chargés : la commune
+  function drawFoot(c, alpha, fp) {
+    c.save(); c.globalAlpha = alpha; c.imageSmoothingEnabled = fp.s !== 1;
+    c.drawImage(foot.cv, fp.x, fp.y, W * fp.s, H * fp.s);
+    c.restore();
+  }
+  /* hexagones dosés : opacité selon la part explorée de chaque hexagone, fondu entre deux niveaux */
+  function dosedLevels(mpp) {   // niveau dont l’arête fait au moins 7 px (hexagones d’environ 14 px) ; juste après un changement, fondu avec le niveau plus fin
+    var r = 10;
+    while (r > MIN_AGG_RES && EDGE_M[r] / mpp < 7) r--;
+    var u = Math.log(EDGE_M[r] / mpp / 7) / Math.log(EDGE_M[r] / EDGE_M[r + 1]), wf = smooth((u - 0.7) / 0.3);
+    return [{ r: r, w: 1 - wf }, { r: r + 1, w: wf }];
+  }
+  function drawDosed(c, mpp, alpha) {
+    dosedLevels(mpp).forEach(function (lv) {
+      var L = lv.w > 0 ? pyrLevel(lv.r) : null;
+      if (!L) return;
+      var kids = Math.pow(7, 11 - L.r), byQ = [];
+      eachIn(L, EDGE_M[L.r] / mpp * 2 + 4, function (j) {
+        var q = Math.max(3, Math.min(10, Math.round(10 * Math.sqrt(L.cnt[j] / kids))));   // racine : un hexagone à peine touché reste pâle mais visible
+        (byQ[q] || (byQ[q] = [])).push(L.id[j]);
       });
-      if (dept && zoneGeo.dep) lit.dep.forEach(function (d) { var dg = zoneGeo.dep.get(d); if (dg) zoneCells("d", d, dg, ag.res).forEach(add); });
-      lit.missing.forEach(function (c) { set.add(h3.latLngToCell(c[0], c[1], ag.res)); });   // contour pas encore connu : hexagones classiques en attendant
-      zoneIdsCache = { key: key, ids: Array.from(set) };
-    }
-    var tl = unproject(-20, -20), br = unproject(W + 20, H + 20), mg = EDGE_M[ag.res] / 111000 * 1.6 + 0.01;
-    return zoneIdsCache.ids.filter(function (id) {
-      var b = boundary(id), lat = b[0][0], lng = b[0][1];
-      return !(lat < br[0] - mg || lat > tl[0] + mg || lng < tl[1] - mg * 2 || lng > br[1] + mg * 2);
+      byQ.forEach(function (ids, q) { buildCellsPath(c, ids); c.globalAlpha = alpha * lv.w * q / 10; c.fill(); });
     });
+    c.globalAlpha = 1;
   }
-  function drawZones(ag, onImg, ids) {   // zone pleine, même teinte que la vue agrégée
-    if (!ids.length) return;
-    buildCellsPath(ctx, ids);
-    var far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.18 : 0.3, a1 = onImg ? 0.5 : 0.7;
-    ctx.globalAlpha = a0 + (a1 - a0) * far; ctx.fillStyle = PALE_YELLOW; ctx.fill();
-    if (EDGE_M[ag.res] / ag.mpp >= 10) {
-      buildCellsPath(ctx, ids);
-      ctx.globalAlpha = onImg ? 0.35 : 0.5; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
+  function farWeights(mpp) { var hw = smooth((Math.log(mpp / FOOT_MAX_MPP) / Math.log(1.3) + 1) / 2); return { foot: 1 - hw, hex: hw }; }   // passage progressif autour de FOOT_MAX_MPP (± 30 %)
+  function drawFar(ag, onImg) {
+    var w = farWeights(ag.mpp), far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.18 : 0.3, a1 = onImg ? 0.5 : 0.7;   // plus on dézoome, plus le jaune se renforce (toujours translucide)
+    var a = a0 + (a1 - a0) * far;
+    if (!onImg) a = Math.max(0.65, a);   // sans fond de carte, le jaune seul porte l’information
+    if (w.foot > 0) drawFoot(ctx, a * w.foot, footReady(ag.mpp));
+    if (w.hex > 0) { ctx.fillStyle = PALE_YELLOW; drawDosed(ctx, ag.mpp, a * w.hex); }
   }
+  function farMask(ag) {   // masque de l’imagerie en couleur : mêmes formes, opacité de la couverture
+    return function (c) {
+      var w = farWeights(ag.mpp);
+      if (w.foot > 0) drawFoot(c, w.foot, footReady(ag.mpp));
+      if (w.hex > 0) { c.fillStyle = "#000"; drawDosed(c, ag.mpp, w.hex); }
+    };
+  }
+  if (typeof caches !== "undefined") caches.delete("xplr-geo-v1").catch(function () {});   // contours des communes et départements de la v53, plus utilisés
   if (window.__TEST) window.__xplr = {   // point d’accès réservé aux tests automatiques
-    zone: function () { return aggInfo().zone || ""; },
-    lit: function () { var l = zoneVisited(); return { com: l.com.slice().sort(), dep: l.dep.slice().sort(), missing: l.missing.length }; },
-    zoneIds: function () { var ag = aggInfo(); return ag.zone ? zoneIds(ag).length : 0; },
+    mpp: function () { return aggInfo().mpp; },
+    view: function (lat, lng, z) { view.cx = mercX(lng); view.cy = mercY(lat); view.z = z; draw(); },
+    levels: function () { return Object.keys(pyr.lv).length; },
     setPeriod: function (p) { var b = document.querySelector('#mapbar [data-per="' + p + '"]'); if (b) b.click(); },
     drawMs: function () { var t = performance.now(); draw(); return performance.now() - t; },
-    cover: function (kind, code, res) { var g = kind === "d" ? zoneGeo.dep && zoneGeo.dep.get(code) : zoneGeo.com.get(code); return g ? { cells: zoneCells(kind, code, g, res).length, bbox: g.bbox, polys: g.polys.length } : null; },
   };
   function lmFor(keys) { var out = []; keys.forEach(function (k) { (lmCache.get(k) || []).forEach(function (l) { out.push(l); }); }); return out; }
   function trackDist(lines, lat, lng) {
