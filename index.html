@@ -914,7 +914,7 @@ body.sheet-open #cellcard { display: none; }
   function stravaConnect() {
     if (!stravaReady()) { toast("Renseigne d’abord l’identifiant client Strava et l’adresse du relais."); return; }
     save();
-    location.href = "https://www.strava.com/oauth/authorize?client_id=" + encodeURIComponent(S.strava.clientId) + "&response_type=code&approval_prompt=auto&scope=" +
+    location.href = "https://www.strava.com/oauth/authorize?client_id=" + encodeURIComponent(S.strava.clientId) + "&response_type=code&approval_prompt=force&scope=" +
       encodeURIComponent("read,activity:read_all") + "&redirect_uri=" + encodeURIComponent(location.origin + location.pathname) + "&state=hexplore";
   }
   function stravaReturn() {   // retour de l’autorisation Strava : l’adresse contient ?code=…
@@ -1529,6 +1529,7 @@ body.sheet-open #cellcard { display: none; }
     } else {
       h += '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
         '<div class="drawer-sec"><button class="stravaimg" id="stvconnect" aria-label="Se connecter avec Strava"><img src="strava-connect.svg" alt="Connect with Strava" width="237" height="48"></button></div>' +
+        '<p class="note"><b>Pas le bon compte Strava ?</b> Strava reprend le compte déjà ouvert sur ce téléphone. Déconnecte-toi d’abord sur strava.com (dans le navigateur) ou dans l’appli Strava, puis touche à nouveau « Connect with Strava ».</p>' +
         '<details class="advanced"><summary>Paramètres techniques (déjà renseignés)</summary>' +
         '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
         '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://….workers.dev" autocomplete="off"></div></details>';
@@ -1545,7 +1546,15 @@ body.sheet-open #cellcard { display: none; }
     var bf = $("stvbf"); if (bf) bf.addEventListener("click", function () { stravaSync({ manual: true, backfillDays: +$("stvbfd").value }); });
     var bc = $("stvbfc"); if (bc) bc.addEventListener("click", function () { stravaSync({ manual: true, backfillContinue: true }); });
     var sy = $("stvsync"); if (sy) sy.addEventListener("click", function () { stravaSync({ manual: true }); });
-    var dc = $("stvdisc"); if (dc) dc.addEventListener("click", function () { S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; save(); render(); toast("Strava déconnecté."); });
+    var dc = $("stvdisc"); if (dc) dc.addEventListener("click", function () {
+      dc.disabled = true;
+      Promise.race([ensureToken().then(function (tok) {   // retire l’autorisation chez Strava : la prochaine connexion repasse par l’écran de choix
+        return fetch("https://www.strava.com/oauth/deauthorize", { method: "POST", mode: "no-cors", body: new URLSearchParams({ access_token: tok }) });
+      }), new Promise(function (res) { setTimeout(res, 4000); })]).catch(function () { /* hors ligne ou jeton expiré : on déconnecte quand même l’appli */ }).then(function () {
+        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0;   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
+        save(); render(); toast("Strava déconnecté. Pour changer de compte, déconnecte-toi aussi du site ou de l’appli Strava avant de te reconnecter.");
+      });
+    });
   }
   function sortedActs() {
     return S.activities.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : a.id - b.id; });
@@ -2557,7 +2566,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v81";
+  var BUILD = "30/10/2026 · v82";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
