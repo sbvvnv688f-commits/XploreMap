@@ -2550,7 +2550,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v77";
+  var BUILD = "30/10/2026 · v78";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3523,6 +3523,7 @@ body.sheet-open #cellcard { display: none; }
   /* ================= fenêtres ================= */
   var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
   function openTab(k) {
+    if (selected !== null) { selected = null; cellPickedSel = false; requestDraw(); }   // trace affichée : effacée dès qu’on change de menu
     if (current === k) { closeSheet(); return; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
