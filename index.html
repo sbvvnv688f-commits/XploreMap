@@ -15,29 +15,32 @@
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #bfe6ff; --panel: #ffffff; --paper: #fff8e6; --ink: #2b1f4a; --muted: #6a5f8a; --line: #2b1f4a;
-  --outline: #2b1f4a; --on-accent: #2b1f4a;
-  --cell: #2fcf7e; --cell-edge: #178a52; --track: #2b1f4a; --accent: #ffc933; --contour: #a5d3f3;
-  --pink: #ff5d8f; --blue: #4aa8ff; --danger: #e0283f;
-  --k1: #d3f7e4; --k2: #fff0b0; --k3: #ffd6e3; --k4: #d3e9ff;
+  --bg: #bfe6ff; --panel: #ffffff; --paper: #fffbea; --ink: #0b0529; --muted: #5c5480; --line: #0b0529;
+  --outline: #0b0529; --on-accent: #0b0529;
+  --cell: #ffd70b; --cell-edge: #178a52; --track: #2b1f4a; --accent: #ffd70b; --contour: #a5d3f3;
+  --pink: #a46dff; --blue: #a46dff; --danger: #e0283f;
+  --k1: #fff3b8; --k2: #efe5ff; --k3: #ffe58a; --k4: #e6dcff;
   --nav: 68px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #1b1330; --panel: #2d2147; --paper: #3a2c5c; --ink: #fff3d6; --muted: #b9acd9; --line: #0e0820;
-    --outline: #0e0820; --contour: #2c2150; --cell: #35e08d; --cell-edge: #8bf2bd; --track: #fff3d6;
-    --pink: #ff6f9c; --danger: #ff8090;
-    --k1: #14513a; --k2: #5a4a12; --k3: #5a1f38; --k4: #17426b;
+    --bg: #1b1330; --panel: #1d1442; --paper: #140d36; --ink: #fff6d1; --muted: #c3b8ea; --line: #05021a;
+    --outline: #05021a; --contour: #2c2150; --cell: #ffd70b; --cell-edge: #8bf2bd; --track: #fff3d6;
+    --pink: #a46dff; --danger: #ff8090;
+    --k1: #4a3d08; --k2: #2f2160; --k3: #5c4a0a; --k4: #33246b;
+    --on-accent: #0b0529;
+    --accent: #ffd70b;
+    --blue: #a46dff;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #1b1330; --panel: #2d2147; --paper: #3a2c5c; --ink: #fff3d6; --muted: #b9acd9; --line: #0e0820;
-  --outline: #0e0820; --contour: #2c2150; --cell: #35e08d; --cell-edge: #8bf2bd; --track: #fff3d6;
-  --pink: #ff6f9c; --danger: #ff8090;
-  --k1: #14513a; --k2: #5a4a12; --k3: #5a1f38; --k4: #17426b;
-}
+  --bg: #1b1330; --panel: #1d1442; --paper: #140d36; --ink: #fff6d1; --muted: #c3b8ea; --line: #05021a;
+  --outline: #05021a; --contour: #2c2150; --cell: #ffd70b; --cell-edge: #8bf2bd; --track: #fff3d6;
+  --pink: #a46dff; --danger: #ff8090;
+  --k1: #4a3d08; --k2: #2f2160; --k3: #5c4a0a; --k4: #33246b;
+ --on-accent: #0b0529; --accent: #ffd70b; --blue: #a46dff;}
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
@@ -2348,7 +2351,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v61";
+  var BUILD = "30/10/2026 · v62";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
