@@ -2367,9 +2367,9 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v66";
+  var BUILD = "30/10/2026 · v67";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
-  var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
+  var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
     if (!force) {   // hystérésis : le rendu fin se prolonge de 6 % au-delà du seuil quand on dézoome (pas de va-et-vient), mais il apparaît exactement au seuil quand on zoome
@@ -2482,16 +2482,19 @@ body.sheet-open #cellcard { display: none; }
     var u = Math.log(EDGE_M[r] / mpp / 7) / Math.log(EDGE_M[r] / EDGE_M[r + 1]), wf = smooth((u - 0.7) / 0.3);
     return [{ r: r, w: 1 - wf }, { r: r + 1, w: wf }];
   }
-  function drawDosed(c, mpp, alpha) {
+  function drawDosed(c, mpp, alpha, edge) {   // edge : couleur d’un fin contour qui détache les hexagones du fond (absent pour le masque de l’imagerie)
     dosedLevels(mpp).forEach(function (lv) {
       var L = lv.w > 0 ? pyrLevel(lv.r) : null;
       if (!L) return;
       var kids = Math.pow(7, 11 - L.r), byQ = [];
       eachIn(L, EDGE_M[L.r] / mpp * 2 + 4, function (j) {
-        var q = Math.max(3, Math.min(10, Math.round(10 * Math.sqrt(L.cnt[j] / kids))));   // racine : un hexagone à peine touché reste pâle mais visible
+        var q = Math.max(5, Math.min(10, Math.round(10 * Math.sqrt(L.cnt[j] / kids))));   // racine : un hexagone à peine touché reste plus clair, mais bien visible
         (byQ[q] || (byQ[q] = [])).push(L.id[j]);
       });
-      byQ.forEach(function (ids, q) { var P = buildCellsPath(c, ids); c.globalAlpha = alpha * lv.w * q / 10; c.fill(P); });
+      byQ.forEach(function (ids, q) {
+        var P = buildCellsPath(c, ids); c.globalAlpha = alpha * lv.w * q / 10; c.fill(P);
+        if (edge) { c.globalAlpha = 0.55 * lv.w; c.strokeStyle = edge; c.lineWidth = 1; c.stroke(P); }
+      });
     });
     c.globalAlpha = 1;
   }
@@ -2500,12 +2503,12 @@ body.sheet-open #cellcard { display: none; }
     return { fin: fin, foot: (1 - fin) * (1 - hw), hex: (1 - fin) * hw };
   }
   function drawFar(ag, onImg) {
-    var w = farWeights(ag.mpp), far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.18 : 0.3, a1 = onImg ? 0.5 : 0.7;   // plus on dézoome, plus le jaune se renforce (toujours translucide)
+    var w = farWeights(ag.mpp), far = Math.max(0, Math.min(1, Math.log(ag.mpp / FINE_MAX_MPP) / Math.log(64))), a0 = onImg ? 0.4 : 0.45, a1 = onImg ? 0.85 : 0.9;   // plus on dézoome, plus le jaune se renforce (v67 : nettement plus soutenu, il restait trop pâle sur le relief)
     var a = a0 + (a1 - a0) * far;
-    if (!onImg) a = Math.max(0.65, a);   // sans fond de carte, le jaune seul porte l’information
+    if (!onImg) a = Math.max(0.75, a);   // sans fond de carte, le jaune seul porte l’information
     if (w.fin > 0 && fillOn()) drawFoot(ctx, 0.5 * w.fin, footF, ag.mpp);   // comme fillCells ; avec imagerie, seul le masque en couleur agit, comme dans le rendu fin
     if (w.foot > 0) drawFoot(ctx, a * w.foot, footD, ag.mpp);
-    if (w.hex > 0) { ctx.fillStyle = PALE_YELLOW; drawDosed(ctx, ag.mpp, a * w.hex); }
+    if (w.hex > 0) { ctx.fillStyle = PALE_YELLOW; drawDosed(ctx, ag.mpp, a * w.hex, css("--outline")); }
   }
   function farMask(ag) {   // masque de l’imagerie en couleur : mêmes formes, opacité de la couverture
     return function (c) {
