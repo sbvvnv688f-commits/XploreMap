@@ -1737,6 +1737,8 @@ body.sheet-open #cellcard { display: none; }
   }
   function lmKind(t) {
     var h = t.historic;
+    if (t.amenity === "place_of_worship" || /chapel|church|cathedral|basilica/.test(t.building || "") || /chapel|church/.test(h || "")) return ["Édifice religieux", "⛪"];
+    if (t.man_made === "lighthouse") return ["Phare", "🗼"];
     if (h) {
       if (/castle|fort|manor|city_gate|tower/.test(h)) return ["Château ou fort", "🏰"];
       if (/ruins/.test(h)) return ["Ruines", "🏛️"];
@@ -1834,6 +1836,11 @@ body.sheet-open #cellcard { display: none; }
     if (/\b(belvédère|point de vue|table d.orientation)\b/.test(both)) return { t: "lm", kind: "Belvédère", ic: "🔭" };
     if (/\b(monument|mémorial|statue|stèle|calvaire|obélisque)\b/.test(both)) return { t: "lm", kind: "Monument", ic: "🗿" };
     if (/\b(abbaye|prieuré|ermitage|chartreuse)\b/.test(both)) return { t: "lm", kind: "Site historique", ic: "🏛️" };
+    if (/(^|[\s'’(-])(chapelle|église|eglise|basilique|cathédrale|collégiale|sanctuaire|oratoire)\b/.test(both)) return { t: "lm", kind: "Édifice religieux", ic: "⛪" };
+    if (/(^|[\s'’(-])(phare|sémaphore)\b/.test(both)) return { t: "lm", kind: "Phare", ic: "🗼" };
+    if (/^(le |la |les |l')?(moulin|tour)\b/.test(t)) return { t: "lm", kind: "Site historique", ic: "🏛️" };
+    if (/^(le |la |les |l')?(pont|viaduc|aqueduc)\b/.test(t)) return { t: "lm", kind: "Pont", ic: "🌉" };
+    if (/^(la |le |les |l')?(croix|fontaine|lavoir)\b/.test(t)) return { t: "lm", kind: "Monument", ic: "🗿" };
     return null;
   }
   function wpTile(k, deadline) {   // articles géolocalisés d’une zone de 0,1°, classés ; résultat mémorisé
@@ -1872,6 +1879,52 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     return chain.then(function () { poiViaWiki = true; });
+  }
+  /* ===== Seconde source de secours : Wikidata (monuments historiques, chapelles, calvaires, phares…), interrogée par zone de 0,1° ===== */
+  var WD_SPARQL = window.__WD || "https://query.wikidata.org/sparql", wdCache = new Map();
+  var WD_KINDS = {
+    Q108325: ["Édifice religieux", "⛪"], Q16970: ["Édifice religieux", "⛪"], Q2977: ["Édifice religieux", "⛪"], Q163687: ["Édifice religieux", "⛪"],
+    Q160742: ["Site historique", "🏛️"], Q44613: ["Site historique", "🏛️"], Q12518: ["Site historique", "🏛️"], Q38720: ["Site historique", "🏛️"], Q185187: ["Site historique", "🏛️"],
+    Q39715: ["Phare", "🗼"], Q23413: ["Château ou fort", "🏰"], Q751876: ["Château ou fort", "🏰"], Q57821: ["Château ou fort", "🏰"], Q109607: ["Ruines", "🏛️"],
+    Q839954: ["Site archéologique", "🏺"], Q101659: ["Site archéologique", "🏺"], Q193475: ["Site archéologique", "🏺"], Q34038: ["Cascade", "💧"], Q35509: ["Grotte", "🕳️"],
+    Q4989906: ["Monument", "🗿"], Q575759: ["Monument", "🗿"], Q2309609: ["Monument", "🗿"], Q371752: ["Monument", "🗿"], Q6017969: ["Belvédère", "🔭"]
+  };
+  function wdTile(k, deadline) {   // éléments géolocalisés d’une zone : classes ci-dessus, ou tout élément protégé (monument historique…)
+    if (wdCache.has(k)) return wdCache.get(k);
+    var pp = k.split("_"), la = +pp[0] * 0.1, lo = +pp[1] * 0.1;
+    var q = 'SELECT ?i ?l ?c ?cls ?h WHERE { SERVICE wikibase:box { ?i wdt:P625 ?c. bd:serviceParam wikibase:cornerSouthWest "Point(' + (lo - 0.001).toFixed(4) + ' ' + (la - 0.001).toFixed(4) + ')"^^geo:wktLiteral. bd:serviceParam wikibase:cornerNorthEast "Point(' + (lo + 0.101).toFixed(4) + ' ' + (la + 0.101).toFixed(4) + ')"^^geo:wktLiteral. } ' +
+      '{ ?i wdt:P31 ?cls. VALUES ?cls { ' + Object.keys(WD_KINDS).map(function (c) { return "wd:" + c; }).join(" ") + ' } } UNION { ?i wdt:P1435 ?h. } ?i rdfs:label ?l. FILTER(lang(?l) = "fr") } LIMIT 4000';
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null, to = ctl ? setTimeout(function () { ctl.abort(); }, Math.max(5000, Math.min(40000, (deadline || Infinity) - Date.now()))) : 0;
+    var p = fetch(WD_SPARQL + "?format=json&query=" + encodeURIComponent(q), { headers: { Accept: "application/sparql-results+json" }, signal: ctl ? ctl.signal : undefined }).then(function (r) {
+      clearTimeout(to); if (!r.ok) throw new Error("HTTP " + r.status); return r.json();
+    }).then(function (j) {
+      var by = {};
+      ((j && j.results && j.results.bindings) || []).forEach(function (b) {
+        var id = b.i.value.split("/").pop(), m = /Point\(([-\d.]+) ([-\d.]+)\)/.exec(b.c.value); if (!m) return;
+        var e = by[id] || (by[id] = { id: id, name: b.l.value, lat: +m[2], lon: +m[1], kd: null, heritage: false });
+        var c = b.cls && b.cls.value.split("/").pop(); if (c && WD_KINDS[c] && !e.kd) e.kd = WD_KINDS[c];
+        if (b.h) e.heritage = true;
+      });
+      return Object.keys(by).map(function (id) {
+        var e = by[id], kd = e.kd || (function () { var c = wpClass(e.name, "", ""); return c && c.t === "lm" ? [c.kind, c.ic] : ["Monument historique", "🏛️"]; })();
+        return { id: "wd" + id, name: e.name, lat: e.lat, lon: e.lon, kind: kd[0], ic: kd[1], wd: id };
+      });
+    }, function (e) { clearTimeout(to); throw e; });
+    wdCache.set(k, p); p.catch(function () { wdCache.delete(k); });
+    return p;
+  }
+  function wdFill(need, deadline) {   // complète les zones déjà remplies par Wikipédia (marque « wp » : données incomplètes)
+    var chain = Promise.resolve();
+    need.forEach(function (k) {
+      chain = chain.then(function () { return wdTile(k, deadline); }).then(function (items) {
+        items.forEach(function (it) {
+          var arr = lmCache.get(tileOf([it.lat, it.lon]));
+          if (!arr || arr.src !== "wp" || arr.some(function (x) { return x.id === it.id || (x.wd && x.wd === it.wd); })) return;
+          arr.push({ id: it.id, name: it.name, lat: it.lat, lng: it.lon, kind: it.kind, ic: it.ic, wp: "", wd: it.wd });
+        });
+      }, function () { /* Wikidata indisponible : Wikipédia seul */ });
+    });
+    return chain;
   }
   function fetchBatch(need, deadline) {   // sommets nommés : requête très légère
     var q = need.map(function (k) { return 'node["natural"="peak"]["name"]' + tileBB(k); }).join("");
@@ -1914,7 +1967,7 @@ body.sheet-open #cellcard { display: none; }
           var got = [], c2 = Promise.resolve();
           subBBs(k).forEach(function (bb) { c2 = c2.then(function () { return lmRun(bb, deadline).then(function (j) { got.push(j); }); }); });
           return c2.then(function () { lmCache.set(k, []); got.forEach(ingestLm); });
-        }).catch(function (e) { return wpFill([k], lmCache, "lm", Date.now() + 120000).catch(function () { throw e; }); });
+        }).catch(function (e) { var dl = Date.now() + 120000; return wpFill([k], lmCache, "lm", dl).catch(function () { throw e; }).then(function () { return wdFill([k], dl); }); });
       });
     });
     return chain;
@@ -2274,7 +2327,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v58";
+  var BUILD = "30/10/2026 · v59";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3049,7 +3102,7 @@ body.sheet-open #cellcard { display: none; }
   }
   /* Fusion des sommets et lieux : une découverte n’est jamais perdue (ni par un recalcul avec des données incomplètes, ni par un import) */
   function poiNameKey(n) { return String(n || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim(); }
-  function isWikiPoi(p) { return /^wp\d/.test(String(p.id)); }   // « wp » + n° d’article ; les identifiants OpenStreetMap des lieux commencent par n, w ou r suivi d’un nombre
+  function isWikiPoi(p) { return /^(wp\d|wdQ)/.test(String(p.id)); }   // « wp » + n° d’article ou « wd » + élément Wikidata ; les identifiants OpenStreetMap des lieux commencent par n, w ou r suivi d’un nombre
   function samePoi(x, y) {
     if (x.id === y.id) return true;
     if (haversine([x.lat, x.lng], [y.lat, y.lng]) > 400) return false;
@@ -3062,13 +3115,13 @@ body.sheet-open #cellcard { display: none; }
       var k = -1, i;
       for (i = 0; i < out.length; i++) if (samePoi(o, out[i])) { k = i; break; }
       if (k >= 0) { if (!isWikiPoi(o) && isWikiPoi(out[k])) out[k] = o; return; }   // même lieu : on garde la fiche OpenStreetMap (altitude connue)
-      if (partial || isWikiPoi(o)) out.push(o);   // données incomplètes : rien n’est retiré ; données complètes : seules les entrées Wikipédia restent
+      out.push(o);   // acquis : jamais retiré par une nouvelle analyse (seule la suppression de la sortie le retire)
     });
     return out;
   }
   function applyPois(a, r) {
     if (!r.smErr) { a.summits = mergePois(a.summits, r.sm, r.smPartial); a.sumDone = true; }
-    if (!r.lmErr) { a.landmarks = mergePois(a.landmarks, r.lm, r.lmPartial); a.lmDone = true; }
+    if (!r.lmErr) { a.landmarks = mergePois(a.landmarks, r.lm, r.lmPartial); a.lmDone = true; a.lmV = 3; }
     if (!r.smErr && !r.lmErr) { a.poiV = 2; delete a.poiErr; if (r.smPartial || r.lmPartial) a.poiPartial = true; else delete a.poiPartial; }
     else a.poiErr = (r.smErr ? "sommets : " : "lieux : ") + friendlyErr(r.smErr || r.lmErr);
   }
@@ -3080,7 +3133,7 @@ body.sheet-open #cellcard { display: none; }
       }, function (e) { a.poiErr = friendlyErr(e); return { ok: false, ns: 0, nl: 0 }; });
     } catch (e) { a.poiErr = (e && e.message) || "données invalides"; return Promise.resolve({ ok: false, ns: 0, nl: 0 }); }
   }
-  function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2 || (a.poiPartial && !(OVP_DOWN_MS && Date.now() < ovpDownUntil))) && !scanningSet.has(a); }); }   // une analyse faite avec la source de secours est refaite dès qu’OpenStreetMap répond
+  function pendingAnalysis() { return S.activities.filter(function (a) { return (!a.sumDone || !a.lmDone || a.poiV !== 2 || (a.poiPartial && !(OVP_DOWN_MS && Date.now() < ovpDownUntil)) || (a.poiPartial && a.lmV !== 3)) && !scanningSet.has(a); }); }   // une analyse faite avec la source de secours est refaite dès qu’OpenStreetMap répond, et une fois avec Wikidata et les catégories de la v59
   function poiFailText() {
     var f = S.activities.filter(function (a) { return a.poiErr && pendingAnalysis().indexOf(a) >= 0; });
     return f.length ? " · " + f.length + " en échec (" + esc(f[0].poiErr) + ")" : "";
