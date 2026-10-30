@@ -1634,18 +1634,30 @@ body.sheet-open #cellcard { display: none; }
     return null;
   }
   /* eau : rivières, lacs et fleuves repérés par la couleur de l’eau du plan OpenStreetMap, repeints en bleu léger sur le relief */
-  var WATER_KEY = [170, 211, 223], WATER_TOL = 14, WATER_RGB = [96, 160, 214], WATER_ALPHA = 0.55, WATER_MAXZ = 17, WATER_CLOSE = 5, waterCache = new Map();
-  function boxMax(m, w, h, r, out) {   // maximum glissant sur un carré de côté 2r+1 (en deux passes) ; sert à dilater puis, sur le complément, à éroder
-    var tmp = new Uint8Array(m.length), x, y, i, run;
-    for (y = 0; y < h; y++) { var row = y * w; for (x = 0; x < w; x++) { run = 0; for (i = Math.max(0, x - r); i <= Math.min(w - 1, x + r); i++) if (m[row + i]) { run = 1; break; } tmp[row + x] = run; } }
-    for (x = 0; x < w; x++) for (y = 0; y < h; y++) { run = 0; for (i = Math.max(0, y - r); i <= Math.min(h - 1, y + r); i++) if (tmp[i * w + x]) { run = 1; break; } out[y * w + x] = run; }
-    return out;
-  }
-  function closeMask(m, w, h, r) {   // fermeture : comble les trous et traits plus étroits que 2r (lettres, lignes pointillées) sans grossir l’eau
-    var dil = boxMax(m, w, h, r, new Uint8Array(m.length)), inv = new Uint8Array(m.length), i;
-    for (i = 0; i < m.length; i++) inv[i] = dil[i] ? 0 : 1;
-    var grow = boxMax(inv, w, h, r, new Uint8Array(m.length));
-    for (i = 0; i < m.length; i++) m[i] = grow[i] ? 0 : 1;
+  var WATER_KEY = [170, 211, 223], WATER_TOL = 14, WATER_RGB = [96, 160, 214], WATER_ALPHA = 0.55, WATER_MAXZ = 17, WATER_HOLE = 3000, waterCache = new Map();
+  function fillHoles(m, w, h, maxSize) {   // comble les petites taches non bleues entièrement entourées d’eau (noms, pointillés) ; le reste ne bouge pas
+    var seen = new Uint8Array(m.length), stack = new Int32Array(m.length), comp = new Int32Array(m.length), i;
+    for (i = 0; i < m.length; i++) {
+      if (m[i] || seen[i]) continue;
+      var top = 0, n = 0, border = false;
+      stack[top++] = i; seen[i] = 1;
+      while (top) {
+        var p = stack[--top], x = p % w, y = (p - x) / w;
+        comp[n++] = p;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) border = true;   // touche le bord de la tuile : peut-être de la terre qui continue
+        if (x > 0 && !m[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack[top++] = p - 1; }
+        if (x < w - 1 && !m[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack[top++] = p + 1; }
+        if (y > 0 && !m[p - w] && !seen[p - w]) { seen[p - w] = 1; stack[top++] = p - w; }
+        if (y < h - 1 && !m[p + w] && !seen[p + w]) { seen[p + w] = 1; stack[top++] = p + w; }
+      }
+      var thin = n <= maxSize * 2;   // tache fine (texte, pointillés : traits de moins de 9 px) : comblée même si elle touche le bord ou la rive
+      for (var c2 = 0; thin && c2 < n; c2++) {
+        var q = comp[c2], qx = q % w, qy = (q - qx) / w, core = qx >= 4 && qy >= 4 && qx < w - 4 && qy < h - 4;
+        if (core) for (var dy = -4; dy <= 4 && core; dy += 4) for (var dx = -4; dx <= 4; dx += 4) if (m[q + dy * w + dx]) { core = false; break; }
+        if (core) thin = false;   // au moins un point à 4 px de toute eau : vraie terre
+      }
+      if ((!border && n <= maxSize) || thin) for (var j = 0; j < n; j++) m[comp[j]] = 1;
+    }
     return m;
   }
   function waterTile(z, x, y) {
@@ -1662,7 +1674,7 @@ body.sheet-open #cellcard { display: none; }
         for (p = 0, q = 0; p < px.length; p += 4, q++) {
           if (Math.abs(px[p] - WATER_KEY[0]) <= WATER_TOL && Math.abs(px[p + 1] - WATER_KEY[1]) <= WATER_TOL && Math.abs(px[p + 2] - WATER_KEY[2]) <= WATER_TOL) { m[q] = 1; any = true; }
         }
-        if (any) closeMask(m, c.width, c.height, WATER_CLOSE);   // noms et lignes dessinés sur l’eau : comblés
+        if (any) fillHoles(m, c.width, c.height, WATER_HOLE);   // noms et lignes dessinés sur l’eau : comblés
         for (p = 0, q = 0; p < px.length; p += 4, q++) {
           if (m[q]) { px[p] = WATER_RGB[0]; px[p + 1] = WATER_RGB[1]; px[p + 2] = WATER_RGB[2]; px[p + 3] = 255; } else px[p + 3] = 0;
         }
@@ -2474,7 +2486,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v73";
+  var BUILD = "30/10/2026 · v74";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
