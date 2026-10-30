@@ -52,7 +52,7 @@ button { cursor: pointer; }
 /* ---- carte ---- */
 #map { position: fixed; inset: 0; }
 #map canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#bgGray { filter: grayscale(1) contrast(0.6) brightness(1.2); opacity: 0.34; pointer-events: none; }
+#bgGray { filter: grayscale(1) contrast(0.45) brightness(1.55); opacity: 0.3; pointer-events: none; }
 #bgColor { pointer-events: none; }
 #cv { touch-action: none; cursor: grab; }
 #cv:active { cursor: grabbing; }
@@ -2274,7 +2274,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v57";
+  var BUILD = "30/10/2026 · v58";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3123,8 +3123,8 @@ body.sheet-open #cellcard { display: none; }
       g.fillStyle = css("--panel"); g.fillRect(mx, my, ms, ms);
       g.save(); g.beginPath(); g.rect(mx, my, ms, ms); g.clip();
       if (withTiles) {
-        try { g.filter = "grayscale(1) contrast(0.6) brightness(1.2)"; } catch (e) { /* filtre indisponible */ }
-        g.globalAlpha = 0.34; g.drawImage(gray, sx, sy, side, side, mx, my, ms, ms);
+        try { g.filter = "grayscale(1) contrast(0.45) brightness(1.55)"; } catch (e) { /* filtre indisponible */ }
+        g.globalAlpha = 0.3; g.drawImage(gray, sx, sy, side, side, mx, my, ms, ms);
         g.filter = "none"; g.globalAlpha = 1;
         g.drawImage(color, sx, sy, side, side, mx, my, ms, ms);
       }
