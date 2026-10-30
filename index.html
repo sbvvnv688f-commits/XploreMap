@@ -59,9 +59,9 @@ button { cursor: pointer; }
 /* ---- carte ---- */
 #map { position: fixed; inset: 0; }
 #map canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#bgGray { filter: grayscale(1) contrast(0.6) brightness(1.25); opacity: 0.42; pointer-events: none; }   /* thème clair : zones non explorées un peu plus marquées (v68) */
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #bgGray { filter: grayscale(1) contrast(0.45) brightness(1.55); opacity: 0.3; } }
-:root[data-theme="dark"] #bgGray { filter: grayscale(1) contrast(0.45) brightness(1.55); opacity: 0.3; }
+#bgGray { filter: contrast(1.3) brightness(0.86); opacity: 1; pointer-events: none; }   /* relief ombré teinté des zones non explorées (v70) : plus de contraste, clairs assombris */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #bgGray { filter: contrast(1.25) brightness(0.62); } }
+:root[data-theme="dark"] #bgGray { filter: contrast(1.25) brightness(0.62); }
 #bgColor { pointer-events: none; }
 #cv { touch-action: none; cursor: grab; }
 #cv:active { cursor: grabbing; }
@@ -506,7 +506,7 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= état ================= */
   var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
-  var S = { name: "", city: "", dept: "", owner: "", home: null, rankOptOut: false, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, theme: "light", strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", owner: "", home: null, rankOptOut: false, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "esri", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, theme: "light", strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", sportF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -1602,13 +1602,60 @@ body.sheet-open #cellcard { display: none; }
     return im;
   }
   function boundary(c) { var b = boundaryCache.get(c); if (!b) { b = h3.cellToBoundary(c, false); boundaryCache.set(c, b); } return b; }
+  /* teinte d’altitude : tuiles d’altitude libres (AWS Terrarium), colorées ici puis fondues légèrement sur le relief ombré */
+  var DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/", DEM_MAXZ = 12, TINT_ALPHA = 0.3, tintCache = new Map();
+  var HYPSO = [[0, [30, 122, 30]], [100, [61, 154, 35]], [200, [108, 181, 45]], [400, [166, 209, 74]], [500, [217, 232, 122]], [650, [242, 224, 138]], [800, [232, 185, 96]],
+    [1000, [210, 154, 79]], [1250, [185, 124, 63]], [1500, [154, 98, 53]], [2000, [107, 68, 38]], [2300, [62, 38, 20]]];
+  function hypso(e) {
+    if (e <= HYPSO[0][0]) return HYPSO[0][1];
+    for (var i = 1; i < HYPSO.length; i++) if (e <= HYPSO[i][0]) { var a = HYPSO[i - 1], b = HYPSO[i], t = (e - a[0]) / (b[0] - a[0]); return [a[1][0] + (b[1][0] - a[1][0]) * t, a[1][1] + (b[1][1] - a[1][1]) * t, a[1][2] + (b[1][2] - a[1][2]) * t]; }
+    return HYPSO[HYPSO.length - 1][1];
+  }
+  function tintTile(z, x, y) {   // une toile colorée par tuile, calculée une fois ; la mer reste transparente
+    var key = z + "/" + x + "/" + y, t = tintCache.get(key);
+    if (t) return t.cv;
+    t = { cv: null }; tintCache.set(key, t);
+    if (tintCache.size > 400) { var it = tintCache.keys(); for (var i = 0; i < 100; i++) tintCache.delete(it.next().value); }
+    var im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = function () {
+      try {
+        var c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+        var g = c.getContext("2d"); g.drawImage(im, 0, 0);
+        var d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+        for (var p = 0; p < px.length; p += 4) {
+          var e = px[p] * 256 + px[p + 1] + px[p + 2] / 256 - 32768;
+          if (e <= 0.5) { px[p + 3] = 0; continue; }
+          var col = hypso(e); px[p] = col[0]; px[p + 1] = col[1]; px[p + 2] = col[2]; px[p + 3] = 255;
+        }
+        g.putImageData(d, 0, 0); t.cv = c; requestDraw();
+      } catch (err) { /* tuile illisible : pas de teinte ici */ }
+    };
+    im.src = DEM_URL + z + "/" + x + "/" + y + ".png";
+    return null;
+  }
   function drawTiles(vis) {
     gctx.setTransform(dpr, 0, 0, dpr, 0, 0); gctx.clearRect(0, 0, W, H);
     cctx.setTransform(dpr, 0, 0, dpr, 0, 0); cctx.clearRect(0, 0, W, H);
-    var src = SOURCES[S.basemap], at = $("attr");
-    at.textContent = src ? src.attr : ""; at.style.display = src ? "" : "none";
-    if (!src) return false;
-    var k = worldScale(), tz = Math.max(1, Math.min(src.maxZ, Math.round(view.z))), n = Math.pow(2, tz), size = k / n;
+    var src = SOURCES[S.basemap], at = $("attr"), k = worldScale(), rel = SOURCES.relief;
+    at.textContent = (src && src !== rel ? src.attr + " · " : "") + rel.attr; at.style.display = "";
+    var tr = Math.max(1, Math.min(rel.maxZ, Math.round(view.z))), nr = Math.pow(2, tr), sr = k / nr;   // zones non explorées : toujours le relief ombré, quel que soit le fond choisi (même « Aucun fond »)
+    var rx0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * nr)), rx1 = Math.min(nr - 1, Math.floor((view.cx + W / 2 / k) * nr)), ry0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * nr)), ry1 = Math.min(nr - 1, Math.floor((view.cy + H / 2 / k) * nr));
+    for (var rx = rx0; rx <= rx1; rx++) for (var ry = ry0; ry <= ry1; ry++) {
+      var ir = getTile(rel, tr, rx, ry);
+      if (ir.complete && ir.naturalWidth) gctx.drawImage(ir, Math.floor((rx / nr - view.cx) * k + W / 2), Math.floor((ry / nr - view.cy) * k + H / 2), Math.ceil(sr) + 1, Math.ceil(sr) + 1);
+    }
+    var td = Math.max(1, Math.min(DEM_MAXZ, Math.round(view.z))), nd = Math.pow(2, td);   // teinte d’altitude, fondue en « produit » sur le relief
+    gctx.save(); gctx.globalAlpha = TINT_ALPHA; gctx.globalCompositeOperation = "multiply";
+    for (var dx = Math.max(0, Math.floor((view.cx - W / 2 / k) * nd)); dx <= Math.min(nd - 1, Math.floor((view.cx + W / 2 / k) * nd)); dx++)
+      for (var dy = Math.max(0, Math.floor((view.cy - H / 2 / k) * nd)); dy <= Math.min(nd - 1, Math.floor((view.cy + H / 2 / k) * nd)); dy++) {
+        var tc = tintTile(td, dx, dy);
+        if (!tc) continue;
+        var tl = Math.floor((dx / nd - view.cx) * k + W / 2), tt = Math.floor((dy / nd - view.cy) * k + H / 2);   // bord à bord, sans recouvrement : en « produit », un recouvrement marquerait les jointures
+        gctx.drawImage(tc, tl, tt, Math.floor(((dx + 1) / nd - view.cx) * k + W / 2) - tl, Math.floor(((dy + 1) / nd - view.cy) * k + H / 2) - tt);
+      }
+    gctx.restore();
+    if (!src) return false;   // « Aucun fond » : les zones explorées restent en jaune pâle, sur le relief
+    var tz = Math.max(1, Math.min(src.maxZ, Math.round(view.z))), n = Math.pow(2, tz), size = k / n;
     var x0 = Math.max(0, Math.floor((view.cx - W / 2 / k) * n)), x1 = Math.min(n - 1, Math.floor((view.cx + W / 2 / k) * n));
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
@@ -1619,7 +1666,7 @@ body.sheet-open #cellcard { display: none; }
       var im = getTile(src, tz, x, y);
       if (!im.complete || !im.naturalWidth) continue;
       var left = Math.floor((x / n - view.cx) * k + W / 2), top = Math.floor((y / n - view.cy) * k + H / 2), s = Math.ceil(size) + 1;
-      gctx.drawImage(im, left, top, s, s); cctx.drawImage(im, left, top, s, s); drawn++;
+      cctx.drawImage(im, left, top, s, s); drawn++;
     }
     cctx.restore();
     if (useMask && drawn > 0) {
@@ -2378,7 +2425,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v69";
+  var BUILD = "30/10/2026 · v70";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3230,8 +3277,8 @@ body.sheet-open #cellcard { display: none; }
       g.fillStyle = css("--panel"); g.fillRect(mx, my, ms, ms);
       g.save(); g.beginPath(); g.rect(mx, my, ms, ms); g.clip();
       if (withTiles) {
-        try { g.filter = isDark() ? "grayscale(1) contrast(0.45) brightness(1.55)" : "grayscale(1) contrast(0.6) brightness(1.25)"; } catch (e) { /* filtre indisponible */ }
-        g.globalAlpha = isDark() ? 0.3 : 0.42; g.drawImage(gray, sx, sy, side, side, mx, my, ms, ms);
+        try { g.filter = isDark() ? "contrast(1.25) brightness(0.62)" : "contrast(1.3) brightness(0.86)"; } catch (e) { /* filtre indisponible */ }
+        g.globalAlpha = 1; g.drawImage(gray, sx, sy, side, side, mx, my, ms, ms);
         g.filter = "none"; g.globalAlpha = 1;
         g.drawImage(color, sx, sy, side, side, mx, my, ms, ms);
       }
