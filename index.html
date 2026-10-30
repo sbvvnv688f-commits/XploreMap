@@ -2509,7 +2509,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v75";
+  var BUILD = "30/10/2026 · v76";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3866,16 +3866,7 @@ body.sheet-open #cellcard { display: none; }
   } else {
     AREA_M2 = h3.getHexagonAreaAvg(RES, "m2");
     loadState();
-    if (!S.activities.length) {
-      var demo = [], seed = 7, i;
-      var rnd = function () { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
-      for (i = 0; i <= 700; i++) {
-        var a = i / 700 * 2 * Math.PI, r = 0.011 + 0.003 * Math.sin(3 * a) + 0.0015 * Math.cos(5 * a);
-        demo.push({ p: [45.9 + r * 0.72 * Math.sin(a) + rnd() * 0.00006, 6.13 + r * Math.cos(a) + rnd() * 0.00008], t: null });
-      }
-      var b = buildLines(demo, 60);
-      S.activities.push({ id: S.nextId++, name: "Boucle d’exemple", demo: true, sport: "trail", date: todayISO(), dist: b.dist, skipped: 0, lines: b.lines, summits: [], landmarks: [], sumDone: true, lmDone: true, poiV: 2 });   // exemple : aucune recherche en ligne
-    }
+    S.activities = realActs();   // plus de boucle d’exemple : retirée chez ceux qui l’avaient encore
     resize(); rebuild(); checkAchievements(true); initExtras();
     if (S.activities.length) fitAll(); else draw();
   }
