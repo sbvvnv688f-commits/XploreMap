@@ -1604,8 +1604,8 @@ body.sheet-open #cellcard { display: none; }
   function boundary(c) { var b = boundaryCache.get(c); if (!b) { b = h3.cellToBoundary(c, false); boundaryCache.set(c, b); } return b; }
   /* teinte d’altitude : tuiles d’altitude libres (AWS Terrarium), colorées ici puis fondues légèrement sur le relief ombré */
   var DEM_URL = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/", DEM_MAXZ = 12, TINT_ALPHA = 0.3, tintCache = new Map();
-  var HYPSO = [[0, [30, 122, 30]], [100, [61, 154, 35]], [200, [108, 181, 45]], [400, [166, 209, 74]], [500, [217, 232, 122]], [650, [242, 224, 138]], [800, [232, 185, 96]],
-    [1000, [210, 154, 79]], [1250, [185, 124, 63]], [1500, [154, 98, 53]], [2000, [107, 68, 38]], [2300, [62, 38, 20]]];
+  var HYPSO = [[0, [222, 236, 214]], [200, [218, 234, 204]], [400, [224, 234, 196]], [600, [236, 234, 196]], [800, [238, 222, 180]],   // replats presque neutres : la teinte ne se marque qu’en montant
+    [1000, [226, 196, 150]], [1250, [206, 166, 120]], [1500, [184, 140, 100]], [2000, [150, 110, 78]], [2300, [118, 86, 60]]];
   function hypso(e) {
     if (e <= HYPSO[0][0]) return HYPSO[0][1];
     for (var i = 1; i < HYPSO.length; i++) if (e <= HYPSO[i][0]) { var a = HYPSO[i - 1], b = HYPSO[i], t = (e - a[0]) / (b[0] - a[0]); return [a[1][0] + (b[1][0] - a[1][0]) * t, a[1][1] + (b[1][1] - a[1][1]) * t, a[1][2] + (b[1][2] - a[1][2]) * t]; }
@@ -2425,7 +2425,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v70";
+  var BUILD = "30/10/2026 · v71";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
