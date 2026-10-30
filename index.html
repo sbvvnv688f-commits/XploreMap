@@ -2354,7 +2354,8 @@ body.sheet-open #cellcard { display: none; }
     return ids.length ? new Path2D(parts.join("")) : P;
   }
   var PALE_YELLOW = "#ffe27a";
-  function fillOn() { return !SOURCES[S.basemap] || (!tilesLoaded && tilesFailed >= 7); }   // sans imagerie : repli en teinte unie
+  var shareFill = false;   // image de partage sans fond de carte : les hexagones sont peints en jaune pâle
+  function fillOn() { return shareFill || !SOURCES[S.basemap] || (!tilesLoaded && tilesFailed >= 7); }   // sans imagerie : repli en teinte unie
   function fillCells(vis, onImg, mul) {
     if (!fillOn()) return;
     ctx.globalAlpha = 0.5 * mul;
@@ -2366,7 +2367,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v65";
+  var BUILD = "30/10/2026 · v66";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3220,7 +3221,9 @@ body.sheet-open #cellcard { display: none; }
         g.filter = "none"; g.globalAlpha = 1;
         g.drawImage(color, sx, sy, side, side, mx, my, ms, ms);
       }
+      if (!withTiles) { shareFill = true; draw(); }   // l’imagerie ne peut pas être copiée : sans ce jaune, les hexagones explorés seraient invisibles
       g.drawImage(cv, sx, sy, side, side, mx, my, ms, ms);
+      if (!withTiles) { shareFill = false; draw(); }
       g.restore();
       g.lineWidth = 6; g.strokeStyle = css("--outline"); g.strokeRect(mx, my, ms, ms);
       var lvl = levelOf(totalKm2()), fam = "Fredoka, system-ui, sans-serif";
