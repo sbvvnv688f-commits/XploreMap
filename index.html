@@ -344,8 +344,7 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
 .inv { display: flex; gap: 8px; }
 .inv input { flex: 1; min-width: 0; }
 .inv .btn { padding: 8px 16px; }
-.frow { border-top: 1px solid color-mix(in srgb, var(--outline) 28%, transparent); padding: 12px 0; }
-.frow:first-of-type { border-top: 0; }
+.frow { border: 3px solid var(--outline); border-radius: 16px; padding: 10px 12px; margin: 0 0 10px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }   /* chaque ami dans sa boîte */
 .frow-top { display: flex; align-items: center; gap: 12px; }
 .frow-top .main { flex: 1; min-width: 0; }
 .frow .t { font-weight: 600; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -373,9 +372,10 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
   background: var(--accent); color: var(--on-accent); animation: pendpulse 2.4s ease-in-out infinite;
 }
 #pendbar[hidden], body.friend-view #pendbar, body.sheet-open #pendbar { display: none; }
-.row.rrow { cursor: pointer; }
-.row.rrow[aria-expanded="true"] { background: var(--panel); }
-.rk-act { margin: 2px 0 12px; padding: 10px 12px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }
+.row.rrow { cursor: pointer; border: 3px solid var(--outline); border-radius: 16px; padding: 8px 12px; margin: 4px 0 10px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }   /* chaque joueur du classement dans sa boîte */
+.row.me { margin: 4px 0 10px; }
+.row.rrow[aria-expanded="true"] { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: 3px 0 0 var(--outline); }
+.rk-act { margin: 0 0 10px; padding: 10px 12px; border: 3px solid var(--outline); border-top: 0; border-radius: 0 0 16px 16px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }
 .rk-act p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
 .rk-act p:last-child { margin-bottom: 0; }
 .rk-act .btn { margin-bottom: 0; }
@@ -2557,7 +2557,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v80";
+  var BUILD = "30/10/2026 · v81";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
