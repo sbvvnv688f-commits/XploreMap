@@ -897,6 +897,27 @@ body.sheet-open #cellcard { display: none; }
   function stravaReady() { return !!(S.strava.clientId && S.strava.relay); }
   function stravaConnected() { return !!(S.strava.refresh && S.strava.relay); }
   function stravaStatus(t) { var el = $("stvstatus"); if (el) el.textContent = t; }
+  var stvResumeTimer = 0;
+  function stvHour(s) { var d = new Date(s * 1000); return d.getHours() + " h " + String(d.getMinutes()).padStart(2, "0"); }
+  function scheduleStravaResume() {   // limite Strava atteinte : reprise à l’heure prévue tant que l’appli est ouverte, sinon à la prochaine ouverture
+    clearTimeout(stvResumeTimer);
+    if (!S.strava.retryAt) return;
+    stvResumeTimer = setTimeout(stravaResume, Math.max(1000, S.strava.retryAt * 1000 - Date.now()));
+  }
+  function stravaResume() {
+    if (!S.strava.retryAt || !stravaConnected()) return;
+    if (S.strava.retryAt * 1000 > Date.now()) { scheduleStravaResume(); return; }
+    if (stravaBusy) { stvResumeTimer = setTimeout(stravaResume, 30000); return; }
+    if (pending && pending.items.length) return;   // un lot attend sa validation : la suite partira après « Valider »
+    S.strava.retryAt = 0; save();
+    stravaSync({ manual: true, backfillContinue: !!S.strava.moreBf });
+  }
+  function stravaChain() {   // après la validation d’un lot Strava : le suivant, s’il en reste
+    if (!S.strava.more || !stravaConnected()) return;
+    if (S.strava.retryAt && S.strava.retryAt * 1000 > Date.now()) { scheduleStravaResume(); toast("Lot suivant à " + stvHour(S.strava.retryAt) + " (limite Strava)."); return; }
+    S.strava.retryAt = 0;
+    setTimeout(function () { stravaSync({ manual: true, backfillContinue: !!S.strava.moreBf }); }, 1500);
+  }
   function relayJson(path, opts) {
     return fetch(S.strava.relay.replace(/\/+$/, "") + path, opts).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
@@ -999,11 +1020,12 @@ body.sheet-open #cellcard { display: none; }
     }).then(function () {
       S.strava.lastSync = lastT; S.strava.checkedAt = nowS;
       if (bfMode) S.strava.bf = limited ? bfT : 0;   // 0 : historique entièrement récupéré
+      S.strava.more = limited; S.strava.moreBf = bfMode && limited; S.strava.retryAt = 0;   // il en reste : le lot suivant partira après la validation
       save();
       var added = items.length - before;
       if (!hadPending && !added && !pending.errors.length) pending = null; else computePreview();
       var msg = added ? "Strava : " + added + (bfMode ? " sortie" + (added > 1 ? "s" : "") + " récupérée" + (added > 1 ? "s" : "") : " nouvelle" + (added > 1 ? "s" : "") + " sortie" + (added > 1 ? "s" : "")) : "Strava : aucune nouvelle sortie";
-      var more = limited ? " Il en reste environ " + rest + " : touche « Continuer la récupération » dans les Réglages." : "";
+      var more = limited ? " Il en reste environ " + rest + " : le lot suivant arrivera tout seul après la validation." : "";
       stravaStatus(msg + "." + more);
       if (added) {
         if (S.strava.auto && !first && !opts.manual && !hadPending && !sportMissing().length) { commitPending(); toast(msg + " ajoutée" + (added > 1 ? "s" : "") + "."); }   // sport à choisir : on attend l’utilisateur
@@ -1016,7 +1038,15 @@ body.sheet-open #cellcard { display: none; }
       if (errs) toast(errs + " sortie" + (errs > 1 ? "s" : "") + " Strava ignorée" + (errs > 1 ? "s" : "") + " (voir l’aperçu).");
       updatePendBar();
     }).catch(function (e) {
-      var m = e && e.status === 429 ? "Limite d’appels Strava atteinte : réessaie dans quelques minutes." : e && e.expired ? "Session Strava expirée : reconnecte-toi dans les Réglages." : "Synchronisation Strava impossible : " + ((e && e.message) || "réseau");
+      if (e && e.status === 429) {
+        var q = Math.ceil(Date.now() / 900000) * 900 + 60;   // Strava compte par quart d’heure : reprise juste après le prochain
+        S.strava.retryAt = q; S.strava.more = true; S.strava.moreBf = bfMode; save(); scheduleStravaResume();
+        if (pending && pending.items.length) {
+          computePreview(); var ls2 = []; pending.items.forEach(function (it) { ls2 = ls2.concat(it.act.lines); }); if (ls2.length) fitLines(ls2);
+          draw(); if (current !== "add") openTab("add");
+        }
+      }
+      var m = e && e.status === 429 ? "Limite Strava atteinte (environ 100 demandes par quart d’heure) : " + (pending && pending.items.length ? "valide les sorties déjà récupérées ; " : "") + "la suite repart toute seule vers " + stvHour(S.strava.retryAt) + "." : e && e.expired ? "Session Strava expirée : reconnecte-toi dans les Réglages." : "Synchronisation Strava impossible : " + ((e && e.message) || "réseau");
       stravaStatus(m); if (opts.manual || (e && e.expired)) toast(m);
       if (pending && !pending.items.length && !pending.errors.length) pending = null;
       if (current === "add") render();
@@ -1520,11 +1550,13 @@ body.sheet-open #cellcard { display: none; }
     var h = '<h3>Strava</h3>';
     if (stravaConnected()) {
       h += '<p class="note">Connecté' + (s.athlete ? ' : ' + esc(s.athlete) : '') + (s.lastSync ? ' · dernière sortie récupérée le ' + new Date(s.lastSync * 1000).toLocaleDateString("fr-FR") : '') + '.</p>' +
+        (s.retryAt && s.retryAt * 1000 > Date.now() ? '<p class="note"><b>Limite Strava atteinte :</b> la récupération repart toute seule vers ' + stvHour(s.retryAt) + ' (ou à la prochaine ouverture de l’appli).</p>'
+          : s.more ? '<p class="note"><b>Récupération en cours :</b> valide le lot affiché, le suivant arrivera tout seul.</p>' : '') +
         '<div class="drawer-sec"><button class="btn block" id="stvsync">Synchroniser maintenant</button></div>' +
         (s.lastSync ? '' : '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>') +
         '<div class="field"><label for="stvbfd">Récupérer des sorties plus anciennes</label><select id="stvbfd">' + [[365, "12 derniers mois"], [1095, "3 dernières années"], [3650, "Tout l’historique (10 ans)"]].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join("") + '</select></div>' +
         '<div class="drawer-sec"><button class="btn ghost block" id="stvbf">Récupérer l’historique</button>' + (s.bf ? '<button class="btn block" id="stvbfc">Continuer la récupération</button>' : '') + '</div>' +
-        '<p class="note">La récupération se fait par lots de 40 sorties pour respecter les limites de Strava ; chaque lot est à valider avant le suivant.</p>' +
+        '<p class="note">La récupération se fait par lots de 40 sorties pour respecter les limites de Strava ; après la validation d’un lot, le suivant arrive tout seul.</p>' +
         '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="stvauto"' + (s.auto ? ' checked' : '') + '><span>Ajouter automatiquement les nouvelles sorties</span></label>' +
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
     } else {
@@ -1552,7 +1584,7 @@ body.sheet-open #cellcard { display: none; }
       Promise.race([ensureToken().then(function (tok) {   // retire l’autorisation chez Strava : la prochaine connexion repasse par l’écran de choix
         return fetch("https://www.strava.com/oauth/deauthorize", { method: "POST", mode: "no-cors", body: new URLSearchParams({ access_token: tok }) });
       }), new Promise(function (res) { setTimeout(res, 4000); })]).catch(function () { /* hors ligne ou jeton expiré : on déconnecte quand même l’appli */ }).then(function () {
-        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0;   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
+        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0; S.strava.more = false; S.strava.moreBf = false; S.strava.retryAt = 0; clearTimeout(stvResumeTimer);   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
         save(); render(); toast("Strava déconnecté. Pour changer de compte, déconnecte-toi aussi du site ou de l’appli Strava avant de te reconnecter.");
       });
     });
@@ -2354,6 +2386,7 @@ body.sheet-open #cellcard { display: none; }
     });
     var ups = MASTERY.map(function () { return 0; });
     pending.items.forEach(function (it) { (it.ups || []).forEach(function (v, i) { ups[i] += v; }); });
+    var fromStrava = pending.items.some(function (it) { return it.act.strava; });
     pending = null; selected = null;
     rebuild(); save(); closeSheet();
     var fresh = [];
@@ -2370,6 +2403,7 @@ body.sheet-open #cellcard { display: none; }
     checkAchievements();
     updateCommunes({ lines: lines, silent: true });
     setTimeout(function () { autoScanAt = 0; autoScan(); }, 6000);
+    if (fromStrava) stravaChain();
   }
   var scanningSet = new Set(), analysisPriority = 0;
   function quiet() { return new Promise(function (res) { (function w() { if (analysisPriority <= 0) res(); else setTimeout(w, 1500); })(); }); }
@@ -2573,7 +2607,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v84";
+  var BUILD = "30/10/2026 · v85";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3528,6 +3562,7 @@ body.sheet-open #cellcard { display: none; }
   function initExtras() {
     stravaReturn().then(function (ok) {
       if (ok && stravaConnected()) stravaSync({ manual: true });
+      else if (S.strava.retryAt && stravaConnected()) setTimeout(stravaResume, 4000);   // limite Strava atteinte la dernière fois : on reprend là où on s’était arrêté
       else setTimeout(function () { if (stravaConnected() && S.strava.auto && Date.now() / 1000 - (S.strava.checkedAt || 0) > 1800) stravaSync({}); }, 6000);
     });
     $("gradeChk").checked = !!S.gradeOutlines; applyLegend(); applyTheme();
