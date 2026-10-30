@@ -373,6 +373,12 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
   background: var(--accent); color: var(--on-accent); animation: pendpulse 2.4s ease-in-out infinite;
 }
 #pendbar[hidden], body.friend-view #pendbar, body.sheet-open #pendbar { display: none; }
+.row.rrow { cursor: pointer; }
+.row.rrow[aria-expanded="true"] { background: var(--panel); }
+.rk-act { margin: 2px 0 12px; padding: 10px 12px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }
+.rk-act p { margin: 0 0 8px; font-size: 12.5px; color: var(--muted); }
+.rk-act p:last-child { margin-bottom: 0; }
+.rk-act .btn { margin-bottom: 0; }
 body.pend-wait #hint { display: none; }
 #pendbar .btn { padding: 8px 12px; font-size: 12.5px; }
 #pendbar .btn.ghost { background: var(--panel); color: var(--ink); }
@@ -2551,7 +2557,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v79";
+  var BUILD = "30/10/2026 · v80";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3529,7 +3535,7 @@ body.sheet-open #cellcard { display: none; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
     if (k === "friends") loadFriends();
-    if (k === "rank") loadBoard();
+    if (k === "rank") { rankOpen = null; loadBoard(); if (!friends) loadFriends(); }   // l’état des invitations sert aux encadrés du classement
     closeDrawer(); current = k; render();
     $("sheet").classList.add("open"); $("sheet").setAttribute("aria-hidden", "false");
     document.body.classList.add("sheet-open"); markTabs();
@@ -3613,7 +3619,11 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ---- classement : surface explorée de tous les joueurs, filtrable par amis et par sport (filtres cumulables) ---- */
-  var board = null, boardErr = "", RANK_TOP = 50;
+  var board = null, boardErr = "", RANK_TOP = 50, rankOpen = null;
+  function rankRel(id, isFriend) {   // lien avec un joueur du classement : ami, invitation reçue, invitation envoyée ou aucun
+    var f = friends || { friends: [], incoming: [], outgoing: [] }, has = function (l) { return l.some(function (x) { return String(x.id) === String(id); }); };
+    return has(f.friends) || isFriend ? "ami" : has(f.incoming) ? "recue" : has(f.outgoing) ? "envoyee" : "aucun";
+  }
   function myScore() {   // ma surface au total et par sport, calculée ici (toujours à jour)
     var all = new Set(), by = {};
     sharedActs().forEach(function (a) { var s = by[a.sport] || (by[a.sport] = new Set()); actCells(a).forEach(function (c) { all.add(c); s.add(c); }); });
@@ -3649,16 +3659,24 @@ body.sheet-open #cellcard { display: none; }
     if (boardErr) return scope + sport + '<p class="note">' + esc(boardErr) + '</p>' + optOut;
     if (!board || typeof h3 === "undefined") return scope + sport + '<div class="empty-line">Chargement…</div>' + optOut;
     var mine = myScore(), meId = acct.user && acct.user.id;
-    var rows = board.filter(function (p) { return !p.me && p.id !== meId; }).map(function (p) { return { name: p.pseudo, place: p.place, friend: p.friend, km2: p.km2, by: p.bySport || {} }; });
+    var rows = board.filter(function (p) { return !p.me && p.id !== meId; }).map(function (p) { return { id: p.id, name: p.pseudo, place: p.place, friend: rankRel(p.id, p.friend) === "ami", km2: p.km2, by: p.bySport || {} }; });
     var meRow = { name: S.name || "Moi", place: S.city ? S.city + (S.dept ? " · " + S.dept : "") : S.dept, me: true, km2: mine.km2, by: mine.bySport };
     rows.push(meRow);
     var val = function (x) { return rankSport === "all" ? (x.km2 || 0) : ((x.by && x.by[rankSport]) || 0); };
     rows = rows.filter(function (x) { return (rankScope !== "friends" || x.friend || x.me) && (x.me || rankSport === "all" || val(x) > 0); });   // filtres cumulables : amis et sport
     rows.sort(function (a, b) { return val(b) - val(a) || (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name)); });
     rows.forEach(function (x) { var v = val(x); x.r = 1 + rows.filter(function (y) { return val(y) > v; }).length; });   // ex æquo : même rang
+    function act(x) {   // encadré sous la ligne touchée
+      if (x.me || rankOpen !== String(x.id)) return "";
+      var rel = rankRel(x.id, x.friend), n = esc(x.name);
+      return '<div class="rk-act">' + (rel === "ami" ? '<p>Vous êtes amis.</p>'
+        : rel === "envoyee" ? '<p>Invitation envoyée à ' + n + ' : en attente de sa réponse.</p>'
+        : rel === "recue" ? '<p>' + n + ' t’a invité.</p><button class="btn block" data-racc="' + esc(x.id) + '">Accepter son invitation</button>'
+        : '<p>Ajoute ' + n + ' à tes amis pour comparer vos cartes.</p><button class="btn block" data-rinv="' + esc(x.name) + '">Envoyer une demande d’ami</button>') + '</div>';
+    }
     function row(x) {
-      return '<div class="row' + (x.me ? ' me' : '') + '"><span class="rank-n">' + x.r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : x.friend ? " · ami" : "") + '</span>' +
-        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + fmtKm2(val(x)) + '<small>km²</small></span></div>';
+      return '<div class="row' + (x.me ? ' me' : ' rrow') + '"' + (x.me ? '' : ' role="button" tabindex="0" data-rpl="' + esc(x.id) + '" aria-expanded="' + (rankOpen === String(x.id)) + '"') + '><span class="rank-n">' + x.r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : x.friend ? " · ami" : "") + '</span>' +
+        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + fmtKm2(val(x)) + '<small>km²</small></span></div>' + act(x);
     }
     var top = rows.slice(0, RANK_TOP), me = rows.filter(function (x) { return x.me; })[0];
     var list = top.map(row).join("") + (me && me.r > RANK_TOP && top.indexOf(me) < 0 ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(me) : "");
@@ -3708,6 +3726,18 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     document.querySelectorAll("[data-rscope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.rscope; render(); }); });
+    document.querySelectorAll("[data-rpl]").forEach(function (r) {
+      function tog() { var id = r.dataset.rpl; rankOpen = rankOpen === id ? null : id; render(); }
+      r.addEventListener("click", tog);
+      r.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tog(); } });
+    });
+    document.querySelectorAll("[data-rinv]").forEach(function (b) { b.addEventListener("click", function () {
+      var p = b.dataset.rinv; b.disabled = true;
+      friendAction("POST", "/friends/invite", { pseudo: p.toLowerCase() }, function (r) { return r.result === "accepted" ? "Vous êtes maintenant amis avec " + p + "." : "Demande d’ami envoyée à " + p + "."; }).then(function () { if (current === "rank") render(); });
+    }); });
+    document.querySelectorAll("[data-racc]").forEach(function (b) { b.addEventListener("click", function () {
+      b.disabled = true; friendAction("POST", "/friends/accept", { id: b.dataset.racc }, "Invitation acceptée.").then(function () { if (current === "rank") render(); });
+    }); });
     var rsel = $("rsport"); if (rsel) rsel.addEventListener("change", function (e) { rankSport = e.target.value; render(); });
     var rin = $("rankin"); if (rin) rin.addEventListener("change", function (e) { S.rankOptOut = !e.target.checked; save(); pushScore().then(loadBoard); render(); });
     var rf = $("rankfriends"); if (rf) rf.addEventListener("click", function () { openTab("friends"); });
