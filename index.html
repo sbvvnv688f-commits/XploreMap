@@ -498,7 +498,7 @@ body.sheet-open #cellcard { display: none; }
 
   /* ================= état ================= */
   var STRAVA_ID = "291286", STRAVA_RELAY = "https://portulan-relay.wjmn9bnkdg.workers.dev";   // identifiants publics de l’application Strava Xplr et de son relais (aucun secret ici)
-  var S = { name: "", city: "", dept: "", owner: "", home: null, rankOptOut: false, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
+  var S = { name: "", city: "", dept: "", owner: "", home: null, rankOptOut: false, photo: "", icon: 0, onboarded: false, rad: 1, basemap: "relief", nextId: 1, activities: [], goals: [], unlocked: null, colorMode: "uniform", lastBackup: 0, communes: {}, info: {}, gradeOutlines: true, gradeChosen: false, legendOff: false, theme: "auto", strava: { clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 } };
   var cells = new Map(), dispCells = cells;   // hexagone -> { sport, date } de la première découverte
   var periodF = "all", sportF = "all", exploreOn = false, pending = null, me = null, peakHits = [], summitDraw = [], landmarkDraw = [], revealTimer = 0, dispVer = 0;
   var boundaryCache = new Map(), tileCache = new Map();
@@ -534,7 +534,7 @@ body.sheet-open #cellcard { display: none; }
         S.lastBackup = +o.lastBackup || 0;
         S.communes = o.communes && typeof o.communes === "object" ? o.communes : {};
         S.info = o.info && typeof o.info === "object" ? o.info : {};
-        S.gradeChosen = !!o.gradeChosen; S.gradeOutlines = S.gradeChosen ? !!o.gradeOutlines : true; S.legendOff = !!o.legendOff;   // contours actifs par défaut tant que l’utilisateur n’a pas choisi
+        S.gradeChosen = !!o.gradeChosen; S.gradeOutlines = S.gradeChosen ? !!o.gradeOutlines : true; S.legendOff = !!o.legendOff; S.theme = o.theme === "light" || o.theme === "dark" ? o.theme : "auto";   // contours actifs par défaut tant que l’utilisateur n’a pas choisi
         S.strava = Object.assign({ clientId: STRAVA_ID, relay: STRAVA_RELAY, access: "", refresh: "", exp: 0, athlete: "", lastSync: 0, checkedAt: 0, auto: true, days: 30, bf: 0 }, o.strava && typeof o.strava === "object" ? o.strava : {});
         if (!S.strava.clientId) S.strava.clientId = STRAVA_ID;
         if (!S.strava.relay) S.strava.relay = STRAVA_RELAY;   // préremplis pour tous les utilisateurs
@@ -844,6 +844,15 @@ body.sheet-open #cellcard { display: none; }
     }
     ctx.restore(); tinyHex = tinySave;
   }
+  /* ---- apparence : automatique (réglage du téléphone), claire ou sombre ---- */
+  function isDark() { return S.theme === "dark" || (S.theme !== "light" && !!window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches); }
+  function applyTheme() {
+    var r = document.documentElement, m = document.querySelector('meta[name="theme-color"]');
+    if (S.theme === "light" || S.theme === "dark") r.setAttribute("data-theme", S.theme); else r.removeAttribute("data-theme");
+    if (m) m.setAttribute("content", css("--bg"));
+    requestDraw();   // les couleurs de la carte sont relues au dessin
+  }
+  if (window.matchMedia) { var darkMq = matchMedia("(prefers-color-scheme: dark)"); if (darkMq.addEventListener) darkMq.addEventListener("change", function () { if (S.theme === "auto") applyTheme(); }); }
   function applyLegend() {
     var w = $("glWrap"), t = $("glTab");
     w.hidden = !S.gradeOutlines; w.classList.toggle("off", !!S.legendOff);
@@ -1491,7 +1500,7 @@ body.sheet-open #cellcard { display: none; }
         '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
         '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://….workers.dev" autocomplete="off"></div></details>';
     }
-    return h + '<p class="note" id="stvstatus"></p><p class="note pwrd"><picture><source srcset="strava-powered-white.svg" media="(prefers-color-scheme: dark)"><img src="strava-powered-black.svg" alt="Powered by Strava" width="148" height="15"></picture></p>';
+    return h + '<p class="note" id="stvstatus"></p><p class="note pwrd"><img src="' + (isDark() ? "strava-powered-white.svg" : "strava-powered-black.svg") + '" alt="Powered by Strava" width="148" height="15"></p>';
   }
   function bindStrava() {
     var id = $("stvid"), rl = $("stvrelay"), dy = $("stvdays"), au = $("stvauto");
@@ -2359,7 +2368,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v63";
+  var BUILD = "30/10/2026 · v64";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3311,7 +3320,7 @@ body.sheet-open #cellcard { display: none; }
       if (ok && stravaConnected()) stravaSync({ manual: true });
       else setTimeout(function () { if (stravaConnected() && S.strava.auto && Date.now() / 1000 - (S.strava.checkedAt || 0) > 1800) stravaSync({}); }, 6000);
     });
-    $("gradeChk").checked = !!S.gradeOutlines; applyLegend();
+    $("gradeChk").checked = !!S.gradeOutlines; applyLegend(); applyTheme();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
     if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
     if (/^https?:$/.test(location.protocol)) fetch(location.pathname, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
@@ -3597,6 +3606,8 @@ body.sheet-open #cellcard { display: none; }
   }
   function settingsHTML() {
     return '<h2 class="drawer-title">Réglages</h2>' +
+      '<div class="field"><label>Apparence</label><div class="seg">' + [["auto", "Automatique"], ["light", "Clair"], ["dark", "Sombre"]].map(function (o) { return '<button data-themeopt="' + o[0] + '" aria-pressed="' + ((S.theme || "auto") === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>' +
+      '<p class="note" style="margin-top:4px">Automatique suit le réglage clair ou sombre du téléphone.</p></div>' +
       accountSettingsHTML() +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
@@ -3655,6 +3666,7 @@ body.sheet-open #cellcard { display: none; }
     var ep = $("editprof"); if (ep) ep.addEventListener("click", function () { showGate("edit"); });
   }
   function bindSettings() {
+    document.querySelectorAll("[data-themeopt]").forEach(function (b) { b.addEventListener("click", function () { S.theme = b.dataset.themeopt; applyTheme(); save(); renderDrawer(); }); });
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
     $("diagbtn").addEventListener("click", runDiagnostic);
