@@ -1633,6 +1633,29 @@ body.sheet-open #cellcard { display: none; }
     im.src = DEM_URL + z + "/" + x + "/" + y + ".png";
     return null;
   }
+  /* eau : rivières, lacs et fleuves repérés par la couleur de l’eau du plan OpenStreetMap, repeints en bleu léger sur le relief */
+  var WATER_KEY = [170, 211, 223], WATER_TOL = 14, WATER_RGB = [96, 160, 214], WATER_ALPHA = 0.55, WATER_MAXZ = 17, waterCache = new Map();
+  function waterTile(z, x, y) {
+    var key = z + "/" + x + "/" + y, t = waterCache.get(key);
+    if (t) return t.cv;
+    t = { cv: null }; waterCache.set(key, t);
+    if (waterCache.size > 400) { var it = waterCache.keys(); for (var i = 0; i < 100; i++) waterCache.delete(it.next().value); }
+    var im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = function () {
+      try {
+        var c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+        var g = c.getContext("2d"); g.drawImage(im, 0, 0);
+        var d = g.getImageData(0, 0, c.width, c.height), px = d.data, any = false;
+        for (var p = 0; p < px.length; p += 4) {
+          var w = Math.abs(px[p] - WATER_KEY[0]) <= WATER_TOL && Math.abs(px[p + 1] - WATER_KEY[1]) <= WATER_TOL && Math.abs(px[p + 2] - WATER_KEY[2]) <= WATER_TOL;
+          if (w) { px[p] = WATER_RGB[0]; px[p + 1] = WATER_RGB[1]; px[p + 2] = WATER_RGB[2]; px[p + 3] = 255; any = true; } else px[p + 3] = 0;
+        }
+        if (any) { g.putImageData(d, 0, 0); t.cv = c; requestDraw(); }
+      } catch (err) { /* tuile illisible : pas d’eau dessinée ici */ }
+    };
+    im.src = SOURCES.osm.url(z, x, y);
+    return null;
+  }
   function drawTiles(vis) {
     gctx.setTransform(dpr, 0, 0, dpr, 0, 0); gctx.clearRect(0, 0, W, H);
     cctx.setTransform(dpr, 0, 0, dpr, 0, 0); cctx.clearRect(0, 0, W, H);
@@ -1652,6 +1675,16 @@ body.sheet-open #cellcard { display: none; }
         if (!tc) continue;
         var tl = Math.floor((dx / nd - view.cx) * k + W / 2), tt = Math.floor((dy / nd - view.cy) * k + H / 2);   // bord à bord, sans recouvrement : en « produit », un recouvrement marquerait les jointures
         gctx.drawImage(tc, tl, tt, Math.floor(((dx + 1) / nd - view.cx) * k + W / 2) - tl, Math.floor(((dy + 1) / nd - view.cy) * k + H / 2) - tt);
+      }
+    gctx.restore();
+    var tw = Math.max(1, Math.min(WATER_MAXZ, Math.round(view.z))), nw = Math.pow(2, tw);   // eau en bleu léger, par-dessus le relief teinté
+    gctx.save(); gctx.globalAlpha = WATER_ALPHA;
+    for (var wx = Math.max(0, Math.floor((view.cx - W / 2 / k) * nw)); wx <= Math.min(nw - 1, Math.floor((view.cx + W / 2 / k) * nw)); wx++)
+      for (var wy = Math.max(0, Math.floor((view.cy - H / 2 / k) * nw)); wy <= Math.min(nw - 1, Math.floor((view.cy + H / 2 / k) * nw)); wy++) {
+        var wc = waterTile(tw, wx, wy);
+        if (!wc) continue;
+        var wl = Math.floor((wx / nw - view.cx) * k + W / 2), wt = Math.floor((wy / nw - view.cy) * k + H / 2);
+        gctx.drawImage(wc, wl, wt, Math.floor(((wx + 1) / nw - view.cx) * k + W / 2) - wl, Math.floor(((wy + 1) / nw - view.cy) * k + H / 2) - wt);
       }
     gctx.restore();
     if (!src) return false;   // « Aucun fond » : les zones explorées restent en jaune pâle, sur le relief
@@ -2425,7 +2458,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v71";
+  var BUILD = "30/10/2026 · v72";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
