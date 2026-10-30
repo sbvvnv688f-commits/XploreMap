@@ -294,7 +294,10 @@ body.sheet-open #poicard { display: none; }
 .poi-info[hidden] { display: none; }
 .diag { margin: 8px 0 0; padding: 8px 10px; font-size: 11px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; background: var(--panel); border: 2px dashed var(--outline); border-radius: 12px; user-select: text; -webkit-user-select: text; }
 .diag[hidden] { display: none; }
-.stravabtn { background: #fc4c02; color: #fff; }
+.stravaimg { display: block; margin: 0 auto; padding: 0; border: 0; background: none; cursor: pointer; }   /* bouton officiel Strava : image non modifiée */
+.stravaimg img { display: block; height: 48px; width: auto; }
+.pwrd img { display: block; height: 15px; width: auto; }
+.vstrava { color: #fc5200; font-weight: 700; text-decoration: underline; }
 #gradeBox { left: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 58px); z-index: 5; }
 body.sheet-open #gradeBox { display: none; }
 .gradechk { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 3px solid var(--outline); border-radius: 999px; background: var(--panel); color: var(--ink); font-size: 11.5px; font-weight: 600; box-shadow: 2px 2px 0 var(--outline); cursor: pointer; }
@@ -475,13 +478,20 @@ body.sheet-open #cellcard { display: none; }
     parapente: { label: "Parapente", vmax: 90, ic: "🪂" },
     autre:    { label: "Autre sport sans moteur", vmax: 60, ic: "🧭" }
   };
+  /* ================= réglages d’ouverture (pas à pas : OUVERTURE.md dans le dossier du projet) =================
+     SHARE_STRAVA : l’accord API de Strava interdit l’affichage des données d’un athlète à d’autres. Choix d’Edgar (29/10/2026) :
+     inclure les sorties Strava tant que l’appli reste entre proches ; mettre false avant toute ouverture plus large.
+     OSM_TILES : adresse des tuiles du plan OpenStreetMap ({z}, {x}, {y}, et {key} si le fournisseur demande une clé publique).
+     Les serveurs d’OpenStreetMap ne tolèrent qu’un usage modéré : à l’ouverture, prendre un fournisseur (MapTiler, Stadia…) et renseigner OSM_KEY. */
+  var SHARE_STRAVA = true;
+  var OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png", OSM_KEY = "", OSM_ATTR = "© les contributeurs d’OpenStreetMap";
   var SOURCES = {
     esri: { id: "esri", maxZ: 18, attr: "Imagerie © Esri, Maxar, Earthstar Geographics",
       url: function (z, x, y) { return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/" + z + "/" + y + "/" + x; } },
     relief: { id: "relief", maxZ: 16, attr: "Relief © Esri, USGS, NOAA",
       url: function (z, x, y) { return "https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/" + z + "/" + y + "/" + x; } },
-    osm: { id: "osm", maxZ: 19, attr: "© les contributeurs d’OpenStreetMap",
-      url: function (z, x, y) { return "https://tile.openstreetmap.org/" + z + "/" + x + "/" + y + ".png"; } },
+    osm: { id: "osm", maxZ: 19, attr: OSM_ATTR,
+      url: function (z, x, y) { return OSM_TILES.replace("{z}", z).replace("{x}", x).replace("{y}", y).replace("{key}", encodeURIComponent(OSM_KEY)); } },
     ign: { id: "ign", maxZ: 18, attr: "© IGN – Géoplateforme (France uniquement)",
       url: function (z, x, y) { return "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX=" + z + "&TILEROW=" + y + "&TILECOL=" + x + "&FORMAT=image/jpeg"; } }
   };
@@ -1263,14 +1273,12 @@ body.sheet-open #cellcard { display: none; }
 
   /* ===== Amis : invitations par pseudo, partage de la carte ami par ami, carte d’un ami =====
      Ce qui est partagé : les hexagones hors zone domicile et quelques compteurs. Jamais de traces, de dates ni de noms de lieux.
-     SHARE_STRAVA : l’accord API de Strava interdit l’affichage des données d’un athlète à d’autres. Choix d’Edgar (29/10/2026) :
-     inclure les sorties Strava tant que l’appli reste entre proches ; repasser à false avant toute ouverture plus large. */
+     Sorties Strava incluses ou non : réglage SHARE_STRAVA, avec les réglages d’ouverture. */
   var friends = null, friendsErr = "", friendsBusy = false, friendsAt = 0, friendView = null, mapTimer = 0, mapBusy = false, homePick = null;
   var HOME_RADII = [[300, "300 m"], [500, "500 m"], [1000, "1 km"], [2000, "2 km"]], HOME_MARGIN_M = 30;   // marge d’un demi-hexagone autour du cercle
   function capFirst(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); }
   function homeSet() { return !!(S.home && (S.home.none || S.home.r > 0)); }
   function shareCount() { return friends ? friends.friends.filter(function (f) { return f.iShare; }).length : 0; }
-  var SHARE_STRAVA = true;
   function sharedActs() { return realActs().filter(function (a) { return SHARE_STRAVA || !a.strava; }); }
   function sharedCells() {
     var set = new Set();
@@ -1478,12 +1486,12 @@ body.sheet-open #cellcard { display: none; }
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
     } else {
       h += '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>' +
-        '<div class="drawer-sec"><button class="btn block stravabtn" id="stvconnect">Se connecter avec Strava</button></div>' +
+        '<div class="drawer-sec"><button class="stravaimg" id="stvconnect" aria-label="Se connecter avec Strava"><img src="strava-connect.svg" alt="Connect with Strava" width="237" height="48"></button></div>' +
         '<details class="advanced"><summary>Paramètres techniques (déjà renseignés)</summary>' +
         '<div class="field"><label for="stvid">Identifiant client Strava</label><input type="text" id="stvid" value="' + esc(s.clientId) + '" autocomplete="off" inputmode="numeric"></div>' +
         '<div class="field"><label for="stvrelay">Adresse du relais</label><input type="text" id="stvrelay" value="' + esc(s.relay) + '" placeholder="https://….workers.dev" autocomplete="off"></div></details>';
     }
-    return h + '<p class="note" id="stvstatus"></p><p class="note">Powered by Strava</p>';
+    return h + '<p class="note" id="stvstatus"></p><p class="note pwrd"><picture><source srcset="strava-powered-white.svg" media="(prefers-color-scheme: dark)"><img src="strava-powered-black.svg" alt="Powered by Strava" width="148" height="15"></picture></p>';
   }
   function bindStrava() {
     var id = $("stvid"), rl = $("stvrelay"), dy = $("stvdays"), au = $("stvauto");
@@ -2351,7 +2359,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v62";
+  var BUILD = "30/10/2026 · v63";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3361,7 +3369,7 @@ body.sheet-open #cellcard { display: none; }
     return bar + sortedActs().reverse().filter(function (a) { return listSport === "all" || a.sport === listSport; }).map(function (a) {
       return '<div class="row"><button class="row main" style="border:0;padding:0" data-act="' + a.id + '"><span class="main"><span class="t" style="display:block">' + esc(a.name) + '</span><span class="s" style="display:block">' +
         fmtDate(a.date) + ' · ' + sl(a.sport) + ' · ' + fmt(a.dist / 1000, 1) + ' km' + (a.summits && a.summits.length ? ' · ▲' + a.summits.length : '') + (a.trust === "non" ? ' · sans capteur' : '') + '</span></span></button>' +
-        '<span class="v">+' + fmtKm2(actArea(a)) + '<small>km² nouveaux</small></span><button class="del" data-del="' + a.id + '" aria-label="Supprimer ' + esc(a.name) + '">Supprimer</button></div>';
+        '<span class="v">+' + fmtKm2(actArea(a)) + '<small>km² nouveaux</small>' + (a.strava ? '<small><a class="vstrava" href="https://www.strava.com/activities/' + encodeURIComponent(a.strava) + '" target="_blank" rel="noopener noreferrer">View on Strava</a></small>' : '') + '</span><button class="del" data-del="' + a.id + '" aria-label="Supprimer ' + esc(a.name) + '">Supprimer</button></div>';
     }).join("");
   }
   function viewStats() {
