@@ -823,10 +823,11 @@ body.sheet-open #cellcard { display: none; }
     var hexPx = 49 / ag.mpp, scale = Math.max(0.28, Math.min(1.7, hexPx / 28)), tinySave = tinyHex;   // traits plus fins quand les hexagones sont petits
     tinyHex = false;   // les hexagones gradés sont peu nombreux : on garde leur vraie forme
     ctx.save(); ctx.lineJoin = "round"; ctx.globalAlpha = 1;
-    for (k = 1; k <= 6; k++) if (groups[k].length) { buildCellsPath(ctx, groups[k]); ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = (GRADES[k].w + 2.2) * scale; ctx.stroke(); }
+    var gp = [];
+    for (k = 1; k <= 6; k++) if (groups[k].length) { gp[k] = buildCellsPath(ctx, groups[k]); ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = (GRADES[k].w + 2.2) * scale; ctx.stroke(gp[k]); }
     for (k = 1; k <= 6; k++) if (groups[k].length) {
-      buildCellsPath(ctx, groups[k]); ctx.strokeStyle = GRADES[k].c; ctx.lineWidth = GRADES[k].w * scale; ctx.stroke();
-      if (k === 6) { ctx.strokeStyle = "rgba(255,255,255,0.95)"; ctx.lineWidth = 0.9 * scale; ctx.stroke(); }   // éclat du diamant
+      ctx.strokeStyle = GRADES[k].c; ctx.lineWidth = GRADES[k].w * scale; ctx.stroke(gp[k]);
+      if (k === 6) { ctx.strokeStyle = "rgba(255,255,255,0.95)"; ctx.lineWidth = 0.9 * scale; ctx.stroke(gp[k]); }   // éclat du diamant
     }
     ctx.restore(); tinyHex = tinySave;
   }
@@ -1583,7 +1584,7 @@ body.sheet-open #cellcard { display: none; }
     var y0 = Math.max(0, Math.floor((view.cy - H / 2 / k) * n)), y1 = Math.min(n - 1, Math.floor((view.cy + H / 2 / k) * n));
     if ((x1 - x0 + 1) * (y1 - y0 + 1) > 120) return false;
     var painter = typeof vis === "function" ? vis : null, useMask = !!painter || vis.length > 400;   // beaucoup de cellules : la découpe (clip) est lente sur Safari ; on dessine l’imagerie entière puis on la masque
-    cctx.save(); if (!useMask) { buildCellsPath(cctx, vis); cctx.clip(); }
+    cctx.save(); if (!useMask) cctx.clip(buildCellsPath(cctx, vis));
     var drawn = 0;
     for (var x = x0; x <= x1; x++) for (var y = y0; y <= y1; y++) {
       var im = getTile(src, tz, x, y);
@@ -1594,7 +1595,7 @@ body.sheet-open #cellcard { display: none; }
     cctx.restore();
     if (useMask && drawn > 0) {
       if (maskCv.width !== color.width || maskCv.height !== color.height) { maskCv.width = color.width; maskCv.height = color.height; }
-      mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H); if (painter) painter(mctx); else { buildCellsPath(mctx, vis); mctx.fillStyle = "#000"; mctx.fill(); }
+      mctx.setTransform(dpr, 0, 0, dpr, 0, 0); mctx.clearRect(0, 0, W, H); if (painter) painter(mctx); else { mctx.fillStyle = "#000"; mctx.fill(buildCellsPath(mctx, vis)); }
       cctx.save(); cctx.setTransform(1, 0, 0, 1, 0, 0); cctx.globalCompositeOperation = "destination-in"; cctx.drawImage(maskCv, 0, 0); cctx.restore();
     }
     return drawn > 0;
@@ -1633,8 +1634,8 @@ body.sheet-open #cellcard { display: none; }
     fillCells(vis, onImg, ag.wFine);
     var strokeA = Math.max(0, Math.min(1, (43 / ag.mpp - 12) / 10));   // contours seulement quand les hexagones sont assez grands
     if (strokeA > 0 && vis.length) {
-      buildCellsPath(ctx, vis);
-      ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke();
+      var ep = buildCellsPath(ctx, vis);
+      ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke(ep);
     }
     ctx.globalAlpha = 1;
     if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
@@ -2319,25 +2320,27 @@ body.sheet-open #cellcard { display: none; }
       })();
     }, 800);
   }
-  function buildCellsPath(c, ids) {
-    c.beginPath();
+  function buildCellsPath(c, ids) {   // chemin des hexagones, à passer à fill, stroke ou clip
+    var P = new Path2D();
     if (tinyHex) {   // hexagones plus petits que 4 px : un petit carré par hexagone, bien plus rapide à dessiner
       var hs = tinyS / 2;
-      for (var q = 0; q < ids.length; q++) { var cc = centerOf(ids[q]), pp = toScreen(cc[0], cc[1]); c.rect(pp[0] - hs, pp[1] - hs, tinyS, tinyS); }
-      return;
+      for (var q = 0; q < ids.length; q++) { var cc = centerOf(ids[q]), pp = toScreen(cc[0], cc[1]); P.rect(pp[0] - hs, pp[1] - hs, tinyS, tinyS); }
+      return P;
     }
+    var parts = new Array(ids.length);   // un seul texte SVG : des dizaines de milliers de closePath coûtent des secondes, ce texte quelques millisecondes (même géométrie)
     for (var j = 0; j < ids.length; j++) {
-      var b = boundary(ids[j]);
-      for (var i = 0; i < b.length; i++) { var p = toScreen(b[i][0], b[i][1]); if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]); }
-      c.closePath();
+      var b = boundary(ids[j]), s = "";
+      for (var i = 0; i < b.length; i++) { var p = toScreen(b[i][0], b[i][1]); s += (i === 0 ? "M" : "L") + p[0] + " " + p[1]; }
+      parts[j] = s + "Z";
     }
+    return ids.length ? new Path2D(parts.join("")) : P;
   }
   var PALE_YELLOW = "#ffe27a";
   function fillOn() { return !SOURCES[S.basemap] || (!tilesLoaded && tilesFailed >= 7); }   // sans imagerie : repli en teinte unie
   function fillCells(vis, onImg, mul) {
     if (!fillOn()) return;
     ctx.globalAlpha = 0.5 * mul;
-    buildCellsPath(ctx, vis); ctx.fillStyle = PALE_YELLOW; ctx.fill();
+    ctx.fillStyle = PALE_YELLOW; ctx.fill(buildCellsPath(ctx, vis));
     ctx.globalAlpha = 1;
   }
   /* ================= vue dézoomée : empreinte exacte, puis hexagones dosés =================
@@ -2345,7 +2348,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v60";
+  var BUILD = "30/10/2026 · v61";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.6;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -2469,7 +2472,7 @@ body.sheet-open #cellcard { display: none; }
         var q = Math.max(3, Math.min(10, Math.round(10 * Math.sqrt(L.cnt[j] / kids))));   // racine : un hexagone à peine touché reste pâle mais visible
         (byQ[q] || (byQ[q] = [])).push(L.id[j]);
       });
-      byQ.forEach(function (ids, q) { buildCellsPath(c, ids); c.globalAlpha = alpha * lv.w * q / 10; c.fill(); });
+      byQ.forEach(function (ids, q) { var P = buildCellsPath(c, ids); c.globalAlpha = alpha * lv.w * q / 10; c.fill(P); });
     });
     c.globalAlpha = 1;
   }
@@ -2874,9 +2877,9 @@ body.sheet-open #cellcard { display: none; }
         if (b[0][0] < br[0] - 0.01 || b[0][0] > tl[0] + 0.01 || b[0][1] < tl[1] - 0.01 || b[0][1] > br[1] + 0.01) return;
         ids.push(id);
       });
-      buildCellsPath(ctx, ids);
-      ctx.globalAlpha = 0.2; ctx.fillStyle = css("--pink"); ctx.fill();
-      ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1; ctx.stroke();
+      var xp = buildCellsPath(ctx, ids);
+      ctx.globalAlpha = 0.2; ctx.fillStyle = css("--pink"); ctx.fill(xp);
+      ctx.globalAlpha = 1; ctx.strokeStyle = css("--outline"); ctx.lineWidth = 1; ctx.stroke(xp);
       ctx.setLineDash([6, 5]);
       pending.items.forEach(function (it) { strokeLines(it.act.lines, css("--outline"), 3.4, 1); strokeLines(it.act.lines, css("--accent"), 2, 1); });
       ctx.setLineDash([]);
@@ -2888,8 +2891,8 @@ body.sheet-open #cellcard { display: none; }
         if (exploreInfo.center !== cid) { exploreInfo.center = cid; exploreInfo.ring = h3.gridDisk(cid, 22); }
         var free = exploreInfo.ring.filter(function (id) { return !cells.has(id); });
         if (free.length) {
-          buildCellsPath(ctx, free);
-          ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+          var fp = buildCellsPath(ctx, free);
+          ctx.globalAlpha = 0.5; ctx.setLineDash([4, 4]); ctx.strokeStyle = css("--cell-edge"); ctx.lineWidth = 1; ctx.stroke(fp); ctx.setLineDash([]); ctx.globalAlpha = 1;
         }
       }
       exploreInfo.peaks.forEach(function (p) {
