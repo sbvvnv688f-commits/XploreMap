@@ -2786,7 +2786,7 @@ body.sheet-open #cellcard { display: none; }
     if (!pending) return "";
     var tot = 0, h = pending.items.map(function (it, idx) {
       var a = it.act; tot += it.newCells;
-      var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">' + (it.sportChosen ? 'Sport choisi ✓ (modifiable)' : 'Type d’activité non reconnu : choisis le sport') + '</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
+      var ask = it.sportAsk ? '<div class="field" style="margin:8px 0 4px"><label for="psport' + idx + '">' + (it.flyFrom && a.sport === "parapente" ? 'Vitesses de vol détectées (rando-parapente) : sport mis en Parapente, modifiable' : it.sportChosen ? 'Sport choisi ✓ (modifiable)' : 'Type d’activité non reconnu : choisis le sport') + '</label><select id="psport' + idx + '" data-psport="' + idx + '">' +
         (it.sportChosen ? '' : '<option value="" selected>Choisir…</option>') + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (it.sportChosen && a.sport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>' : '';
       var s = '<div class="result"><button class="prem" data-prem="' + idx + '" aria-label="Retirer ' + esc(a.name) + ' de l’import">Retirer</button><b>' + esc(a.name) + '</b> — ' + fmt(a.dist / 1000, 1) + ' km' + (it.sportAsk && !it.sportChosen ? '' : ' · ' + sl(a.sport)) + ask +
         '<br><span class="gain">+' + fmtKm2(it.newCells * AREA_M2 / 1e6) + ' km² · ' + fmt(it.newCells, 0) + ' nouveaux hexagones</span>' +
@@ -2999,9 +2999,13 @@ body.sheet-open #cellcard { display: none; }
     var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
     var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
     var date = g.localDate || (g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice));
-    var b = buildLines(smoothPts(g.pts), SPORTS[sport].vmax);
+    var sm = smoothPts(g.pts), b = buildLines(sm, SPORTS[sport].vmax), flyFrom = "";
+    if ((!b.lines.length || b.skipped > g.pts.length * 0.2) && SPORTS[sport].vmax < SPORTS.parapente.vmax) {   // rando-parapente enregistrée en randonnée : vitesses de vol
+      var bf = buildLines(sm, SPORTS.parapente.vmax);
+      if (bf.lines.length && bf.skipped <= g.pts.length * 0.2) { b = bf; flyFrom = sport; sport = "parapente"; }
+    }
     if (!b.lines.length) throw new Error("trace entièrement filtrée (vitesse ou sauts GPS)");
-    if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents : trace refusée");
+    if (b.skipped > g.pts.length * 0.2) throw new Error("trop de segments incohérents (" + Math.round(b.skipped / g.pts.length * 100) + " % des points au-delà de " + SPORTS[sport].vmax + " km/h ou en saut GPS pour « " + SPORTS[sport].label + " ») : trace refusée");
     var name = g.name && !/^suuntoapp-/i.test(g.name) ? g.name : SPORTS[sport].label + " du " + fmtDate(date);
     var dup = S.activities.concat(items.map(function (x) { return x.act; })).some(function (a) {
       if (extra.stravaId && a.strava === extra.stravaId) return true;
@@ -3009,7 +3013,7 @@ body.sheet-open #cellcard { display: none; }
     });
     if (dup) throw new Error("déjà importée");
     var act = { name: name, sport: sport, date: date, dist: b.dist, skipped: b.skipped, lines: b.lines, trust: g.sensor ? "ok" : "non", summits: [], sumDone: false, landmarks: [], lmDone: false, t0: g.firstTime || 0, strava: extra.stravaId || 0 };
-    var it = { act: act, file: fname, near: [], nearLm: [], zone: null, scanning: true, sportAsk: !!g.sportAsk };
+    var it = { act: act, file: fname, near: [], nearLm: [], zone: null, scanning: true, sportAsk: !!g.sportAsk || !!flyFrom, sportChosen: !!flyFrom, flyFrom: flyFrom };
     items.push(it);
     scanItem(it);
     return it;
@@ -3140,7 +3144,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v94c";
+  var BUILD = "31/10/2026 · v94d";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
