@@ -289,6 +289,26 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .kpi.wide { grid-column: 1 / -1; background: var(--accent); }
 .kpi.wide .kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .kpi.wide .kpi-note { display: block; margin-top: 4px; font-size: 11px; color: var(--k-ink); opacity: .8; }
+.pcoll { gap: 9px; }
+.pc { position: relative; display: block; aspect-ratio: 3 / 4; padding: 4px; border: 3px solid var(--outline); border-radius: 14px; overflow: hidden; background: var(--rc); box-shadow: 2px 2px 0 var(--outline); font: inherit; cursor: pointer; }
+.pc[aria-expanded="true"] { outline: 3px solid var(--ink); outline-offset: 1px; }
+.pc .ph-w, .pc .ph { display: block; width: 100%; height: 100%; }
+.pc .ph { object-fit: cover; border-radius: 9px; border: 2px solid var(--outline); box-sizing: border-box; }
+.pc .noph { display: flex; align-items: center; justify-content: center; font-size: 30px; color: var(--ink); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--rc) 35%, var(--panel)) 0 8px, color-mix(in srgb, var(--rc) 22%, var(--panel)) 8px 16px); }
+.pc .rb { position: absolute; top: 8px; left: 8px; padding: 1px 6px; border: 2px solid var(--outline); border-radius: 999px; background: var(--rc); font-weight: 700; font-size: 8.5px; text-transform: uppercase; color: #2b1f4a; }
+.pc .nm { position: absolute; left: 4px; right: 4px; bottom: 4px; padding: 16px 5px 6px; border-radius: 0 0 9px 9px; background: linear-gradient(transparent, rgba(20, 12, 40, .88) 45%); color: #fff; font-weight: 700; font-size: 11px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.pc .nm small { display: block; font-weight: 500; font-size: 10px; opacity: .85; }
+.pc.empty { opacity: .85; border-style: dashed; box-shadow: none; }
+.pc.empty .ph { filter: grayscale(1) contrast(.9); }
+.pdet { grid-column: 1 / -1; border: 3px solid var(--outline); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }
+.pdet[hidden] { display: none; }
+.pdet > .ph { display: block; width: 100%; height: 170px; object-fit: cover; border-bottom: 3px solid var(--outline); }
+.pdet .bd { padding: 10px 12px; font-size: 12px; }
+.pdet .bd b.t { display: block; font-size: 16px; margin-bottom: 4px; }
+.pdet .poi-text { display: block; margin-top: 6px; color: var(--muted); }
+.pdet .btns { display: flex; gap: 8px; margin-top: 10px; }
+.pdet .btns .btn { flex: 1; padding: 8px 0; text-align: center; text-decoration: none; }
+.pdet .cr { margin-top: 6px; font-size: 9.5px; color: var(--muted); }
 .coll { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
 .ccard .cc-act { display: flex; gap: 3px; margin-top: auto; padding-top: 5px; align-self: stretch; }
 .ccard .cc-act button, .ccard .cc-act a { flex: 1 1 0; min-width: 0; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--outline); border-radius: 9px; background: var(--bg-soft, var(--panel)); color: var(--ink); font: 700 11px inherit; text-decoration: none; cursor: pointer; }
@@ -2867,7 +2887,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v91";
+  var BUILD = "31/10/2026 · v91b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3118,19 +3138,59 @@ body.sheet-open #cellcard { display: none; }
       collBusy = false; if (current === "goals" && (succTab === "sommets" || succTab === "lieux")) render();
     });
   }
+  var photoQ = [], photoBusy = 0, ccOpen = "";
+  function wantPhoto(key) {   // photo de la carte : demandée une fois, deux à la fois
+    var r = S.info[key];
+    if ((r && r.i !== undefined) || photoQ.indexOf(key) >= 0) return;
+    photoQ.push(key); setTimeout(pumpPhotos, 0);
+  }
+  function pumpPhotos() {
+    while (photoBusy < 2 && photoQ.length) (function (key) {
+      var it = poiIdx[key]; if (!it) return;
+      photoBusy++;
+      wikiInfo(it).then(function (r) { S.info[key] = r; save(); }, function (e) {
+        if (e && (e.message === "pas de fiche" || e.message === "vide" || /HTTP 404/.test(e.message))) { S.info[key] = { t: "", d: "", u: "", i: "", nof: 1 }; save(); }
+      }).then(function () { photoBusy--; showPhoto(key); pumpPhotos(); });
+    })(photoQ.shift());
+  }
+  function photoHTML(key, icon) {
+    var r = S.info[key];
+    return r && r.i ? '<img class="ph" src="' + esc(r.i) + '" alt="" loading="lazy">' : '<span class="ph noph">' + icon + '</span>';
+  }
+  function showPhoto(key) {
+    var w = $("ph-" + key), r = S.info[key];
+    if (w && r && r.i) w.innerHTML = photoHTML(key, "");
+  }
   function collCard(p, isPeak, owned, extra) {
-    var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id), url = (S.info[key] && S.info[key].u) || wikiUrl(p);
-    poiIdx[key] = p;
-    var first = owned
-      ? '<b>Première visite :</b> le ' + fmtDate(p.date) + (p.act ? ' (« ' + esc(p.act) + ' »)' : '') + '<br>' +
-        (isPeak ? (p.ele ? 'Altitude : ' + fmt(p.ele, 0) + ' m · ' : '') + 'cercle de ' + (p.r || summitRadius(p.ele)) + ' m débloqué' : esc(p.kind || "Lieu") + ' · cercle de ' + LANDMARK_R + ' m débloqué')
-      : '<b>Pas encore visité</b>' + (extra ? ' · à ' + extra + ' de chez toi' : '') + '<br>Passe à moins de ' + (isPeak ? SUMMIT_REACH_M : LANDMARK_REACH_M) + ' m pour l’ajouter à ta collection.';
-    return '<div class="ccard' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '">' +
-      '<span class="cc-r">' + RARITY[r].n + '</span><span class="cc-ic">' + (owned ? (isPeak ? "▲" : p.ic || "📍") : "?") + '</span>' +
-      '<b>' + esc(p.name) + '</b><small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small>' +
-      '<span class="cc-act"><button data-info="' + key + '" aria-label="Infos sur ' + esc(p.name) + '">ℹ️</button><button data-go="' + key + '" aria-label="Voir ' + esc(p.name) + ' sur la carte">📍</button>' +
-      '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" aria-label="' + esc(p.name) + ' sur Wikipédia">W↗</a></span></div>' +
-      '<div class="poi-info cc-info" id="info-' + key + '" hidden><div class="cc-first">' + first + '</div><div id="infot-' + key + '"></div></div>';
+    var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id), icon = owned ? (isPeak ? "▲" : p.ic || "📍") : "?";
+    poiIdx[key] = p; p._owned = owned; p._peak = isPeak; p._extra = extra || "";
+    wantPhoto(key);
+    return '<button class="pc' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '" data-ccopen="' + key + '" aria-expanded="' + (ccOpen === key) + '" aria-label="' + esc(p.name) + (owned ? '' : ' (pas encore atteint)') + '">' +
+      '<span class="ph-w" id="ph-' + key + '">' + photoHTML(key, icon) + '</span><span class="rb">' + RARITY[r].n + '</span>' +
+      '<span class="nm">' + esc(p.name) + '<small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small></span></button>' +
+      '<div class="pdet" id="det-' + key + '"' + (ccOpen === key ? '' : ' hidden') + '>' + (ccOpen === key ? detHTML(key) : '') + '</div>';
+  }
+  function detHTML(key) {
+    var p = poiIdx[key], r = S.info[key] || {}, url = r.u || wikiUrl(p), big = r.i ? r.i.replace(/\/(\d+)px-/, "/640px-") : "";
+    var first = p._owned
+      ? '<b>Première visite :</b> le ' + fmtDate(p.date) + (p.act ? ' (« ' + esc(p.act) + ' »)' : '') + ' · ' +
+        (p._peak ? 'cercle de ' + (p.r || summitRadius(p.ele)) + ' m débloqué' : esc(p.kind || "Lieu") + ' · cercle de ' + LANDMARK_R + ' m débloqué')
+      : '<b>Pas encore visité</b>' + (p._extra ? ' · à ' + p._extra + ' de chez toi' : '') + '. Passe à moins de ' + (p._peak ? SUMMIT_REACH_M : LANDMARK_REACH_M) + ' m pour l’ajouter à ta collection.';
+    return (big ? '<img class="ph" src="' + esc(big) + '" alt="">' : '') + '<div class="bd"><b class="t">' + esc(p.name) + (p._peak && p.ele ? ' · ' + fmt(p.ele, 0) + ' m' : '') + '</b>' + first +
+      '<div class="poi-text" id="infot-' + key + '">' + infoHTML(key) + '</div>' +
+      '<div class="btns"><button class="btn" data-ccgo="' + key + '">📍 Carte</button><a class="btn ghost" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
+      (r.i ? '<div class="cr">Photo : Wikimédia Commons, licence libre (auteur sur la page Wikipédia).</div>' : '') + '</div>';
+  }
+  function toggleCard(key) {
+    var prev = ccOpen; ccOpen = ccOpen === key ? "" : key;
+    if (prev) { var d0 = $("det-" + prev), b0 = document.querySelector('[data-ccopen="' + prev + '"]'); if (d0) { d0.hidden = true; d0.innerHTML = ""; } if (b0) b0.setAttribute("aria-expanded", "false"); }
+    if (!ccOpen) return;
+    var d = $("det-" + key), b = document.querySelector('[data-ccopen="' + key + '"]');
+    d.innerHTML = detHTML(key); d.hidden = false; if (b) b.setAttribute("aria-expanded", "true");
+    var g = d.querySelector("[data-ccgo]"); if (g) g.addEventListener("click", function () { goToPoi(poiIdx[key]); });
+    var r = S.info[key];
+    if (!r || (!r.t && !r.nof)) loadInfo(key);
+    d.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
   function collTabHTML(isPeak) {
     var list = isPeak ? summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }) : landmarkList(), byR = [0, 0, 0, 0, 0];
@@ -3144,12 +3204,12 @@ body.sheet-open #cellcard { display: none; }
     if (!list.length) h += '<div class="empty-line">' + (isPeak
       ? 'Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.'
       : 'Aucun lieu pour l’instant. Passe à moins de ' + LANDMARK_REACH_M + ' m d’un monument, d’un château, d’une cascade ou d’un site historique référencé sur Wikipédia : un cercle de ' + LANDMARK_R + ' m se débloque.') + '</div>';
-    if (isPeak && list.length) h += '<div class="coll">' + list.map(function (s) { return collCard(s, true, true); }).join("") + '</div>';
+    if (isPeak && list.length) h += '<div class="coll pcoll">' + list.map(function (s) { return collCard(s, true, true); }).join("") + '</div>';
     if (!isPeak) {
       var kinds = {};
       list.forEach(function (l) { (kinds[l.kind || "Lieu"] = kinds[l.kind || "Lieu"] || []).push(l); });
       Object.keys(kinds).sort(function (a, b) { return kinds[b].length - kinds[a].length; }).forEach(function (k) {
-        h += '<h3>' + (kinds[k][0].ic || "📍") + ' ' + esc(k) + ' (' + kinds[k].length + ')</h3><div class="coll">' +
+        h += '<h3>' + (kinds[k][0].ic || "📍") + ' ' + esc(k) + ' (' + kinds[k].length + ')</h3><div class="coll pcoll">' +
           kinds[k].sort(function (a, b) { return rarityOf(b, false) - rarityOf(a, false) || (a.date < b.date ? 1 : -1); }).map(function (l) { return collCard(l, false, true); }).join("") + '</div>';
       });
     }
@@ -3158,7 +3218,7 @@ body.sheet-open #cellcard { display: none; }
     if (!collNear) { loadCollNear(); return h + '<div class="empty-line">Recherche autour de toi…</div>'; }
     var near = collNear.filter(function (x) { return x.peak === isPeak; }).slice(0, 9);
     if (!near.length) return h + '<div class="empty-line">Rien de nouveau trouvé autour de toi pour l’instant.</div>';
-    return h + '<div class="coll">' + near.map(function (x) { return collCard(x.p, x.peak, false, x.d !== undefined ? (x.d >= 1000 ? fmt(x.d / 1000, 1) + " km" : Math.round(x.d) + " m") : ""); }).join("") + '</div>';
+    return h + '<div class="coll pcoll">' + near.map(function (x) { return collCard(x.p, x.peak, false, x.d !== undefined ? (x.d >= 1000 ? fmt(x.d / 1000, 1) + " km" : Math.round(x.d) + " m") : ""); }).join("") + '</div>';
   }
   function wikiParse(wp) {
     var m = /^([a-z][a-z-]{1,11}):(.+)$/i.exec(wp || "");
@@ -3178,7 +3238,7 @@ body.sheet-open #cellcard { display: none; }
         var t = String(j.extract || "").trim();
         if (!t) throw new Error("vide");
         if (t.length > 320) { var cut = t.slice(0, 320), p = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("; ")); t = p > 120 ? cut.slice(0, p + 1) : cut.replace(/\s+\S*$/, "") + "…"; }
-        return { t: t, d: j.description || "", u: (j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || "" };
+        return { t: t, d: j.description || "", u: (j.content_urls && j.content_urls.desktop && j.content_urls.desktop.page) || "", i: (j.thumbnail && j.thumbnail.source) || "" };
       });
   }
   function wikiInfo(it) {
@@ -3197,6 +3257,7 @@ body.sheet-open #cellcard { display: none; }
   function infoHTML(key) {
     var r = S.info[key];
     if (!r) return '<span class="warn">Chargement du résumé…</span>';
+    if (r.nof) return '<span class="warn">Aucune fiche Wikipédia référencée pour ce lieu.</span>';
     return '<span class="poi-text">' + esc(r.t) + '</span>' + (r.d ? '<br><span class="warn">' + esc(r.d) + '</span>' : "");
   }
   function loadInfo(key) {
@@ -4312,7 +4373,9 @@ body.sheet-open #cellcard { display: none; }
     var rf = $("rankfriends"); if (rf) rf.addEventListener("click", function () { openTab("friends"); });
     var rs = $("rescanBtn"); if (rs) rs.addEventListener("click", recomputeAll);
     document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
-    document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; render(); }); });
+    document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; ccOpen = ""; render(); }); });
+    document.querySelectorAll("[data-ccopen]").forEach(function (b) { b.addEventListener("click", function () { toggleCard(b.dataset.ccopen); }); });
+    if (ccOpen && $("det-" + ccOpen) && !$("det-" + ccOpen).hidden) { var g0 = $("det-" + ccOpen).querySelector("[data-ccgo]"); if (g0) g0.addEventListener("click", function () { goToPoi(poiIdx[ccOpen]); }); }
     var ri = $("rarinfo"); if (ri) ri.addEventListener("click", function () { var hp = $("rarhelp"); hp.hidden = !hp.hidden; ri.setAttribute("aria-expanded", String(!hp.hidden)); });
     document.querySelectorAll("[data-info]").forEach(function (b) { b.addEventListener("click", function () {
       var key = b.dataset.info, el = $("info-" + key);
