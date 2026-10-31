@@ -561,11 +561,11 @@ body.sheet-open #cellcard { display: none; }
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
 <div class="float" id="gradeBox"><div class="gl-wrap" id="glWrap" hidden><div class="gradelegend" id="gradeLegend"><div><i style="border-color:#8a5a2e"></i><span class="gl-t">5 visites · 🥾 Patrouilleur</span></div><div><i style="border-color:#cd7f32"></i><span class="gl-t">20 · 🗺️ Cartographe</span></div><div><i style="border-color:#e6ebf2"></i><span class="gl-t">50 · 🚩 Guide local</span></div><div><i style="border-color:#ffd23f"></i><span class="gl-t">100 · 🛡️ Gardien des lieux</span></div><div><i style="border-color:#2fd37a"></i><span class="gl-t">200 · 🏗️ Bâtisseur</span></div><div><i style="border-color:#8ff3ff"></i><span class="gl-t">500 · 🌟 Légende</span></div></div><button class="gl-tab" id="glTab" aria-label="Masquer les textes de la légende" aria-expanded="true"></button></div><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label></div>
 <div class="float" id="cellcard" hidden role="dialog" aria-label="Sorties dans cet hexagone"></div>
-<div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
+<div id="dropzone" hidden>Dépose tes fichiers GPX, TCX, FIT ou IGC</div>
 
 <div class="float" id="hint" hidden>
   <h2>Ta carte est toute vide !</h2>
-  <p>Ajoute une course (GPX, TCX ou FIT) et regarde ton territoire se colorier.</p>
+  <p>Ajoute une course (GPX, TCX, FIT ou IGC) et regarde ton territoire se colorier.</p>
   <button class="btn" id="hintBtn">Ajouter une course</button>
 </div>
 <div class="float" id="toast" hidden role="status"></div>
@@ -794,6 +794,33 @@ body.sheet-open #cellcard { display: none; }
     return { pts: pts, name: nEl ? nEl.textContent.trim() : "", firstTime: firstTime, sensor: sensor, sport: act ? guessSport(act.getAttribute("Sport") || "", null) : null };
   }
 
+  /* ================= IGC -> lignes (enregistreurs de vol) ================= */
+  function parseIGC(txt) {
+    var day0 = null, tz = 0, site = "", glider = "", pts = [], day = 0, lastSec = -1, baro = false;
+    txt.split(/\r?\n/).forEach(function (l) {
+      var m;
+      if ((m = /^HFDTE(?:DATE:)?(\d{2})(\d{2})(\d{2})/.exec(l))) day0 = Date.UTC(2000 + +m[3], +m[2] - 1, +m[1]) / 1000;
+      else if ((m = /^HFTZN[^:]*:\s*([+-]?\d+(?:\.\d+)?)/.exec(l))) tz = +m[1];
+      else if ((m = /^HFSIT[^:]*:\s*(.+)$/.exec(l))) site = m[1].split(",")[0].trim();
+      else if ((m = /^HFGTY[^:]*:\s*(.+)$/.exec(l))) glider = m[1].trim();
+      else if ((m = /^B(\d{2})(\d{2})(\d{2})(\d{2})(\d{5})([NS])(\d{3})(\d{5})([EW])([AV])([-\d]\d{4})([-\d]\d{4})/.exec(l))) {
+        var sec = +m[1] * 3600 + +m[2] * 60 + +m[3];
+        if (lastSec >= 0 && sec < lastSec - 43200) day++;   // passage de minuit (UTC)
+        lastSec = sec;
+        if (m[10] !== "A") return;   // fix 2D ou invalide
+        var lat = +m[4] + +m[5] / 60000, lng = +m[7] + +m[8] / 60000;
+        if (m[6] === "S") lat = -lat; if (m[9] === "W") lng = -lng;
+        var pa = parseInt(m[11], 10), ga = parseInt(m[12], 10);
+        if (pa) baro = true;
+        pts.push({ p: [lat, lng], t: day0 === null ? null : day0 + day * 86400 + sec, a: ga || pa || null });
+      }
+    });
+    if (day0 === null) throw new Error("fichier IGC sans date (ligne HFDTE)");
+    var first = pts.length ? pts[0].t : null;
+    return { pts: pts, name: site ? "Vol depuis " + site : (glider ? "Vol en " + glider : ""), firstTime: first, sensor: baro, sport: "parapente",
+      localDate: first !== null ? new Date((first + tz * 3600) * 1000).toISOString().slice(0, 10) : null };
+  }
+
   /* ================= FIT -> lignes ================= */
   function fitSport(sport, sub) {
     if (sport === 22 || sport === 24 || sport === 36) return "moteur";      // moto, conduite, motoneige
@@ -877,7 +904,8 @@ body.sheet-open #cellcard { display: none; }
     var txt = new TextDecoder("utf-8").decode(buf);
     if (/<TrainingCenterDatabase/i.test(txt)) return parseTCX(txt);
     if (/<gpx[\s>]/i.test(txt)) return parseGPX(txt);
-    throw new Error("format non reconnu (GPX, TCX ou FIT attendu)");
+    if (/^HFDTE/m.test(txt) && /^B\d{6}/m.test(txt)) return parseIGC(txt);
+    throw new Error("format non reconnu (GPX, TCX, FIT ou IGC attendu)");
   }
 
   function buildLines(pts, vmaxKmh) {
@@ -2849,7 +2877,7 @@ body.sheet-open #cellcard { display: none; }
     g.pts.forEach(function (x, i) { if (x.t !== null) { timed++; if (i && g.pts[i - 1].t !== null && x.t < g.pts[i - 1].t) back++; } });
     if (timed < g.pts.length * 0.95) throw new Error("trace sans horodatage : impossible à contrôler");
     if (back > g.pts.length * 0.02) throw new Error("horodatage incohérent (retours dans le temps)");
-    var base = fname.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit)$/i, "");
+    var base = fname.replace(/\.gz$/i, "").replace(/\.(gpx|tcx|fit|igc)$/i, "");
     var sport = guessSport(base + " " + g.name, g.sport || sportChoice);
     var m = base.match(/(\d{4})-(\d{2})-(\d{2})/);
     var date = g.localDate || (g.firstTime ? new Date(g.firstTime * 1000).toISOString().slice(0, 10) : (m ? m[0] : dateChoice));
@@ -2994,7 +3022,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v93";
+  var BUILD = "31/10/2026 · v93b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4092,8 +4120,8 @@ body.sheet-open #cellcard { display: none; }
   window.addEventListener("dragleave", function () { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("dropzone").hidden = true; });
   window.addEventListener("drop", function (e) {
     e.preventDefault(); dragDepth = 0; $("dropzone").hidden = true;
-    var fs = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []).filter(function (f) { return /\.(gpx|tcx|fit)(\.gz)?$/i.test(f.name); });
-    if (!fs.length) { toast("Dépose des fichiers GPX, TCX ou FIT."); return; }
+    var fs = Array.prototype.slice.call((e.dataTransfer && e.dataTransfer.files) || []).filter(function (f) { return /\.(gpx|tcx|fit|igc)(\.gz)?$/i.test(f.name); });
+    if (!fs.length) { toast("Dépose des fichiers GPX, TCX, FIT ou IGC."); return; }
     if (current !== "add") openTab("add");
     importFiles(fs, ($("sp") && $("sp").value) || "autre", ($("dt") && $("dt").value) || todayISO());
   });
@@ -4202,7 +4230,7 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="box guide-step' + (done ? ' done' : '') + '"><h3>' + (done ? '✓ ' : n + '. ') + title + '</h3><p class="note" style="margin:0 0 8px">' + text + '</p>' + btn + '</div>';
     }
     return '<p class="note" style="margin-top:0">Xplr colorie la carte là où tu passes : chaque sortie découvre des hexagones, les sommets et lieux atteints débloquent des cercles, et tu peux comparer ta carte avec celle de tes amis. Trois étapes pour bien démarrer :</p>' +
-      step(1, st || realActs().length > 0, "Ajoute tes sorties", st ? "Strava est connecté : tes sorties arrivent toutes seules, il suffit de les valider." : "Connecte Strava pour récupérer tes sorties automatiquement, ou importe des fichiers GPX, TCX ou FIT.", '<button class="btn block" data-gstep="add">' + (st ? "Voir mes sorties" : "Connecter Strava ou importer") + '</button>') +
+      step(1, st || realActs().length > 0, "Ajoute tes sorties", st ? "Strava est connecté : tes sorties arrivent toutes seules, il suffit de les valider." : "Connecte Strava pour récupérer tes sorties automatiquement, ou importe des fichiers GPX, TCX, FIT ou IGC.", '<button class="btn block" data-gstep="add">' + (st ? "Voir mes sorties" : "Connecter Strava ou importer") + '</button>') +
       step(2, hm, "Ta zone domicile", hm ? "Les hexagones autour de chez toi ne seront jamais montrés à tes amis. Tu peux la déplacer quand tu veux." : "Place un cercle autour de chez toi : ces hexagones ne seront jamais montrés à tes amis.", '<button class="btn ghost block" data-gstep="home">📍 ' + (hm ? "Vérifier sur la carte" : "Placer sur la carte") + '</button>') +
       step(3, nf > 0, "Invite un ami", nf ? "Tu as " + nf + " ami" + (nf > 1 ? "s" : "") + ". Entre amis, vous voyez vos cartes respectives." : "Entre amis, vous voyez vos cartes respectives et vous vous classez entre vous.", '<div class="inv"><input type="text" id="guideinv" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="pseudo de ton ami" aria-label="Pseudo de ton ami"><button class="btn" id="guideinvok">Inviter</button></div>') +
       '<div class="drawer-sec"><button class="btn ghost block" id="guidetuto">📖 Voir le tutoriel (2 minutes)</button><button class="btn block" id="guidego">C’est parti !</button></div>' +
@@ -4227,7 +4255,7 @@ body.sheet-open #cellcard { display: none; }
   }
   var TUTO = [
     { ic: "🧭", t: "Bienvenue sur Xplr", x: function () { return "Xplr transforme tes sorties en territoire. La carte est découpée en petits hexagones d’environ 50 m : chaque hexagone que tu traverses se colore. Le but : explorer le plus de terrain possible, seul ou avec tes amis."; } },
-    { ic: "➕", t: "Ajouter tes sorties", sel: ".tab[data-tab=add]", x: function () { return "Onglet Ajouter : connecte Strava, choisis la période puis « Récupérer mes sorties Strava », ou importe des fichiers GPX, TCX ou FIT (Garmin, Suunto, Coros…). Les sorties arrivent en attente : vérifie-les, retire celles que tu ne veux pas, puis touche « Valider »."; } },
+    { ic: "➕", t: "Ajouter tes sorties", sel: ".tab[data-tab=add]", x: function () { return "Onglet Ajouter : connecte Strava, choisis la période puis « Récupérer mes sorties Strava », ou importe des fichiers GPX, TCX, FIT ou IGC (Garmin, Suunto, Coros, instruments de vol…). Les sorties arrivent en attente : vérifie-les, retire celles que tu ne veux pas, puis touche « Valider »."; } },
     { ic: "🗺️", t: "Ton territoire", sel: "#chip", x: function () { return "En haut à droite : ta surface explorée en km² et ton nombre d’hexagones. Pince pour zoomer : de loin tu vois l’étendue de ton territoire, de près chaque hexagone, avec l’imagerie en couleur là où tu es passé et le relief ailleurs."; } },
     { ic: "🎛️", t: "Les boutons de la carte", sel: "#ctrl", x: function () { return "À droite, de haut en bas : filtrer par période et par sport, changer le fond de carte, chercher un lieu, afficher ta position, zoomer, et recentrer sur tout ton territoire."; } },
     { ic: "🥾", t: "La maîtrise des hexagones", sel: "#gradeBox", x: function () { return "Chaque jour où tu repasses dans un hexagone compte : Patrouilleur à 5 jours, puis Cartographe (20), Guide local (50), Gardien des lieux (100), Bâtisseur (200) et Légende (500). La légende montre la couleur des contours de chaque palier ; décoche « Contours par grade » pour les masquer."; } },
@@ -4275,14 +4303,14 @@ body.sheet-open #cellcard { display: none; }
     return pendTopHTML() + '<div class="box">' + stravaSettingsHTML() + '</div><h3>Importer des fichiers</h3>' +
       '<div class="field"><label for="sp">Sport (utilisé si le fichier ne l’indique pas)</label><select id="sp">' + opts + '</select></div>' +
       '<div class="field"><label for="dt">Date (utilisée si le fichier n’en contient pas)</label><input type="date" id="dt" value="' + todayISO() + '"></div>' +
-      '<label class="btn block drop">Choisir des fichiers GPX, TCX ou FIT<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
+      '<label class="btn block drop">Choisir des fichiers GPX, TCX, FIT ou IGC<input type="file" id="gpxin" multiple accept=".gpx,.tcx,.fit,.igc,.gz,application/gpx+xml,text/xml,application/octet-stream"></label>' +
       '<div id="addres">' + pendingHTML() + '</div>' +
-      '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
+      '<p class="note">Les fichiers GPX, TCX et FIT (y compris compressés en .gz) exportés depuis Suunto, Garmin, Coros ou Strava, et les fichiers IGC des instruments de vol (parapente, vol libre) sont acceptés. La synchronisation automatique avec les montres demande un agrément partenaire de chaque marque et n’est pas encore disponible.</p>' +
       '<p class="note">Seules les traces enregistrées avec leur heure sont acceptées, pas les itinéraires dessinés. Les courses sans données de capteur sont signalées « sans capteur » dans la liste.</p>' +
       '<p class="note">Atteindre un sommet nommé (à moins de ' + SUMMIT_REACH_M + ' m) débloque un cercle d’exploration : ' + SUMMIT_BASE_M + ' m de rayon, plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude. Les lieux emblématiques (monuments, châteaux, cascades, sites historiques référencés sur Wikipédia) à moins de ' + LANDMARK_REACH_M + ' m débloquent un cercle de ' + LANDMARK_R + ' m. L’analyse des sommets, des lieux et des communes est automatique à l’ajout (OpenStreetMap et geo.api.gouv.fr, connexion requise).</p>';
   }
   function viewList() {
-    if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX ou FIT) depuis l’onglet Ajouter.</div>';
+    if (!S.activities.length) return '<div class="empty-line">Aucune course pour l’instant. Ajoute ton premier fichier (GPX, TCX, FIT ou IGC) depuis l’onglet Ajouter.</div>';
     var present = Object.keys(SPORTS).filter(function (k) { return S.activities.some(function (a) { return a.sport === k; }); });
     if (listSport !== "all" && present.indexOf(listSport) < 0) listSport = "all";
     var bar = present.length > 1 ? '<div class="seg">' + [["all", "Tous"]].concat(present.map(function (k) { return [k, sl(k)]; })).map(function (it) { return '<button data-lsport="' + it[0] + '" aria-pressed="' + (listSport === it[0]) + '">' + it[1] + '</button>'; }).join("") + '</div>' : "";
