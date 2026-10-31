@@ -281,6 +281,8 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero .yr-y { display: block; font-weight: 700; font-size: 14px; letter-spacing: .1em; }
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
+#updbar { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 74px); z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; border: 3px solid var(--outline); border-radius: 16px; background: var(--accent); color: var(--k-ink, #2b1f4a); box-shadow: 3px 3px 0 var(--outline); font-weight: 700; font-size: 13px; }
+#updbar .btn { padding: 7px 12px; }
 .feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .fitem { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); font-size: 12.5px; }
 .fitem.me { opacity: .8; }
@@ -2887,7 +2889,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v91b";
+  var BUILD = "31/10/2026 · v91c";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3757,6 +3759,20 @@ body.sheet-open #cellcard { display: none; }
       (done < tot ? 'L’analyse reprend automatiquement tant que la connexion le permet.' : 'Aucun sommet nommé ni lieu référencé trouvé à moins de ' + SUMMIT_REACH_M + ' m de tes traces.') +
       '</p><button class="btn ghost block" id="rescanBtn">Relancer l’analyse maintenant</button>';
   }
+  var updCheckAt = 0;
+  function checkUpdate() {   // version en ligne plus récente que celle-ci : bandeau pour mettre à jour
+    if (Date.now() - updCheckAt < 600000 || navigator.onLine === false || !/^https?:/.test(location.protocol)) return;
+    updCheckAt = Date.now();
+    fetch("index.html?v=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
+      var m = /var BUILD = "([^"]+)"/.exec(t || "");
+      if (!m || m[1] === BUILD || $("updbar")) return;
+      var bar = document.createElement("div"); bar.id = "updbar"; bar.setAttribute("role", "status");
+      bar.innerHTML = '<span>Nouvelle version disponible (' + esc(m[1].split("·").pop().trim()) + ')</span><button class="btn" id="updgo">Mettre à jour</button>';
+      document.body.appendChild(bar); $("updgo").addEventListener("click", forceUpdate);
+    }).catch(function () { /* hors ligne */ });
+  }
+  setTimeout(checkUpdate, 4000);
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible") checkUpdate(); });
   function forceUpdate() {
     toast("Mise à jour en cours…");
     var tasks = [];
