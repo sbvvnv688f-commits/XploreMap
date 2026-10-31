@@ -281,6 +281,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero .yr-y { display: block; font-weight: 700; font-size: 14px; letter-spacing: .1em; }
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
+.notif-row { display: flex; margin: 6px 0; }
 #tutoBox { position: fixed; inset: 0; z-index: 1900; }
 #tutoBox .tu-dim { position: absolute; inset: 0; background: rgba(16, 10, 34, .78); }
 #tutoBox .tu-spot { position: absolute; border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 0 0 9999px rgba(16, 10, 34, .78), 0 0 18px 4px var(--accent); pointer-events: none; transition: all .25s; }
@@ -1136,6 +1137,7 @@ body.sheet-open #cellcard { display: none; }
     if (j.refresh_token) S.strava.refresh = j.refresh_token;
     S.strava.exp = j.expires_at || 0;
     if (j.athlete) S.strava.athlete = ((j.athlete.firstname || "") + " " + (j.athlete.lastname || "")).trim() || S.strava.athlete;
+    if (j.athlete && j.athlete.id && j.athlete.id !== S.strava.athleteId) { S.strava.athleteId = j.athlete.id; S.strava.linked = false; }
     save();
   }
   function stravaConnect() {
@@ -1164,6 +1166,37 @@ body.sheet-open #cellcard { display: none; }
         throw e;
       });
   }
+  function linkStrava() {   // identifiant d’athlète Strava lié au compte : le serveur sait à qui appartient chaque nouvelle sortie
+    if (!acct || !stravaConnected() || S.strava.linked) return Promise.resolve(!!S.strava.linked);
+    var getId = S.strava.athleteId ? Promise.resolve(S.strava.athleteId) : stravaApi("athlete").then(function (a) { S.strava.athleteId = a && a.id; return S.strava.athleteId; });
+    return getId.then(function (id) {
+      if (!id) return false;
+      return apiCall("PUT", "/strava/athlete", { id: id }).then(function () { S.strava.linked = true; save(); return true; });
+    }).catch(function () { return false; });
+  }
+  var hookCheckAt = 0;
+  function stravaAutoCheck(force) {   // ouverture ou retour dans l’appli : Strava n’est interrogé que s’il y a du nouveau
+    if (!stravaConnected() || !S.strava.auto || stravaBusy || (!force && Date.now() - hookCheckAt < 60000)) return;
+    hookCheckAt = Date.now();
+    var nowS = Math.floor(Date.now() / 1000), stale = nowS - (S.strava.checkedAt || 0);
+    linkStrava().then(function (linked) {
+      if (!linked) { if (stale > 1800) stravaSync({}); return; }   // pas encore lié : ancien fonctionnement
+      return apiCall("GET", "/strava/events?since=" + (S.strava.hookAt || 0)).then(function (r) {
+        if (r.deauth) return stravaApi("athlete").then(function () { S.strava.hookAt = r.last; save(); if (r.creates) stravaSync({}); }, function (e) {
+          if (e && (e.status === 401 || e.expired)) { stravaForget(); toast("Strava a été déconnecté depuis ton compte Strava."); }
+        });
+        S.strava.hookAt = r.last; save();
+        if (r.creates > 0 || stale > 86400) stravaSync({});   // nouvelle sortie annoncée par Strava, ou vérification de sécurité quotidienne
+      });
+    }).catch(function () { if (stale > 1800) stravaSync({}); });
+  }
+  function stravaForget() {   // déconnexion locale (révocation, ou bouton « Se déconnecter de Strava »)
+    S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0; S.strava.depth = 0; S.strava.more = false; S.strava.moreBf = false; S.strava.retryAt = 0; clearTimeout(stvResumeTimer);
+    if (acct && S.strava.linked) apiCall("DELETE", "/strava/athlete").catch(function () { /* hors ligne */ });
+    S.strava.athleteId = 0; S.strava.linked = false; S.strava.hookAt = 0;
+    save(); if (current === "add") render();
+  }
+  document.addEventListener("visibilitychange", function () { if (document.visibilityState === "visible" && acct) stravaAutoCheck(false); });
   function stravaApi(path) {
     return ensureToken().then(function (tok) { return relayJson("/strava/api/" + path, { headers: { Authorization: "Bearer " + tok } }); });
   }
@@ -1380,6 +1413,7 @@ body.sheet-open #cellcard { display: none; }
       acctSyncing = false; if (!acct) return;
       acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends(); schedulePushScore();
       setTimeout(maybeGuide, 900); setTimeout(retroReminder, 5000);
+      var qt = /[?&]tab=(\w+)/.exec(location.search); if (qt) setTimeout(function () { openFromNotif(qt[1]); history.replaceState(null, "", location.pathname); }, 1200);
     }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
@@ -1909,7 +1943,7 @@ body.sheet-open #cellcard { display: none; }
       Promise.race([ensureToken().then(function (tok) {   // retire l’autorisation chez Strava : la prochaine connexion repasse par l’écran de choix
         return fetch("https://www.strava.com/oauth/deauthorize", { method: "POST", mode: "no-cors", body: new URLSearchParams({ access_token: tok }) });
       }), new Promise(function (res) { setTimeout(res, 4000); })]).catch(function () { /* hors ligne ou jeton expiré : on déconnecte quand même l’appli */ }).then(function () {
-        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0; S.strava.depth = 0; S.strava.more = false; S.strava.moreBf = false; S.strava.retryAt = 0; clearTimeout(stvResumeTimer);   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
+        stravaForget();   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
         save(); render(); toast("Strava déconnecté. Pour changer de compte, déconnecte-toi aussi du site ou de l’appli Strava avant de te reconnecter.");
       });
     });
@@ -3022,7 +3056,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v93b";
+  var BUILD = "31/10/2026 · v94";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4127,13 +4161,12 @@ body.sheet-open #cellcard { display: none; }
   });
   function initExtras() {
     stravaReturn().then(function (ok) {
-      if (ok && stravaConnected()) stravaSync({ manual: true });
+      if (ok && stravaConnected()) { stravaSync({ manual: true }); setTimeout(linkStrava, 3000); }
       else if (S.strava.retryAt && stravaConnected()) setTimeout(stravaResume, 4000);   // limite Strava atteinte la dernière fois : on reprend là où on s’était arrêté
-      else setTimeout(function () { if (stravaConnected() && S.strava.auto && Date.now() / 1000 - (S.strava.checkedAt || 0) > 1800) stravaSync({}); }, 6000);
+      else setTimeout(function () { stravaAutoCheck(true); }, 6000);
     });
     $("gradeChk").checked = !!S.gradeOutlines; applyLegend(); applyTheme();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignoré */ }
-    if (S.activities.length >= 3 && Date.now() - (S.lastBackup || 0) > 30 * 864e5) setTimeout(function () { toast("Pense à exporter une sauvegarde : Profil › Réglages › Exporter mes données."); }, 4000);
     if (/^https?:$/.test(location.protocol)) fetch(location.pathname, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : ""; }).then(function (t) {
       var m = /var BUILD = "([^"]+)"/.exec(t);
       if (m && m[1] !== BUILD) toast("Une nouvelle version est disponible (" + m[1] + ") : Réglages › Mettre à jour l’appli.");
@@ -4264,7 +4297,7 @@ body.sheet-open #cellcard { display: none; }
     { ic: "🏆", t: "Niveaux", sel: "#chip", x: function () { return "Ta surface te fait monter de niveau : " + TROPHIES[0].name + " à " + TROPHIES[0].km + " km², puis " + TROPHIES[1].name + ", " + TROPHIES[2].name + "… jusqu’à " + TROPHIES[TROPHIES.length - 1].name + " à " + fmt(TROPHIES[TROPHIES.length - 1].km, 0) + " km². Ton niveau apparaît dans ton profil et dans le classement."; } },
     { ic: "👥", t: "Tes amis", sel: ".tab[data-tab=friends]", x: function () { return "Onglet Amis : invite quelqu’un avec son pseudo. Entre amis, vous voyez vos cartes et vos statistiques, jamais vos traces, et « Quoi de neuf » montre vos progrès. Sur la carte d’un ami, ⚖️ compare vos territoires ; le mode conquête colore chaque hexagone selon qui le maîtrise le mieux. Ta zone domicile reste toujours cachée."; } },
     { ic: "🥇", t: "Le classement", sel: ".tab[data-tab=rank]", x: function () { return "Onglet Classement : tous les joueurs ou tes amis seulement, par sport, depuis le début ou cette semaine (remise à zéro chaque lundi). Touche un joueur pour lui envoyer une demande d’ami."; } },
-    { ic: "⚙️", t: "Profil et réglages", sel: "#profileBtn", x: function () { return "Profil : ton pseudo, ta photo et tes trophées. Réglages : apparence claire ou sombre, ce tutoriel et la mise à jour de l’appli. Tes données sont sauvegardées automatiquement sur ton compte."; } },
+    { ic: "⚙️", t: "Profil et réglages", sel: "#profileBtn", x: function () { return "Profil : ton pseudo, ta photo et tes trophées. Réglages : apparence claire ou sombre, notifications (nouvelle sortie Strava, invitations, classement), ce tutoriel et la mise à jour de l’appli. Tes données sont sauvegardées automatiquement sur ton compte."; } },
     { ic: "🚀", t: "À toi de jouer !", x: function () { return realActs().length ? "Bonne exploration ! Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages." : "Ajoute ta première sortie et regarde ton territoire se colorier. Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages."; }, end: true }
   ];
   var tuto = null;
@@ -4293,6 +4326,59 @@ body.sheet-open #cellcard { display: none; }
   }
   function endTuto() { tuto = null; var b = $("tutoBox"); if (b) b.remove(); }
   window.addEventListener("resize", function () { if (tuto) tutoRender(); });
+  /* ---- notifications (Web Push) ---- */
+  var pushState = { sub: null, prefs: null, checked: false, busy: false }, PUSH_LABELS = [["strava", "Nouvelle sortie Strava à valider"], ["invite", "Invitations d’amis"], ["rank", "Un ami te dépasse au classement"], ["feed", "Progrès de tes amis"]];
+  function pushSupported() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+  function isIOS() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
+  function refreshPush() {   // abonnement de cet appareil et préférences enregistrées
+    if (!pushSupported() || !acct) return Promise.resolve();
+    return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
+      pushState.sub = sub; pushState.checked = true;
+      if (!sub) return;
+      return apiCall("GET", "/push").then(function (r) { var m = (r.subs || []).filter(function (x) { return x.endpoint === sub.endpoint; })[0]; pushState.prefs = m ? m.prefs : null; });
+    }).catch(function () { pushState.checked = true; });
+  }
+  function notifSettingsHTML() {
+    if (!acct) return "";
+    var h = '<h3>Notifications</h3>';
+    if (!pushSupported()) return h + '<p class="note">' + (isIOS() ? 'Sur iPhone, les notifications ne marchent que si Xplr est installée : dans Safari, touche Partager puis « Sur l’écran d’accueil », et ouvre Xplr depuis son icône.' : 'Ce navigateur ne gère pas les notifications.') + '</p>';
+    if (!pushState.checked) { setTimeout(function () { refreshPush().then(function () { if (drawerView === "settings") renderDrawer(); }); }, 0); return h + '<p class="note">Vérification…</p>'; }
+    if (Notification.permission === "denied") return h + '<p class="note">Les notifications sont bloquées pour Xplr dans les réglages du téléphone ou du navigateur. Autorise-les puis reviens ici.</p>';
+    if (!pushState.sub || !pushState.prefs) return h + '<p class="note">Sois prévenu d’une nouvelle sortie Strava à valider, d’une invitation d’ami ou quand un ami te dépasse.</p><div class="drawer-sec"><button class="btn block" id="pushon">🔔 Activer les notifications</button></div>';
+    return h + PUSH_LABELS.map(function (l) { return '<label class="gradechk notif-row"><input type="checkbox" data-pushpref="' + l[0] + '"' + (pushState.prefs[l[0]] ? ' checked' : '') + '><span>' + l[1] + '</span></label>'; }).join("") +
+      '<div class="drawer-sec"><button class="btn ghost block" id="pushtest">Envoyer une notification d’essai</button><button class="btn ghost block" id="pushoff">Désactiver sur cet appareil</button></div>';
+  }
+  function b64uToBytes(t) { t = String(t).replace(/-/g, "+").replace(/_/g, "/"); while (t.length % 4) t += "="; var b = atob(t), u = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+  function savePushPrefs(sub, prefs) { var j = sub.toJSON(); return apiCall("PUT", "/push", { endpoint: j.endpoint, keys: j.keys, prefs: prefs }).then(function (r) { pushState.sub = sub; pushState.prefs = r.prefs; }); }
+  function enablePush() {
+    if (pushState.busy) return; pushState.busy = true;
+    Notification.requestPermission().then(function (perm) {
+      if (perm !== "granted") throw new Error("autorisation refusée");
+      return Promise.all([apiCall("GET", "/push"), navigator.serviceWorker.ready]);
+    }).then(function (v) {
+      if (!v[0].key) throw new Error("serveur pas encore prêt");
+      return v[1].pushManager.getSubscription().then(function (old) { return old || v[1].pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(v[0].key) }); });
+    }).then(function (sub) { return savePushPrefs(sub, null); }).then(function () { toast("Notifications activées sur cet appareil."); }, function (e) { toast("Notifications impossibles : " + e.message + "."); })
+      .then(function () { pushState.busy = false; if (drawerView === "settings") renderDrawer(); });
+  }
+  function bindNotif() {
+    var on = $("pushon"); if (on) on.addEventListener("click", enablePush);
+    document.querySelectorAll("[data-pushpref]").forEach(function (c) { c.addEventListener("change", function () {
+      var p = Object.assign({}, pushState.prefs); p[c.dataset.pushpref] = c.checked ? 1 : 0;
+      savePushPrefs(pushState.sub, p).catch(function (e) { c.checked = !c.checked; toast("Réglage non enregistré : " + e.message + "."); });
+    }); });
+    var t = $("pushtest"); if (t) t.addEventListener("click", function () { apiCall("POST", "/push/test", {}).then(function (r) { toast(r.sent ? "Notification d’essai envoyée." : "Aucun appareil n’a reçu la notification."); }, function (e) { toast("Essai impossible : " + e.message + "."); }); });
+    var off = $("pushoff"); if (off) off.addEventListener("click", function () {
+      var sub = pushState.sub; if (!sub) return;
+      apiCall("DELETE", "/push", { endpoint: sub.endpoint }).catch(function () { /* hors ligne */ }).then(function () { return sub.unsubscribe(); }).then(function () { pushState.sub = null; pushState.prefs = null; toast("Notifications désactivées sur cet appareil."); renderDrawer(); });
+    });
+  }
+  function openFromNotif(tab) {   // toucher une notification : l’appli s’ouvre sur le bon onglet
+    if (!tab || !TITLES[tab]) return;
+    if (tab === "add") stravaAutoCheck(true);
+    if (current !== tab) openTab(tab);
+  }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", function (e) { if (e.data && e.data.tab !== undefined) openFromNotif(e.data.tab); });
   function maybeGuide() {   // première ouverture d’un compte sans sortie : l’accueil guidé, une seule fois
     if (S.guideDone || realActs().length || pending || current || gateMode) return;
     S.guideDone = true; save(); openTab("guide");
@@ -4685,6 +4771,7 @@ body.sheet-open #cellcard { display: none; }
       '<div class="field"><label>Apparence</label><div class="seg">' + [["auto", "Automatique"], ["light", "Clair"], ["dark", "Sombre"]].map(function (o) { return '<button data-themeopt="' + o[0] + '" aria-pressed="' + ((S.theme || "light") === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>' +
       '<p class="note" style="margin-top:4px">Automatique suit le réglage clair ou sombre du téléphone.</p></div>' +
       accountSettingsHTML() +
+      notifSettingsHTML() +
       '<h3>Aide</h3><div class="drawer-sec"><button class="btn block" id="tutogo">📖 Tutoriel</button></div>' +
       '<h3>Application</h3><div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli</button></div>' +
       '<p class="note">Version : ' + BUILD + '. Un bandeau te prévient quand une nouvelle version est disponible.</p>' +
@@ -4744,6 +4831,7 @@ body.sheet-open #cellcard { display: none; }
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
     $("tutogo").addEventListener("click", function () { closeDrawer(); startTuto(); });
+    bindNotif();
     $("diagbtn").addEventListener("click", runDiagnostic);
     bindAccount();
     $("exp").addEventListener("click", function () {

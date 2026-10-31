@@ -1,6 +1,6 @@
 /* Xplr : mise en cache de l’application pour un usage hors ligne.
    Les fonds de carte et les services externes (sommets, communes, recherche) restent en ligne. */
-var CACHE = "xplr-v57";
+var CACHE = "xplr-v58";
 var H3 = "https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js";
 var SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-32.png", "strava-connect.svg", "strava-powered-black.svg", "strava-powered-white.svg", H3];
 
@@ -36,5 +36,19 @@ self.addEventListener("fetch", function (e) {
       return res;
     }).catch(function () { return hit || (r.mode === "navigate" ? caches.match("index.html") : undefined); });
     return hit || net;
+  }));
+});
+
+/* Notifications : affichage, puis ouverture de l’appli sur le bon onglet au toucher */
+self.addEventListener("push", function (e) {
+  var d = {}; try { d = e.data ? e.data.json() : {}; } catch (x) { d = { body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Xplr", { body: d.body || "", icon: "icon-192.png", badge: "favicon-32.png", tag: d.tab || "xplr", data: { tab: d.tab || "" } }));
+});
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var tab = (e.notification.data && e.notification.data.tab) || "";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (cs) {
+    for (var i = 0; i < cs.length; i++) { if ("focus" in cs[i]) { cs[i].postMessage({ tab: tab }); return cs[i].focus(); } }
+    return self.clients.openWindow("./" + (tab ? "?tab=" + tab : ""));
   }));
 });
