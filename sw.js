@@ -1,6 +1,6 @@
 /* Xplr : mise en cache de l’application pour un usage hors ligne.
    Les fonds de carte et les services externes (sommets, communes, recherche) restent en ligne. */
-var CACHE = "xplr-v63";
+var CACHE = "xplr-v64";
 var H3 = "https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js";
 var SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png", "favicon-32.png", "strava-connect.svg", "strava-powered-black.svg", "strava-powered-white.svg", H3];
 
@@ -25,9 +25,9 @@ self.addEventListener("fetch", function (e) {
   if (!ok) return;
   if (r.mode === "navigate") {   // page principale : toujours la version en ligne d’abord, le cache sert hors ligne
     e.respondWith(fetch(r.url, { cache: "no-cache", credentials: "same-origin" }).then(function (res) {   // contourne le cache HTTP : toujours la dernière version publiée
-      if (res && res.ok) { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(r, copy); c.put("index.html", res.clone()); }); }
+      if (res && res.ok) { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(new URL("./", r.url).href, copy); c.put("index.html", res.clone()); }); }   // sans les paramètres (code Strava, onglet)
       return res;
-    }).catch(function () { return caches.match(r).then(function (hit) { return hit || caches.match("index.html"); }); }));
+    }).catch(function () { return caches.match(r, { ignoreSearch: true }).then(function (hit) { return hit || caches.match("index.html"); }); }));
     return;
   }
   e.respondWith(caches.match(r).then(function (hit) {

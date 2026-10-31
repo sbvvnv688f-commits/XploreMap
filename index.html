@@ -610,7 +610,7 @@ body.sheet-open #cellcard { display: none; }
 <div id="scrim" hidden></div>
 <aside id="drawer" aria-label="Profil" aria-hidden="true"></aside>
 
-<script src="https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/h3-js@4.1.0/dist/h3-js.umd.js" integrity="sha384-nKUDlg+fT0U/eEt4KWP9n034kLe/eVj6k7CVjbu6qfRhJdEyinlGajS9+9AU+UZ5" crossorigin="anonymous"></script>
 <script>
 (function () {
   "use strict";
@@ -741,7 +741,7 @@ body.sheet-open #cellcard { display: none; }
   /* ================= utilitaires ================= */
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-  function fmt(n, d) { return n.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function fmt(n, d) { n = Number(n); if (!isFinite(n)) n = 0; return n.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function fmtKm2(km2) { return fmt(km2, km2 < 10 ? 3 : 2); }
   function fmtDate(iso) { var p = iso.split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
   function todayISO() { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
@@ -1161,12 +1161,21 @@ body.sheet-open #cellcard { display: none; }
   function stravaConnect() {
     if (!stravaReady()) { toast("Renseigne d’abord l’identifiant client Strava et l’adresse du relais."); return; }
     save();
+    var st = Array.prototype.map.call(crypto.getRandomValues(new Uint8Array(16)), function (x) { return ("0" + x.toString(16)).slice(-2); }).join("");
+    try { localStorage.setItem("hexplore:stvstate", st + "." + Date.now()); } catch (e) { /* stockage indisponible */ }
     location.href = "https://www.strava.com/oauth/authorize?client_id=" + encodeURIComponent(S.strava.clientId) + "&response_type=code&approval_prompt=force&scope=" +
-      encodeURIComponent("read,activity:read_all") + "&redirect_uri=" + encodeURIComponent(location.origin + location.pathname) + "&state=hexplore";
+      encodeURIComponent("read,activity:read_all") + "&redirect_uri=" + encodeURIComponent(location.origin + location.pathname) + "&state=" + st;
   }
   function stravaReturn() {   // retour de l’autorisation Strava : l’adresse contient ?code=…
     var q = new URLSearchParams(location.search), code = q.get("code"), err = q.get("error"), scope = q.get("scope") || "";
-    if (q.get("state") !== "hexplore" || (!code && !err)) return Promise.resolve(false);
+    if (!q.get("state") || (!code && !err)) return Promise.resolve(false);
+    var saved = ""; try { saved = localStorage.getItem("hexplore:stvstate") || ""; localStorage.removeItem("hexplore:stvstate"); } catch (e) { saved = ""; }
+    var sp = saved.split(".");
+    if (sp[0] !== q.get("state") || Date.now() - (+sp[1] || 0) > 3600000) {   // retour qui ne vient pas d’une demande de cet appareil (ou trop ancienne)
+      try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignoré */ }
+      toast("Connexion Strava ignorée : elle n’a pas été demandée depuis cet appareil. Recommence depuis l’onglet Ajouter.");
+      return Promise.resolve(false);
+    }
     var redirect = location.origin + location.pathname;
     try { history.replaceState(null, "", location.pathname + location.hash); } catch (e) { /* ignoré */ }
     if (err || !code) { toast("Connexion à Strava refusée."); return Promise.resolve(false); }
@@ -1189,7 +1198,7 @@ body.sheet-open #cellcard { display: none; }
     var getId = S.strava.athleteId ? Promise.resolve(S.strava.athleteId) : stravaApi("athlete").then(function (a) { S.strava.athleteId = a && a.id; return S.strava.athleteId; });
     return getId.then(function (id) {
       if (!id) return false;
-      return apiCall("PUT", "/strava/athlete", { id: id }).then(function () { S.strava.linked = true; save(); return true; });
+      return ensureToken().then(function (tok) { return apiCall("PUT", "/strava/athlete", { token: tok }); }).then(function () { S.strava.linked = true; save(); return true; });
     }).catch(function () { return false; });
   }
   var hookCheckAt = 0;
@@ -1714,7 +1723,7 @@ body.sheet-open #cellcard { display: none; }
     if (e.kind === "cells") return ["🗺️", who + (e.me ? " as" : " a") + " découvert " + fmt(n, 0) + (n > 1 ? " nouveaux hexagones" : " nouvel hexagone") + (d.km2 ? " (+" + fmtKm2(d.km2) + " km²)" : "")];
     if (e.kind === "summits") return ["▲", who + (e.me ? " as" : " a") + " atteint " + fmt(n, 0) + " nouveau" + (n > 1 ? "x" : "") + " sommet" + s + (d.topEle ? " · plus haut sommet : " + fmt(d.topEle, 0) + " m" : "")];
     if (e.kind === "landmarks") return ["📍", who + (e.me ? " as" : " a") + " visité " + fmt(n, 0) + " nouveau" + (n > 1 ? "x" : "") + " lieu" + (n > 1 ? "x" : "") + " remarquable" + s];
-    if (e.kind === "level") { var lv = d.level || 0; return ["🏆", who + (e.me ? " passes" : " passe") + " au niveau " + lv + (TROPHIES[lv - 1] ? " · " + esc(TROPHIES[lv - 1].name) : "")]; }
+    if (e.kind === "level") { var lv = Math.max(0, Math.min(TROPHIES.length, d.level | 0)); return ["🏆", who + (e.me ? " passes" : " passe") + " au niveau " + lv + (TROPHIES[lv - 1] ? " · " + esc(TROPHIES[lv - 1].name) : "")]; }
     if (e.kind === "terr") return ["👑", who + (e.me ? " as" : " a") + " un territoire d’un seul tenant de " + fmt(d.km2 || 0, 0) + " km²"];
     return null;
   }
@@ -2411,7 +2420,7 @@ body.sheet-open #cellcard { display: none; }
   var SUMMIT_BASE_M = 50, SUMMIT_ALT_STEP = 100, SUMMIT_BONUS_M = 10, SUMMIT_REACH_M = 60, SUMMIT_ALT_TOL = 70;
   var peakCache = new Map(), diskCache = new Map(), reachedSet = new Set(), lmCache = new Map(), reachedLm = new Set();
   var LANDMARK_BASE_M = 50, LANDMARK_BONUS_M = 100, LANDMARK_R = LANDMARK_BASE_M + LANDMARK_BONUS_M, LANDMARK_REACH_M = 60;
-  function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : String(k); }
+  function sl(k) { var s = SPORTS[k]; return s ? s.ic + " " + s.label : esc(String(k)); }
   function summitRadius(ele) { return SUMMIT_BASE_M + SUMMIT_BONUS_M * Math.floor(Math.max(0, ele || 0) / SUMMIT_ALT_STEP); }
   function summitCells(lat, lng, r) {
     var key = lat.toFixed(5) + "," + lng.toFixed(5) + "," + r, hit = diskCache.get(key);
@@ -3152,7 +3161,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v94f";
+  var BUILD = "31/10/2026 · v95";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4313,7 +4322,7 @@ body.sheet-open #cellcard { display: none; }
   function viewFriendStats() {
     var f = friends && friends.friends.filter(function (x) { return x.id === fstatsId; })[0];
     if (!f || !f.theyShare || !f.map || !f.map.stats) return '<div class="empty-line">' + (f ? esc(f.pseudo) + " ne partage pas encore sa carte avec toi." : "Ami introuvable.") + '</div>' + backBtn();
-    var st = f.map.stats, mine = sharedStats(sharedCells()), lv = st.level || 0;
+    var st = f.map.stats, mine = sharedStats(sharedCells()), lv = Math.max(0, Math.min(TROPHIES.length, st.level | 0));
     function cmp(v, m, unit) { return '<small class="fs-me">toi : ' + m + (unit || "") + '</small>'; }
     var html = '<div class="box"><h3>Vue d’ensemble</h3>' +
       (lv ? '<p class="note" style="margin:0 0 8px">Palier : <b>' + esc(TROPHIES[lv - 1].name) + '</b></p>' : '') + '<div class="kpis">' +
