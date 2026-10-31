@@ -212,7 +212,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .seg { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .seg button { padding: 7px 14px; border-radius: 999px; border: 3px solid var(--outline); background: var(--panel); font-size: 12.5px; font-weight: 600; color: var(--ink); }
 .seg4 { flex-wrap: nowrap; gap: 6px; }
-.seg4 button { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.seg4 button { flex: 1 1 0; min-width: 0; padding: 7px 1px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: 2px 2px 0 var(--outline); }
 .banner { font-size: 11.5px; font-weight: 500; background: var(--k2); border: 2.5px solid var(--outline); border-radius: 14px; padding: 8px 12px; color: var(--ink); margin-bottom: 12px; line-height: 1.4; }
 .rank-n { width: 28px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -273,6 +273,19 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .goal .t { font-weight: 600; font-size: 14.5px; }
 .goal .del { font-size: 11px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
 .goal .s { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.kpi.wide { grid-column: 1 / -1; background: var(--accent); }
+.kpi.wide .kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.kpi.wide .kpi-note { display: block; margin-top: 4px; font-size: 11px; color: var(--k-ink); opacity: .8; }
+.coll { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+.ccard { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 5px 8px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 2px 2px 0 var(--outline); font: inherit; text-align: center; cursor: pointer; overflow: hidden; }
+.ccard .cc-r { align-self: stretch; margin: 0 -5px 4px; padding: 2px 0; background: var(--rc); color: #2b1f4a; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.ccard .cc-ic { font-size: 22px; line-height: 1.1; }
+.ccard b { font-size: 11.5px; line-height: 1.2; overflow-wrap: anywhere; }
+.ccard small { font-size: 10px; color: var(--muted); }
+.ccard.empty { opacity: .7; border-style: dashed; box-shadow: none; }
+.ccard.empty .cc-ic { color: var(--muted); }
+.cc-sum { display: flex; flex-wrap: wrap; gap: 6px; }
+.cc-sum span { padding: 2px 8px; border: 2px solid var(--outline); border-radius: 999px; background: var(--rc); color: #2b1f4a; font-size: 11px; }
 .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .badge { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 3px solid var(--outline); border-radius: 16px; background: var(--panel); box-shadow: 2px 2px 0 var(--outline); }
 .badge .ic { font-size: 21.5px; }
@@ -967,6 +980,13 @@ body.sheet-open #cellcard { display: none; }
     S.strava.retryAt = 0; save();
     stravaSync({ manual: true, backfillContinue: !!S.strava.moreBf });
   }
+  function stravaFetchAll() {   // un seul bouton : nouvelles sorties et historique jusqu’à la période choisie (les sorties déjà présentes sont sautées)
+    var days = +(($("stvbfd") || {}).value || S.strava.days || 30), want = Math.floor(Date.now() / 1000) - days * 86400;
+    S.strava.days = days;
+    if (S.strava.bf && S.strava.more) return stravaSync({ manual: true, backfillContinue: true });   // récupération déjà en cours : on la poursuit
+    if (!S.strava.depth || S.strava.depth > want + 86400) { S.strava.depth = want; save(); return stravaSync({ manual: true, backfillDays: days }); }
+    return stravaSync({ manual: true });   // période déjà couverte : seulement les nouvelles sorties
+  }
   function stravaChain() {   // après la validation d’un lot Strava : le suivant, s’il en reste
     if (!S.strava.more || !stravaConnected()) return;
     if (S.strava.retryAt && S.strava.retryAt * 1000 > Date.now()) { scheduleStravaResume(); toast("Lot suivant à " + stvHour(S.strava.retryAt) + " (limite Strava)."); return; }
@@ -1038,6 +1058,7 @@ body.sheet-open #cellcard { display: none; }
     if (stravaBusy || !stravaConnected()) return Promise.resolve();
     stravaBusy = true; stravaStatus("Synchronisation avec Strava…");
     var nowS = Math.floor(Date.now() / 1000), cursor = S.strava.lastSync || 0, first = !cursor;
+    if (first && !opts.backfillDays && !S.strava.depth) S.strava.depth = nowS - (S.strava.days || 30) * 86400;   // première synchronisation : période couverte
     if (opts.backfillDays) S.strava.bf = nowS - opts.backfillDays * 86400;   // récupération de l’historique : on repart de cette date
     var bfMode = !!(opts.backfillDays || opts.backfillContinue), after = bfMode ? Math.max(0, S.strava.bf || 0) : (cursor ? Math.max(0, cursor - 3600) : nowS - (S.strava.days || 30) * 86400);
     var rest = 0, bfT = after;
@@ -1643,10 +1664,8 @@ body.sheet-open #cellcard { display: none; }
       h += '<p class="note">Connecté' + (s.athlete ? ' : ' + esc(s.athlete) : '') + (s.lastSync ? ' · dernière sortie récupérée le ' + new Date(s.lastSync * 1000).toLocaleDateString("fr-FR") : '') + '.</p>' +
         (s.retryAt && s.retryAt * 1000 > Date.now() ? '<p class="note"><b>Limite Strava atteinte :</b> la récupération repart toute seule vers ' + stvHour(s.retryAt) + ' (ou à la prochaine ouverture de l’appli).</p>'
           : s.more ? '<p class="note"><b>Récupération en cours :</b> valide le lot affiché, le suivant arrivera tout seul.</p>' : '') +
-        '<div class="drawer-sec"><button class="btn block" id="stvsync">Synchroniser maintenant</button></div>' +
-        (s.lastSync ? '' : '<div class="field"><label for="stvdays">Première synchronisation</label><select id="stvdays">' + sel + '</select></div>') +
-        '<div class="field"><label for="stvbfd">Récupérer des sorties plus anciennes</label><select id="stvbfd">' + [[365, "12 derniers mois"], [1095, "3 dernières années"], [3650, "Tout l’historique (10 ans)"]].map(function (o) { return '<option value="' + o[0] + '">' + o[1] + '</option>'; }).join("") + '</select></div>' +
-        '<div class="drawer-sec"><button class="btn ghost block" id="stvbf">Récupérer l’historique</button>' + (s.bf ? '<button class="btn block" id="stvbfc">Continuer la récupération</button>' : '') + '</div>' +
+        '<div class="field"><label for="stvbfd">Sorties à récupérer</label><select id="stvbfd">' + [[30, "30 derniers jours"], [365, "12 derniers mois"], [1095, "3 dernières années"], [3650, "Tout l’historique (10 ans)"]].map(function (o) { return '<option value="' + o[0] + '"' + ((s.days || 30) === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select></div>' +
+        '<div class="drawer-sec"><button class="btn block" id="stvsync">Récupérer mes sorties Strava</button></div>' +
         '<p class="note">La récupération se fait par lots de 40 sorties pour respecter les limites de Strava ; après la validation d’un lot, le suivant arrive tout seul.</p>' +
         '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="stvauto"' + (s.auto ? ' checked' : '') + '><span>Ajouter automatiquement les nouvelles sorties</span></label>' +
         '<div class="drawer-sec"><button class="btn ghost block" id="stvdisc">Se déconnecter de Strava</button></div>';
@@ -1667,15 +1686,14 @@ body.sheet-open #cellcard { display: none; }
     if (dy) dy.addEventListener("change", function () { S.strava.days = +dy.value; save(); });
     if (au) au.addEventListener("change", function () { S.strava.auto = au.checked; save(); });
     var cn = $("stvconnect"); if (cn) cn.addEventListener("click", function () { if (id) S.strava.clientId = id.value.trim(); if (rl) S.strava.relay = rl.value.trim(); stravaConnect(); });
-    var bf = $("stvbf"); if (bf) bf.addEventListener("click", function () { stravaSync({ manual: true, backfillDays: +$("stvbfd").value }); });
-    var bc = $("stvbfc"); if (bc) bc.addEventListener("click", function () { stravaSync({ manual: true, backfillContinue: true }); });
-    var sy = $("stvsync"); if (sy) sy.addEventListener("click", function () { stravaSync({ manual: true }); });
+    var bd = $("stvbfd"); if (bd) bd.addEventListener("change", function () { S.strava.days = +bd.value; save(); });
+    var sy = $("stvsync"); if (sy) sy.addEventListener("click", stravaFetchAll);
     var dc = $("stvdisc"); if (dc) dc.addEventListener("click", function () {
       dc.disabled = true;
       Promise.race([ensureToken().then(function (tok) {   // retire l’autorisation chez Strava : la prochaine connexion repasse par l’écran de choix
         return fetch("https://www.strava.com/oauth/deauthorize", { method: "POST", mode: "no-cors", body: new URLSearchParams({ access_token: tok }) });
       }), new Promise(function (res) { setTimeout(res, 4000); })]).catch(function () { /* hors ligne ou jeton expiré : on déconnecte quand même l’appli */ }).then(function () {
-        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0; S.strava.more = false; S.strava.moreBf = false; S.strava.retryAt = 0; clearTimeout(stvResumeTimer);   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
+        S.strava.access = ""; S.strava.refresh = ""; S.strava.exp = 0; S.strava.athlete = ""; S.strava.lastSync = 0; S.strava.checkedAt = 0; S.strava.bf = 0; S.strava.depth = 0; S.strava.more = false; S.strava.moreBf = false; S.strava.retryAt = 0; clearTimeout(stvResumeTimer);   // un autre compte repart de zéro ; les sorties déjà ajoutées restent
         save(); render(); toast("Strava déconnecté. Pour changer de compte, déconnecte-toi aussi du site ou de l’appli Strava avant de te reconnecter.");
       });
     });
@@ -2512,7 +2530,7 @@ body.sheet-open #cellcard { display: none; }
     if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
     var up = upsParts(ups);
     if (up.length) toast(up.join(" · "));
-    checkAchievements();
+    checkAchievements(); collNear = null;
     updateCommunes({ lines: lines, silent: true });
     setTimeout(function () { autoScanAt = 0; autoScan(); }, 6000);
     if (fromStrava) stravaChain();
@@ -2719,7 +2737,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v88";
+  var BUILD = "31/10/2026 · v89";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -2934,6 +2952,71 @@ body.sheet-open #cellcard { display: none; }
     ctx.textAlign = "start"; ctx.textBaseline = "alphabetic";
   }
   var succTab = "succes", poiIdx = {};
+  /* ---- collection : sommets et lieux sous forme de cartes, avec rareté et emplacements vides ---- */
+  var RARITY = [{ n: "Commune", c: "#b8c2cc" }, { n: "Peu commune", c: "#5fbf6a" }, { n: "Rare", c: "#4fa3ff" }, { n: "Épique", c: "#a46dff" }, { n: "Légendaire", c: "#ffb020" }];
+  function rarityOf(p, isPeak) {
+    if (isPeak) { var e = p.ele || 0; return e >= 4000 ? 4 : e >= 3000 ? 3 : e >= 2000 ? 2 : e >= 1000 ? 1 : 0; }
+    var k = p.kind || "";
+    return /Glacier|Source chaude/.test(k) ? 3 : /Cascade|Grotte/.test(k) ? 2 : /Château|archéologique|Phare/.test(k) ? 1 : 0;
+  }
+  var collNear = null, collBusy = false, collKey = "";
+  function collTiles() {   // zones de 0,1° autour de chez toi et de tes départs les plus fréquents (4 au plus)
+    var cnt = {}, keys = [];
+    function key(lat, lng) { return Math.floor(lat / 0.1) + "_" + Math.floor(lng / 0.1); }
+    if (S.home && !S.home.none) keys.push(key(S.home.lat, S.home.lng));
+    S.activities.forEach(function (a) { var p = a.lines && a.lines[0] && a.lines[0][0]; if (p) { var k = key(p[0], p[1]); cnt[k] = (cnt[k] || 0) + 1; } });
+    Object.keys(cnt).sort(function (a, b) { return cnt[b] - cnt[a]; }).forEach(function (k) { if (keys.indexOf(k) < 0) keys.push(k); });
+    return keys.slice(0, 4);
+  }
+  function collCenter() {
+    if (S.home && !S.home.none) return [S.home.lat, S.home.lng];
+    var a = S.activities[S.activities.length - 1], p = a && a.lines[0] && a.lines[0][0];
+    return p ? [p[0], p[1]] : null;
+  }
+  function loadCollNear() {
+    var keys = collTiles(), k = keys.join(",");
+    if (!keys.length || collBusy || (collNear && collKey === k)) return;
+    collBusy = true;
+    Promise.all([fetchPeaks(keys).catch(function () {}), fetchLandmarks(keys).catch(function () {})]).then(function () {
+      var c = collCenter(), out = [];
+      peaksFor(keys).forEach(function (p) { if (!reachedSet.has(p.id) && p.name) out.push({ p: p, peak: true }); });
+      lmFor(keys).forEach(function (l) { if (!reachedLm.has(l.id) && l.name) out.push({ p: l, peak: false }); });
+      if (c) out.forEach(function (x) { x.d = haversine(c, [x.p.lat, x.p.lng]); });
+      out.sort(function (a, b) { return (a.d || 0) - (b.d || 0); });
+      collNear = out.slice(0, 12); collKey = k;
+    }).catch(function () { collNear = collNear || []; }).then(function () {
+      collBusy = false; if (current === "goals" && succTab === "collection") render();
+    });
+  }
+  function collCard(p, isPeak, owned, extra) {
+    var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id);
+    poiIdx[key] = { name: p.name, lat: p.lat, lng: p.lng };
+    return '<button class="ccard' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '" data-go="' + key + '" aria-label="' + esc(p.name) + (owned ? '' : ' (pas encore atteint)') + '">' +
+      '<span class="cc-r">' + RARITY[r].n + '</span><span class="cc-ic">' + (owned ? (isPeak ? "▲" : p.ic || "📍") : "?") + '</span>' +
+      '<b>' + esc(p.name) + '</b><small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small></button>';
+  }
+  function collectionHTML() {
+    var sm = summitList(), lm = landmarkList(), total = sm.length + lm.length, byR = [0, 0, 0, 0, 0];
+    sm.forEach(function (s) { byR[rarityOf(s, true)]++; }); lm.forEach(function (l) { byR[rarityOf(l, false)]++; });
+    var h = '<div class="box"><h3>Ma collection (' + total + ' carte' + (total > 1 ? "s" : "") + ')</h3><div class="cc-sum">' + RARITY.map(function (r, i) {
+      return '<span style="--rc:' + r.c + '"><b>' + byR[i] + '</b> ' + r.n.toLowerCase() + (byR[i] > 1 && i !== 4 ? "s" : "") + '</span>';
+    }).join("") + '</div><p class="note" style="margin:6px 0 0">Chaque sommet ou lieu atteint devient une carte. Sommets : plus ils sont hauts, plus ils sont rares. Lieux : glaciers et sources chaudes sont les plus rares, puis cascades et grottes.</p></div>';
+    if (!total) h += '<div class="empty-line">Aucune carte pour l’instant : passe près d’un sommet nommé ou d’un lieu remarquable pendant une sortie.</div>';
+    var groups = [];
+    if (sm.length) groups.push(["▲ Sommets", sm.sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }).map(function (s) { return collCard(s, true, true); })]);
+    var kinds = {};
+    lm.forEach(function (l) { (kinds[l.kind || "Lieu"] = kinds[l.kind || "Lieu"] || []).push(l); });
+    Object.keys(kinds).sort(function (a, b) { return kinds[b].length - kinds[a].length; }).forEach(function (k) {
+      groups.push([(kinds[k][0].ic || "📍") + " " + k, kinds[k].sort(function (a, b) { return rarityOf(b, false) - rarityOf(a, false); }).map(function (l) { return collCard(l, false, true); })]);
+    });
+    groups.forEach(function (g) { h += '<h3>' + esc(g[0]) + ' (' + g[1].length + ')</h3><div class="coll">' + g[1].join("") + '</div>'; });
+    h += '<h3>À découvrir près de chez toi</h3>';
+    if (!S.activities.length && !(S.home && !S.home.none)) h += '<div class="empty-line">Ajoute une sortie ou place ta zone domicile pour voir les sommets et lieux à découvrir autour.</div>';
+    else if (!collNear) { h += '<div class="empty-line">Recherche des sommets et lieux autour de toi…</div>'; loadCollNear(); }
+    else if (!collNear.length) h += '<div class="empty-line">Rien de nouveau trouvé autour de toi pour l’instant.</div>';
+    else h += '<div class="coll">' + collNear.map(function (x) { return collCard(x.p, x.peak, false, x.d !== undefined ? (x.d >= 1000 ? fmt(x.d / 1000, 1) + " km" : Math.round(x.d) + " m") : ""); }).join("") + '</div><p class="note">Les plus proches de chez toi pas encore atteints. Touche une carte pour la voir sur la carte.</p>';
+    return h;
+  }
   function wikiParse(wp) {
     var m = /^([a-z][a-z-]{1,11}):(.+)$/i.exec(wp || "");
     return m ? { lang: m[1].toLowerCase(), title: m[2] } : (wp ? { lang: "fr", title: wp } : null);
@@ -3137,11 +3220,12 @@ body.sheet-open #cellcard { display: none; }
   function viewGoals() {
     poiIdx = {};
     var st = statsNow(), h = "";
-    h += '<div class="seg seg4">' + [["succes", "Succès"], ["sommets", "Sommets"], ["lieux", "Lieux"], ["communes", "Communes"]].map(function (it) {
+    h += '<div class="seg seg4">' + [["succes", "Succès"], ["collection", "Collection"], ["sommets", "Sommets"], ["lieux", "Lieux"], ["communes", "Communes"]].map(function (it) {
       return '<button data-succ="' + it[0] + '" aria-pressed="' + (succTab === it[0]) + '">' + it[1] + '</button>';
     }).join("") + '</div>';
     var legacy = S.activities.some(function (a) { return a.poiV !== 2 && ((a.summits || []).length || (a.landmarks || []).length); });
     var legacyNote = legacy ? '<p class="note">Certaines fiches ne sont pas encore reliées à Wikipédia : lance « Tout recalculer » dans les Réglages pour les récupérer.</p>' : "";
+    if (succTab === "collection") return h + collectionHTML();
     if (succTab === "sommets") {
       var sm = summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); });
       h += '<h3>Sommets atteints (' + sm.length + ')</h3>';
@@ -3336,6 +3420,8 @@ body.sheet-open #cellcard { display: none; }
     { id: "km1", ic: "🗺️", name: "Premier km²", desc: "Découvrir 1 km²", ok: function (s) { return s.km2 >= 1; } },
     { id: "km10", ic: "🧭", name: "Grand explorateur", desc: "Découvrir 10 km²", ok: function (s) { return s.km2 >= 10; } },
     { id: "km50", ic: "🌍", name: "Cartographe", desc: "Découvrir 50 km²", ok: function (s) { return s.km2 >= 50; } },
+    { id: "coll10", ic: "🃏", name: "Collectionneur", desc: "10 sommets ou lieux dans la collection", ok: function (s) { return s.summits + s.landmarks >= 10; } },
+    { id: "coll50", ic: "🗃️", name: "Conservateur", desc: "50 sommets ou lieux dans la collection", ok: function (s) { return s.summits + s.landmarks >= 50; } },
     { id: "terr1", ic: "🧩", name: "Terre d’un seul tenant", desc: "Un territoire continu de 1 km²", ok: function (s) { return s.terr >= 1; } },
     { id: "terr5", ic: "🏰", name: "Domaine", desc: "Un territoire continu de 5 km²", ok: function (s) { return s.terr >= 5; } },
     { id: "terr20", ic: "👑", name: "Royaume", desc: "Un territoire continu de 20 km²", ok: function (s) { return s.terr >= 20; } },
@@ -3825,6 +3911,12 @@ body.sheet-open #cellcard { display: none; }
         '<span class="v">+' + fmtKm2(actArea(a)) + '<small>km² nouveaux</small>' + (a.strava ? '<small><a class="vstrava" href="https://www.strava.com/activities/' + encodeURIComponent(a.strava) + '" target="_blank" rel="noopener noreferrer">View on Strava</a></small>' : '') + '</span><button class="del" data-del="' + a.id + '" aria-label="Supprimer ' + esc(a.name) + '">Supprimer</button></div>';
     }).join("");
   }
+  function terrKpi() {   // plus grand territoire d’un seul tenant : grande case de la vue d’ensemble
+    computeTerritory();
+    var ok = terrInfo.ids && terrInfo.key === cells.size + "|" + S.activities.length;
+    return '<div class="kpi wide"><div class="kpi-row"><div><b>' + (ok ? fmtKm2(terrInfo.km2) : "…") + '</b><span>km² d’un seul tenant · ' + (ok ? fmt(terrInfo.ids.length, 0) + ' hexagones reliés' : 'calcul en cours') + '</span></div>' +
+      (ok ? '<button class="linkbtn" id="terrgo">📍 Carte</button>' : '') + '</div><small class="kpi-note">Ton plus grand territoire continu : bouche les trous et relie tes zones pour l’agrandir.</small></div>';
+  }
   function viewStats() {
     var acts = sortedActs();
     if (!acts.length) return '<div class="empty-line">Les statistiques apparaîtront dès ta première course.</div>';
@@ -3835,7 +3927,7 @@ body.sheet-open #cellcard { display: none; }
       '<div class="kpi"><b>' + fmtKm2(totalKm2()) + '</b><span>km² découverts</span></div>' +
       '<div class="kpi"><b>' + fmt(cells.size, 0) + '</b><span>hexagones</span></div>' +
       '<div class="kpi"><b>' + acts.length + '</b><span>' + (acts.length > 1 ? 'courses' : 'course') + '</span></div>' +
-      '<div class="kpi"><b>' + fmt(dist / 1000, 1) + '</b><span>km parcourus</span></div></div></div>';
+      '<div class="kpi"><b>' + fmt(dist / 1000, 1) + '</b><span>km parcourus</span></div>' + terrKpi() + '</div></div>';
 
     // barres mensuelles
     var byMonth = {}; acts.forEach(function (a) { var k = a.date.slice(0, 7); byMonth[k] = (byMonth[k] || 0) + actArea(a); });
@@ -3863,11 +3955,6 @@ body.sheet-open #cellcard { display: none; }
       html += '<div class="row"><span class="main"><span class="t" style="display:block">Hexagone le plus visité</span><span class="s" style="display:block">' + masteryInfo.max + (masteryInfo.max > 1 ? ' jours' : ' jour') + (tk >= 0 ? ' · ' + MASTERY[tk].name : '') + '</span></span><button class="linkbtn" data-go="mastery">📍 Carte</button></div>';
     }
     html += '<p class="note">Une visite est un jour où ta trace passe dans l’hexagone : plusieurs passages le même jour comptent pour un seul.</p></div>';
-    computeTerritory();
-    html += '<div class="box"><h3>Territoire d’un seul tenant</h3>' + (terrInfo.ids && terrInfo.key === cells.size + "|" + S.activities.length
-      ? '<div class="row"><span class="main"><span class="t" style="display:block">' + fmtKm2(terrInfo.km2) + ' km²</span><span class="s" style="display:block">' + fmt(terrInfo.ids.length, 0) + ' hexagones reliés entre eux</span></span><button class="linkbtn" id="terrgo">📍 Carte</button></div>'
-      : '<div class="empty-line">Calcul en cours…</div>') +
-      '<p class="note">Le plus grand ensemble d’hexagones explorés qui se touchent. Bouche les trous et relie tes zones pour l’agrandir.</p></div>';
     html += '<div class="box"><h3>Partager</h3><button class="btn block" id="shareBtn">Partager ma carte</button></div>';
     return html;
   }
