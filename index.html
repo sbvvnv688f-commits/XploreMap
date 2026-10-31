@@ -277,7 +277,11 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .kpi.wide .kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .kpi.wide .kpi-note { display: block; margin-top: 4px; font-size: 11px; color: var(--k-ink); opacity: .8; }
 .coll { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.ccard { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 5px 8px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 2px 2px 0 var(--outline); font: inherit; text-align: center; cursor: pointer; overflow: hidden; }
+.ccard .cc-act { display: flex; gap: 4px; margin-top: 5px; }
+.ccard .cc-act button, .ccard .cc-act a { min-width: 28px; height: 26px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--outline); border-radius: 9px; background: var(--bg-soft, var(--panel)); color: var(--ink); font: 700 11px inherit; text-decoration: none; cursor: pointer; }
+.cc-info { grid-column: 1 / -1; padding: 10px 12px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); font-size: 12px; }
+.cc-info .cc-first { margin-bottom: 6px; }
+.ccard { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 5px 8px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 2px 2px 0 var(--outline); font: inherit; text-align: center; overflow: hidden; }
 .ccard .cc-r { align-self: stretch; margin: 0 -5px 4px; padding: 2px 0; background: var(--rc); color: #2b1f4a; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .ccard .cc-ic { font-size: 22px; line-height: 1.1; }
 .ccard b { font-size: 11.5px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -2396,7 +2400,7 @@ body.sheet-open #cellcard { display: none; }
   function summitList() {
     var m = new Map();
     sortedActs().forEach(function (a) {
-      (a.summits || []).forEach(function (s) { if (!m.has(s.id)) m.set(s.id, { id: s.id, name: s.name, ele: s.ele, r: s.r, date: a.date, lat: s.lat, lng: s.lng, wp: s.wp || "", wd: s.wd || "" }); });
+      (a.summits || []).forEach(function (s) { if (!m.has(s.id)) m.set(s.id, { id: s.id, name: s.name, ele: s.ele, r: s.r, date: a.date, act: a.name, lat: s.lat, lng: s.lng, wp: s.wp || "", wd: s.wd || "" }); });
     });
     return Array.from(m.values());
   }
@@ -2737,7 +2741,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v89";
+  var BUILD = "31/10/2026 · v89b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -2931,7 +2935,7 @@ body.sheet-open #cellcard { display: none; }
   function landmarkList() {
     var m = new Map();
     sortedActs().forEach(function (a) {
-      (a.landmarks || []).forEach(function (l) { if (!m.has(l.id)) m.set(l.id, { id: l.id, name: l.name, ic: l.ic, kind: l.kind, date: a.date, lat: l.lat, lng: l.lng, wp: l.wp || "", wd: l.wd || "" }); });
+      (a.landmarks || []).forEach(function (l) { if (!m.has(l.id)) m.set(l.id, { id: l.id, name: l.name, ic: l.ic, kind: l.kind, date: a.date, act: a.name, lat: l.lat, lng: l.lng, wp: l.wp || "", wd: l.wd || "" }); });
     });
     return Array.from(m.values());
   }
@@ -2983,39 +2987,51 @@ body.sheet-open #cellcard { display: none; }
       lmFor(keys).forEach(function (l) { if (!reachedLm.has(l.id) && l.name) out.push({ p: l, peak: false }); });
       if (c) out.forEach(function (x) { x.d = haversine(c, [x.p.lat, x.p.lng]); });
       out.sort(function (a, b) { return (a.d || 0) - (b.d || 0); });
-      collNear = out.slice(0, 12); collKey = k;
+      collNear = out.filter(function (x) { return x.peak; }).slice(0, 9).concat(out.filter(function (x) { return !x.peak; }).slice(0, 9)); collKey = k;
     }).catch(function () { collNear = collNear || []; }).then(function () {
-      collBusy = false; if (current === "goals" && succTab === "collection") render();
+      collBusy = false; if (current === "goals" && (succTab === "sommets" || succTab === "lieux")) render();
     });
   }
   function collCard(p, isPeak, owned, extra) {
-    var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id);
-    poiIdx[key] = { name: p.name, lat: p.lat, lng: p.lng };
-    return '<button class="ccard' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '" data-go="' + key + '" aria-label="' + esc(p.name) + (owned ? '' : ' (pas encore atteint)') + '">' +
+    var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id), url = (S.info[key] && S.info[key].u) || wikiUrl(p);
+    poiIdx[key] = p;
+    var first = owned
+      ? '<b>Première visite :</b> le ' + fmtDate(p.date) + (p.act ? ' (« ' + esc(p.act) + ' »)' : '') + '<br>' +
+        (isPeak ? (p.ele ? 'Altitude : ' + fmt(p.ele, 0) + ' m · ' : '') + 'cercle de ' + (p.r || summitRadius(p.ele)) + ' m débloqué' : esc(p.kind || "Lieu") + ' · cercle de ' + LANDMARK_R + ' m débloqué')
+      : '<b>Pas encore visité</b>' + (extra ? ' · à ' + extra + ' de chez toi' : '') + '<br>Passe à moins de ' + (isPeak ? SUMMIT_REACH_M : LANDMARK_REACH_M) + ' m pour l’ajouter à ta collection.';
+    return '<div class="ccard' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '">' +
       '<span class="cc-r">' + RARITY[r].n + '</span><span class="cc-ic">' + (owned ? (isPeak ? "▲" : p.ic || "📍") : "?") + '</span>' +
-      '<b>' + esc(p.name) + '</b><small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small></button>';
+      '<b>' + esc(p.name) + '</b><small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small>' +
+      '<span class="cc-act"><button data-info="' + key + '" aria-label="Infos sur ' + esc(p.name) + '">ℹ️</button><button data-go="' + key + '" aria-label="Voir ' + esc(p.name) + ' sur la carte">📍</button>' +
+      '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" aria-label="' + esc(p.name) + ' sur Wikipédia">W↗</a></span></div>' +
+      '<div class="poi-info cc-info" id="info-' + key + '" hidden><div class="cc-first">' + first + '</div><div id="infot-' + key + '"></div></div>';
   }
-  function collectionHTML() {
-    var sm = summitList(), lm = landmarkList(), total = sm.length + lm.length, byR = [0, 0, 0, 0, 0];
-    sm.forEach(function (s) { byR[rarityOf(s, true)]++; }); lm.forEach(function (l) { byR[rarityOf(l, false)]++; });
-    var h = '<div class="box"><h3>Ma collection (' + total + ' carte' + (total > 1 ? "s" : "") + ')</h3><div class="cc-sum">' + RARITY.map(function (r, i) {
+  function collTabHTML(isPeak) {
+    var list = isPeak ? summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }) : landmarkList(), byR = [0, 0, 0, 0, 0];
+    list.forEach(function (p) { byR[rarityOf(p, isPeak)]++; });
+    var h = '<div class="box"><h3>' + (isPeak ? "Sommets atteints" : "Lieux remarquables") + ' (' + list.length + ')</h3><div class="cc-sum">' + RARITY.map(function (r, i) {
       return '<span style="--rc:' + r.c + '"><b>' + byR[i] + '</b> ' + r.n.toLowerCase() + (byR[i] > 1 && i !== 4 ? "s" : "") + '</span>';
-    }).join("") + '</div><p class="note" style="margin:6px 0 0">Chaque sommet ou lieu atteint devient une carte. Sommets : plus ils sont hauts, plus ils sont rares. Lieux : glaciers et sources chaudes sont les plus rares, puis cascades et grottes.</p></div>';
-    if (!total) h += '<div class="empty-line">Aucune carte pour l’instant : passe près d’un sommet nommé ou d’un lieu remarquable pendant une sortie.</div>';
-    var groups = [];
-    if (sm.length) groups.push(["▲ Sommets", sm.sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }).map(function (s) { return collCard(s, true, true); })]);
-    var kinds = {};
-    lm.forEach(function (l) { (kinds[l.kind || "Lieu"] = kinds[l.kind || "Lieu"] || []).push(l); });
-    Object.keys(kinds).sort(function (a, b) { return kinds[b].length - kinds[a].length; }).forEach(function (k) {
-      groups.push([(kinds[k][0].ic || "📍") + " " + k, kinds[k].sort(function (a, b) { return rarityOf(b, false) - rarityOf(a, false); }).map(function (l) { return collCard(l, false, true); })]);
-    });
-    groups.forEach(function (g) { h += '<h3>' + esc(g[0]) + ' (' + g[1].length + ')</h3><div class="coll">' + g[1].join("") + '</div>'; });
-    h += '<h3>À découvrir près de chez toi</h3>';
-    if (!S.activities.length && !(S.home && !S.home.none)) h += '<div class="empty-line">Ajoute une sortie ou place ta zone domicile pour voir les sommets et lieux à découvrir autour.</div>';
-    else if (!collNear) { h += '<div class="empty-line">Recherche des sommets et lieux autour de toi…</div>'; loadCollNear(); }
-    else if (!collNear.length) h += '<div class="empty-line">Rien de nouveau trouvé autour de toi pour l’instant.</div>';
-    else h += '<div class="coll">' + collNear.map(function (x) { return collCard(x.p, x.peak, false, x.d !== undefined ? (x.d >= 1000 ? fmt(x.d / 1000, 1) + " km" : Math.round(x.d) + " m") : ""); }).join("") + '</div><p class="note">Les plus proches de chez toi pas encore atteints. Touche une carte pour la voir sur la carte.</p>';
-    return h;
+    }).join("") + '</div>' +
+      (isPeak && list.length ? '<p class="note" style="margin:6px 0 0">Point culminant : ' + esc(list[0].name) + (list[0].ele ? ' (' + fmt(list[0].ele, 0) + ' m)' : '') + '. Plus un sommet est haut, plus sa carte est rare.</p>'
+        : !isPeak ? '<p class="note" style="margin:6px 0 0">Glaciers et sources chaudes sont les plus rares, puis cascades et grottes, puis châteaux, sites archéologiques et phares.</p>' : '') + '</div>';
+    if (!list.length) h += '<div class="empty-line">' + (isPeak
+      ? 'Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.'
+      : 'Aucun lieu pour l’instant. Passe à moins de ' + LANDMARK_REACH_M + ' m d’un monument, d’un château, d’une cascade ou d’un site historique référencé sur Wikipédia : un cercle de ' + LANDMARK_R + ' m se débloque.') + '</div>';
+    if (isPeak && list.length) h += '<div class="coll">' + list.map(function (s) { return collCard(s, true, true); }).join("") + '</div>';
+    if (!isPeak) {
+      var kinds = {};
+      list.forEach(function (l) { (kinds[l.kind || "Lieu"] = kinds[l.kind || "Lieu"] || []).push(l); });
+      Object.keys(kinds).sort(function (a, b) { return kinds[b].length - kinds[a].length; }).forEach(function (k) {
+        h += '<h3>' + (kinds[k][0].ic || "📍") + ' ' + esc(k) + ' (' + kinds[k].length + ')</h3><div class="coll">' +
+          kinds[k].sort(function (a, b) { return rarityOf(b, false) - rarityOf(a, false) || (a.date < b.date ? 1 : -1); }).map(function (l) { return collCard(l, false, true); }).join("") + '</div>';
+      });
+    }
+    h += '<h3>' + (isPeak ? "Sommets" : "Lieux") + ' à découvrir près de chez toi</h3>';
+    if (!S.activities.length && !(S.home && !S.home.none)) return h + '<div class="empty-line">Ajoute une sortie ou place ta zone domicile pour voir ce qu’il y a à découvrir autour.</div>';
+    if (!collNear) { loadCollNear(); return h + '<div class="empty-line">Recherche autour de toi…</div>'; }
+    var near = collNear.filter(function (x) { return x.peak === isPeak; }).slice(0, 9);
+    if (!near.length) return h + '<div class="empty-line">Rien de nouveau trouvé autour de toi pour l’instant.</div>';
+    return h + '<div class="coll">' + near.map(function (x) { return collCard(x.p, x.peak, false, x.d !== undefined ? (x.d >= 1000 ? fmt(x.d / 1000, 1) + " km" : Math.round(x.d) + " m") : ""); }).join("") + '</div>';
   }
   function wikiParse(wp) {
     var m = /^([a-z][a-z-]{1,11}):(.+)$/i.exec(wp || "");
@@ -3057,15 +3073,15 @@ body.sheet-open #cellcard { display: none; }
     return '<span class="poi-text">' + esc(r.t) + '</span>' + (r.d ? '<br><span class="warn">' + esc(r.d) + '</span>' : "");
   }
   function loadInfo(key) {
-    var it = poiIdx[key], el = $("info-" + key);
+    var it = poiIdx[key], el = $("infot-" + key) || $("info-" + key);   // carte de collection : sous la première visite
     if (!it || !el) return;
     el.innerHTML = infoHTML(key);
     if (S.info[key]) return;
     wikiInfo(it).then(function (r) {
       S.info[key] = r; save();
-      var e2 = $("info-" + key); if (e2) e2.innerHTML = infoHTML(key);
+      var e2 = $("infot-" + key) || $("info-" + key); if (e2) e2.innerHTML = infoHTML(key);
     }, function (err) {
-      var e2 = $("info-" + key);
+      var e2 = $("infot-" + key) || $("info-" + key);
       if (e2) e2.innerHTML = '<span class="warn">Résumé indisponible (' + (err && err.message === "pas de fiche" ? "aucune fiche Wikipédia référencée" : "connexion requise") + '). Utilise le lien Wikipédia.</span>';
     });
   }
@@ -3220,32 +3236,14 @@ body.sheet-open #cellcard { display: none; }
   function viewGoals() {
     poiIdx = {};
     var st = statsNow(), h = "";
-    h += '<div class="seg seg4">' + [["succes", "Succès"], ["collection", "Collection"], ["sommets", "Sommets"], ["lieux", "Lieux"], ["communes", "Communes"]].map(function (it) {
+    h += '<div class="seg seg4">' + [["succes", "Succès"], ["sommets", "Sommets"], ["lieux", "Lieux"], ["communes", "Communes"]].map(function (it) {
       return '<button data-succ="' + it[0] + '" aria-pressed="' + (succTab === it[0]) + '">' + it[1] + '</button>';
     }).join("") + '</div>';
     var legacy = S.activities.some(function (a) { return a.poiV !== 2 && ((a.summits || []).length || (a.landmarks || []).length); });
     var legacyNote = legacy ? '<p class="note">Certaines fiches ne sont pas encore reliées à Wikipédia : lance « Tout recalculer » dans les Réglages pour les récupérer.</p>' : "";
-    if (succTab === "collection") return h + collectionHTML();
-    if (succTab === "sommets") {
-      var sm = summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); });
-      h += '<h3>Sommets atteints (' + sm.length + ')</h3>';
-      if (!sm.length) h += '<div class="empty-line">Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.</div>';
-      else h += '<div class="s" style="color:var(--muted);margin-bottom:8px">Point culminant : ' + esc(sm[0].name) + (sm[0].ele !== null ? ' (' + fmt(sm[0].ele, 0) + ' m)' : '') + '</div>';
-      sm.forEach(function (s) {
-        var r = s.r || summitRadius(s.ele), bonus = r - SUMMIT_BASE_M;
-        h += poiCard(poiKey("s", s.id), s, "▲", 'Atteint le ' + fmtDate(s.date) + ' · cercle de ' + r + ' m' + (bonus > 0 ? ' (dont +' + bonus + ' m d’altitude)' : ''), s.ele !== null ? fmt(s.ele, 0) + '<small>m</small>' : "");
-      });
-      return h + legacyNote + poiStatusHTML(sm.length);
-    }
-    if (succTab === "lieux") {
-      var lm = landmarkList().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
-      h += '<h3>Lieux remarquables (' + lm.length + ')</h3>';
-      if (!lm.length) h += '<div class="empty-line">Aucun lieu pour l’instant. Passe à moins de ' + LANDMARK_REACH_M + ' m d’un monument, d’un château, d’une cascade ou d’un site historique référencé sur Wikipédia : un cercle de ' + LANDMARK_R + ' m se débloque.</div>';
-      lm.forEach(function (l) {
-        h += poiCard(poiKey("l", l.id), l, l.ic, esc(l.kind) + ' · visité le ' + fmtDate(l.date) + ' · cercle de ' + LANDMARK_R + ' m (dont +' + LANDMARK_BONUS_M + ' m de bonus)', "");
-      });
-      return h + legacyNote + poiStatusHTML(lm.length);
-    }
+    if (succTab === "collection") succTab = "sommets";
+    if (succTab === "sommets") return h + collTabHTML(true) + legacyNote + poiStatusHTML(summitList().length);
+    if (succTab === "lieux") return h + collTabHTML(false) + legacyNote + poiStatusHTML(landmarkList().length);
     if (succTab === "communes") {
       var cs = Object.keys(S.communes).map(function (k) { var c = S.communes[k]; c.code = k; return c; }).sort(function (a, b) { return b.pct - a.pct; });
       h += '<h3>Communes explorées (' + cs.length + ')</h3>';
