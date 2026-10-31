@@ -287,6 +287,11 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
 .notif-row { display: flex; margin: 6px 0; }
+.cq-pick { margin: -4px 0 12px; padding: 10px 12px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); }
+.cq-pick .gradechk { display: flex; margin: 6px 0; }
+.cq-pick small { color: var(--muted); }
+.fsearch input { width: 100%; }
+.frow[hidden] { display: none; }
 #tutoBox { position: fixed; inset: 0; z-index: 1900; }
 #tutoBox .tu-dim { position: absolute; inset: 0; background: rgba(16, 10, 34, .78); }
 #tutoBox .tu-spot { position: absolute; border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 0 0 9999px rgba(16, 10, 34, .78), 0 0 18px 4px var(--accent); pointer-events: none; transition: all .25s; }
@@ -315,9 +320,10 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .rv-card.flipped .rv-in { transform: rotateY(180deg); }
 .rv-card.now .rv-in { transition: none; }
 .rv-face { position: absolute; inset: 0; display: block; border-radius: 16px; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
-.rv-back { border: 3px solid #fff; background: repeating-linear-gradient(45deg, #2b1f4a 0 10px, #36285e 10px 20px); box-shadow: 0 0 26px 4px var(--rc); animation: rvglow 1.6s ease-in-out infinite; }
-.rv-emb { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; border: 3px solid #fff; border-radius: 50%; background: var(--rc); color: #2b1f4a; font-weight: 800; font-size: 30px; }
-.rv-card.sm .rv-emb { font-size: 16px; border-width: 2px; }
+.rv-back { border: 3px solid #9fb6ff; background: radial-gradient(circle at 50% 50%, transparent 20%, rgba(20, 18, 40, .9) 75%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='48' viewBox='0 0 28 48' fill='none' stroke='%239fb6ff' stroke-opacity='.28' stroke-width='1'%3E%3Cpath d='M14 0 L28 8 L28 24 L14 32 L0 24 L0 8 Z M14 32 L14 48'/%3E%3C/svg%3E"), linear-gradient(#262b4a, #141327); box-shadow: 0 0 26px 4px var(--rc); animation: rvglow 1.6s ease-in-out infinite; }
+.rv-emb { position: absolute; left: 50%; top: 50%; width: 62%; aspect-ratio: 1; transform: translate(-50%, -50%); display: block; }
+.rv-emb svg { display: block; width: 100%; height: 100%; animation: hexpulse 1.8s ease-in-out infinite; }
+@keyframes hexpulse { 50% { filter: drop-shadow(0 0 14px var(--rc)) brightness(1.3); } }
 .rv-front.pc { position: absolute; aspect-ratio: auto; transform: rotateY(180deg); box-shadow: 0 0 22px 2px var(--rc); cursor: pointer; }
 .rv-card.rv-top.flipped .rv-front { animation: rvshine 1.4s ease-out .5s 2; }
 @keyframes rvglow { 50% { box-shadow: 0 0 40px 10px var(--rc); } }
@@ -672,7 +678,7 @@ body.sheet-open #cellcard { display: none; }
         S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r), auto: hm.auto === true } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
-        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true; S.feedSeen = +o.feedSeen || 0; S.retroSeen = typeof o.retroSeen === "string" ? o.retroSeen : "";
+        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true; S.feedSeen = +o.feedSeen || 0; S.cqSel = Array.isArray(o.cqSel) ? o.cqSel.map(String).slice(0, 50) : []; S.retroSeen = typeof o.retroSeen === "string" ? o.retroSeen : "";
         S.goals = Array.isArray(o.goals) ? o.goals.filter(function (g) { return g && GOAL_TYPES[g.type] && GOAL_PERIODS[g.period] && g.target > 0; }) : [];
         S.unlocked = Array.isArray(o.unlocked) ? o.unlocked : null;
         S.colorMode = o.colorMode === "sport" || o.colorMode === "age" ? o.colorMode : "uniform";
@@ -1743,7 +1749,10 @@ body.sheet-open #cellcard { display: none; }
     return fmtKm2(st.km2 || 0) + " km² · " + fmt(st.acts || 0, 0) + " sortie" + (st.acts > 1 ? "s" : "") + " · " + fmt(st.distKm || 0, 0) + " km" +
       (st.summits ? " · ▲ " + st.summits : "") + (st.landmarks ? " · " + st.landmarks + " lieu" + (st.landmarks > 1 ? "x" : "") : "");
   }
-  function friendRowHTML(f) {
+  function friendRowHTML(f) {   // data-fs : texte de recherche (pseudo et ville)
+    return friendRowHTML0(f).replace('<div class="frow">', '<div class="frow" data-fs="' + esc((f.pseudo + " " + placeLabel(f)).toLowerCase()) + '">');
+  }
+  function friendRowHTML0(f) {
     var st = f.map && f.map.stats, sees = f.theyShare && f.map;
     if (st && !st.acts && !st.cells) { st = null; sees = false; f = Object.assign({}, f, { emptyMap: true }); }   // carte publiée mais vide (aucune sortie partageable)
     return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
@@ -1773,8 +1782,9 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
         '<button class="linkbtn" data-facc="' + esc(f.id) + '">Accepter</button><button class="del" data-frem="' + esc(f.id) + '">Refuser</button></div></div>';
     }).join("");
-    h += '<h3>Mes amis</h3>' + (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
-    if (friends.friends.some(function (f) { return f.theyShare && f.map; })) h += '<div class="drawer-sec"><button class="btn block" id="cqgo">👑 Mode conquête</button></div><p class="note" style="margin-top:-4px">Chaque hexagone prend la couleur de celui qui y a le plus haut palier (le plus de jours de visite), entre toi et tes amis.</p>';
+    h += '<h3>Mes amis</h3>' + (friends.friends.length > 1 ? '<div class="field fsearch"><input type="search" id="fsearch" placeholder="🔍 Rechercher un ami (pseudo ou ville)" aria-label="Rechercher un ami" autocomplete="off" autocapitalize="none" spellcheck="false"></div><div class="empty-line" id="fsnone" hidden>Aucun ami ne correspond.</div>' : '') +
+      (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
+    if (friends.friends.some(function (f) { return f.theyShare && f.map; })) h += '<div class="drawer-sec"><button class="btn block" id="cqgo">👑 Mode conquête</button></div><div id="cqpick" hidden></div><p class="note" style="margin-top:-4px">Chaque hexagone prend la couleur de celui qui y a le plus haut palier (le plus de jours de visite), entre toi et tes amis.</p>';
     if (friends.outgoing.length) h += '<h3>Invitations envoyées</h3>' + friends.outgoing.map(function (f) {
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
     }).join("");
@@ -1804,7 +1814,12 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
-    var cq = $("cqgo"); if (cq) cq.addEventListener("click", startConquest);
+    var cq = $("cqgo"); if (cq) cq.addEventListener("click", conquestPicker);
+    var fsq = $("fsearch"); if (fsq) fsq.addEventListener("input", function () {
+      var q = fsq.value.trim().toLowerCase(), shown = 0;
+      document.querySelectorAll("#sheetBody .frow[data-fs]").forEach(function (r) { var ok = !q || r.dataset.fs.indexOf(q) >= 0; r.hidden = !ok; if (ok) shown++; });
+      $("fsnone").hidden = !!shown;
+    });
     document.querySelectorAll("[data-fstats]").forEach(function (b) { b.addEventListener("click", function () { openFriendStats(b.dataset.fstats); }); });
     var hr = $("homer");
     if (hr) hr.addEventListener("change", function () { if (S.home && !S.home.none) { S.home.r = +hr.value; save(); scheduleMapPush(1500); render(); } });
@@ -1899,8 +1914,24 @@ body.sheet-open #cellcard { display: none; }
 
   /* ---- mode conquête : sur chaque hexagone, le joueur au palier le plus haut ---- */
   var conquest = null, CQ_COLORS = ["#e8505b", "#4fa3ff", "#5fbf6a", "#a46dff", "#ff9f1c", "#16b8a6", "#ff5dd8", "#8a5a2e"], CQ_TIE = "#9aa3ad";
-  function startConquest() {
+  function conquestPicker() {   // choix des amis à affronter
+    var box = $("cqpick"); if (!box) return;
+    if (!box.hidden) { box.hidden = true; return; }
     var fl = (friends ? friends.friends : []).filter(function (f) { return f.theyShare && f.map; });
+    var sel = Array.isArray(S.cqSel) ? S.cqSel.filter(function (id) { return fl.some(function (f) { return f.id === id; }); }) : [];
+    if (!sel.length) sel = fl.slice().sort(function (a, b) { return ((b.map.stats || {}).km2 || 0) - ((a.map.stats || {}).km2 || 0); }).slice(0, 3).map(function (f) { return f.id; });
+    box.innerHTML = '<div class="cq-pick"><b>Qui affronter ?</b>' + fl.map(function (f) {
+      return '<label class="gradechk"><input type="checkbox" data-cqf="' + esc(f.id) + '"' + (sel.indexOf(f.id) >= 0 ? ' checked' : '') + '><span>' + esc(f.pseudo) + ' <small>' + fmtKm2((f.map.stats || {}).km2 || 0) + ' km²</small></span></label>';
+    }).join("") + '<button class="btn block" id="cqrun">Lancer la conquête</button></div>';
+    box.hidden = false;
+    $("cqrun").addEventListener("click", function () {
+      var ids = Array.prototype.map.call(document.querySelectorAll("[data-cqf]:checked"), function (c) { return c.dataset.cqf; });
+      if (!ids.length) { toast("Choisis au moins un ami."); return; }
+      S.cqSel = ids; save(); startConquest(ids);
+    });
+  }
+  function startConquest(ids) {
+    var fl = (friends ? friends.friends : []).filter(function (f) { return f.theyShare && f.map && (!ids || ids.indexOf(f.id) >= 0); });
     if (!fl.length) { toast("Aucun ami ne te partage encore sa carte."); return; }
     toast("Chargement des cartes de tes amis…");
     Promise.all(fl.map(function (f) {
@@ -1910,12 +1941,36 @@ body.sheet-open #cellcard { display: none; }
       var players = [{ name: "toi", me: true, levels: mineLv }].concat(maps.filter(Boolean).map(function (m) { return { name: m.name, levels: m.levels }; }));
       var best = new Map();   // hexagone -> [palier, joueur ou -1 en cas d’égalité]
       players.forEach(function (p, i) { p.levels.forEach(function (lv, c) { var b = best.get(c); if (!b || lv > b[0]) best.set(c, [lv, i]); else if (lv === b[0] && b[1] !== i) b[1] = -1; }); });
-      var own = players.map(function () { return []; }), tie = [];
-      best.forEach(function (b, c) { if (b[1] < 0) tie.push(c); else own[b[1]].push(c); });
-      conquest = { players: players.map(function (p, i) { return { name: p.name, me: !!p.me, color: CQ_COLORS[i % CQ_COLORS.length], n: own[i].length, rings: ringsOf(own[i]) }; }) };
-      if (tie.length) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie.length, rings: ringsOf(tie) });
+      var n = best.size, lat = new Float64Array(n), lng = new Float64Array(n), ids2 = new Array(n), own = new Int8Array(n), cnt = players.map(function () { return 0; }), tie = 0, par = new Map(), k = 0;
+      best.forEach(function (b, c) {   // positions précalculées et vote par zone parente (résolution 8)
+        var ll = centerOf(c), o = b[1]; lat[k] = ll[0]; lng[k] = ll[1]; ids2[k] = c; own[k] = o; k++;
+        if (o < 0) tie++; else cnt[o]++;
+        var pc = h3.cellToParent(c, 8), v = par.get(pc); if (!v) par.set(pc, v = {}); v[o] = (v[o] || 0) + 1;
+      });
+      var coarse = players.map(function () { return []; }).concat([[]]);
+      par.forEach(function (v, pc) { var bo = null, bn = 0; Object.keys(v).forEach(function (o) { if (v[o] > bn) { bn = v[o]; bo = +o; } }); coarse[bo < 0 ? players.length : bo].push(pc); });
+      conquest = { lat: lat, lng: lng, ids: ids2, own: own, players: players.map(function (p, i) { return { name: p.name, me: !!p.me, color: CQ_COLORS[i % CQ_COLORS.length], n: cnt[i], rings: ringsOf(coarse[i]) }; }) };
+      conquest.colors = conquest.players.map(function (p) { return p.color; });
+      if (tie) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie, rings: ringsOf(coarse[players.length]) });
       closeSheet(); closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
     });
+  }
+  function drawConquest(ag) {   // de près : hexagones visibles ; de loin : zones regroupées
+    if (ag.mpp > 12) { conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); return; }
+    var tl = unproject(0, 0), br = unproject(W, H), la0 = br[0], la1 = tl[0], lo0 = tl[1], lo1 = br[1], groups = {}, tot = 0;
+    for (var i = 0; i < conquest.ids.length && tot < 40000; i++) {
+      var a = conquest.lat[i], b = conquest.lng[i];
+      if (a < la0 || a > la1 || b < lo0 || b > lo1) continue;
+      var o = conquest.own[i]; (groups[o] || (groups[o] = [])).push(conquest.ids[i]); tot++;
+    }
+    var tinySave = tinyHex; tinyHex = false;
+    ctx.save();
+    Object.keys(groups).forEach(function (o) {
+      var P = buildCellsPath(ctx, groups[o]);
+      ctx.globalAlpha = 0.5; ctx.fillStyle = +o < 0 ? CQ_TIE : conquest.colors[+o]; ctx.fill(P);
+      ctx.globalAlpha = 0.8; ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = 0.8; ctx.stroke(P);
+    });
+    ctx.restore(); tinyHex = tinySave;
   }
   function showConquestBar() {
     var bar = $("fvbar"), me = conquest.players[0];
@@ -2256,7 +2311,7 @@ body.sheet-open #cellcard { display: none; }
     if (ag.wAgg > 0) drawFar(ag, onImg);
     if (!friendView && terrHL) drawTerritory();
     if (friendView && cmp) { drawRings(cmp.mineR, CMP_MINE, 0.42); drawRings(cmp.commonR, CMP_COMMON, 0.5); }
-    if (!friendView && conquest) conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); });
+    if (!friendView && conquest) drawConquest(ag);
     if (!friendView && glow && ag.wFine > 0 && vis.length) drawGlow(vis);
     if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
     if (homePick) drawHomeCircle();
@@ -2845,7 +2900,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function rvCard(x, j, small) {
     return '<button class="rv-card' + (small ? ' sm' : '') + (x.r >= 3 ? ' rv-top' : '') + '" style="--rc:' + RARITY[x.r].c + '" data-rv="' + j + '" aria-label="Retourner la carte">' +
-      '<span class="rv-in"><span class="rv-face rv-back"><span class="rv-emb">X</span></span><span class="rv-face rv-front pc">' + rvFront(x) + '</span></span></button>';
+      '<span class="rv-in"><span class="rv-face rv-back"><span class="rv-emb"><svg viewBox="0 0 100 100" aria-hidden="true"><path d="M50 14 L82 32 L82 68 L50 86 L18 68 L18 32 Z" fill="var(--rc)" fill-opacity=".85" stroke="#fff" stroke-width="3"/><text x="50" y="62" text-anchor="middle" font-size="34" font-weight="700" fill="#1a1530" font-family="Georgia,serif">?</text></svg></span></span><span class="rv-face rv-front pc">' + rvFront(x) + '</span></span></button>';
   }
   function rvRender() {
     var box = $("revealBox"); if (!box || !rv) return;
@@ -3085,7 +3140,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v94b";
+  var BUILD = "31/10/2026 · v94c";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
