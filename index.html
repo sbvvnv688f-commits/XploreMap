@@ -281,6 +281,30 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero .yr-y { display: block; font-weight: 700; font-size: 14px; letter-spacing: .1em; }
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
+#revealBox { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); background: rgba(16, 10, 34, .95); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #fff; overflow-y: auto; }
+.rv-head { text-align: center; }
+.rv-head b { display: block; font-size: 22px; }
+.rv-head span { font-size: 13px; opacity: .85; }
+.rv-card { position: relative; width: min(62vw, 240px); aspect-ratio: 3 / 4; padding: 0; border: 0; background: none; perspective: 1000px; cursor: pointer; flex: none; }
+.rv-card.sm { width: 100%; }
+.rv-in { position: relative; display: block; width: 100%; height: 100%; transition: transform .6s cubic-bezier(.3, 1.4, .5, 1); transform-style: preserve-3d; }
+.rv-card.flipped .rv-in { transform: rotateY(180deg); }
+.rv-card.now .rv-in { transition: none; }
+.rv-face { position: absolute; inset: 0; display: block; border-radius: 16px; backface-visibility: hidden; -webkit-backface-visibility: hidden; overflow: hidden; }
+.rv-back { border: 3px solid #fff; background: repeating-linear-gradient(45deg, #2b1f4a 0 10px, #36285e 10px 20px); box-shadow: 0 0 26px 4px var(--rc); animation: rvglow 1.6s ease-in-out infinite; }
+.rv-emb { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; border: 3px solid #fff; border-radius: 50%; background: var(--rc); color: #2b1f4a; font-weight: 800; font-size: 30px; }
+.rv-card.sm .rv-emb { font-size: 16px; border-width: 2px; }
+.rv-front.pc { position: absolute; aspect-ratio: auto; transform: rotateY(180deg); box-shadow: 0 0 22px 2px var(--rc); cursor: pointer; }
+.rv-card.rv-top.flipped .rv-front { animation: rvshine 1.4s ease-out .5s 2; }
+@keyframes rvglow { 50% { box-shadow: 0 0 40px 10px var(--rc); } }
+@keyframes rvshine { 50% { box-shadow: 0 0 46px 14px var(--rc); filter: brightness(1.15); } }
+.rv-stage, .rv-stack { display: flex; justify-content: center; }
+.rv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: min(100%, 420px); }
+.rv-grid .pc .nm { font-size: 9.5px; padding-top: 10px; }
+.rv-grid .pc .rb { font-size: 7px; top: 5px; left: 5px; }
+.rv-cap { margin: 0; text-align: center; font-size: 13px; min-height: 2.6em; max-width: 320px; }
+.rv-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.rv-skip { color: #fff !important; opacity: .8; }
 #updbar { position: fixed; left: 12px; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 74px); z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; border: 3px solid var(--outline); border-radius: 16px; background: var(--accent); color: var(--k-ink, #2b1f4a); box-shadow: 3px 3px 0 var(--outline); font-weight: 700; font-size: 13px; }
 #updbar .btn { padding: 7px 12px; }
 .feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
@@ -2678,11 +2702,7 @@ body.sheet-open #cellcard { display: none; }
     fitLines(lines);
     if (periodF === "all") runReveal(fresh, 1800); else draw();
     startGlow(fresh, periodF === "all" ? 1800 : 0);
-    if (newPeaks.length) {
-      var top = newPeaks.slice().sort(function (x, y) { return (y.ele || 0) - (x.ele || 0); })[0];
-      toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
-    }
-    if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
+    queueReveal(newPeaks, newLms);
     var up = upsParts(ups);
     if (up.length) toast(up.join(" · "));
     checkAchievements(); collNear = null;
@@ -2697,12 +2717,83 @@ body.sheet-open #cellcard { display: none; }
     if (el) el.innerHTML = '<div class="result">Analyse ' + k + '/' + total + ' : ' + esc(name) + '<br><span class="warn">' + label + '</span><div class="bar-track"><div class="bar-fill" style="width:' + pct + '%"></div></div></div>';
     return new Promise(function (r) { setTimeout(r, 30); });
   }
-  function announcePois(newPeaks, newLms) {
-    if (newPeaks.length) {
-      var top = newPeaks.slice().sort(function (x, y) { return (y.ele || 0) - (x.ele || 0); })[0];
-      toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
+  /* ---- découverte des nouvelles cartes : faces cachées, une par une ---- */
+  var revealQ = [], revealTimer2 = 0, rv = null, RV_MANY = 10;
+  function queueReveal(peaks, lms) {
+    (peaks || []).forEach(function (p) { if (!revealQ.some(function (x) { return x.peak && x.p.id === p.id; })) revealQ.push({ p: p, peak: true }); });
+    (lms || []).forEach(function (l) { if (!revealQ.some(function (x) { return !x.peak && x.p.id === l.id; })) revealQ.push({ p: l, peak: false }); });
+    if (!revealQ.length) return;
+    clearTimeout(revealTimer2); revealTimer2 = setTimeout(openReveal, rv ? 0 : 2400);   // laisse d’abord apparaître les hexagones
+  }
+  function rvKey(x) { return poiKey(x.peak ? "s" : "l", x.p.id); }
+  function openReveal() {
+    if (!revealQ.length) return;
+    var items = revealQ.splice(0);
+    items.forEach(function (x) { x.r = rarityOf(x.p, x.peak); var k = rvKey(x); poiIdx[k] = x.p; x.p._peak = x.peak; wantPhoto(k); });
+    items.sort(function (a, b) { return a.r - b.r || (a.p.ele || 0) - (b.p.ele || 0); });   // le plus rare en dernier
+    if (rv) { rv.items = rv.items.concat(items); rvRender(); return; }
+    rv = { items: items, i: 0, flipped: false, mode: items.length > RV_MANY ? "intro" : "one" };
+    var box = document.createElement("div"); box.id = "revealBox"; box.setAttribute("role", "dialog"); box.setAttribute("aria-modal", "true"); box.setAttribute("aria-label", "Nouvelles cartes");
+    document.body.appendChild(box); rvRender();
+  }
+  function rvFront(x) {
+    var k = rvKey(x), p = x.p;
+    return '<span class="frame"><span class="ph-w" id="ph-' + k + '">' + photoHTML(k, x.peak ? "▲" : (p.ic || "📍"), x.peak) + '</span>' +
+      '<span class="nm">' + esc(p.name) + '<small>' + (x.peak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + '</small></span></span><span class="rb">' + RARITY[x.r].n + '</span>';
+  }
+  function rvCard(x, j, small) {
+    return '<button class="rv-card' + (small ? ' sm' : '') + (x.r >= 3 ? ' rv-top' : '') + '" style="--rc:' + RARITY[x.r].c + '" data-rv="' + j + '" aria-label="Retourner la carte">' +
+      '<span class="rv-in"><span class="rv-face rv-back"><span class="rv-emb">X</span></span><span class="rv-face rv-front pc">' + rvFront(x) + '</span></span></button>';
+  }
+  function rvRender() {
+    var box = $("revealBox"); if (!box || !rv) return;
+    var n = rv.items.length, x = rv.items[rv.i], h;
+    if (rv.mode === "intro") {
+      h = '<div class="rv-head"><b>✨ ' + n + ' nouvelles cartes !</b><span>Sommets et lieux découverts pendant tes sorties.</span></div>' +
+        '<div class="rv-stack">' + rvCard(rv.items[n - 1], -1, false) + '</div>' +
+        '<div class="rv-btns"><button class="btn" id="rvone">Une par une</button><button class="btn" id="rvall">Tout révéler d’un coup</button></div><button class="linkbtn rv-skip" id="rvclose">Passer</button>';
+    } else if (rv.mode === "all") {
+      h = '<div class="rv-head"><b>✨ ' + n + ' nouvelle' + (n > 1 ? "s" : "") + ' carte' + (n > 1 ? "s" : "") + '</b><span>' + rvSummary() + '</span></div>' +
+        '<div class="rv-grid">' + rv.items.map(function (y, j) { return rvCard(y, j, true); }).join("") + '</div>' +
+        '<div class="rv-btns"><button class="btn" id="rvcoll">Voir ma collection</button><button class="btn" id="rvclose">Fermer</button></div>';
+    } else if (rv.i >= n) {
+      h = '<div class="rv-head"><b>Collection complétée !</b><span>' + rvSummary() + '</span></div>' +
+        '<div class="rv-btns"><button class="btn" id="rvcoll">Voir ma collection</button><button class="btn" id="rvclose">Fermer</button></div>';
+    } else {
+      var p = x.p, line = x.peak ? "Nouveau sommet" + (p.ele ? " · " + fmt(p.ele, 0) + " m" : "") + " · cercle de " + (p.r || summitRadius(p.ele)) + " m débloqué" : "Nouveau lieu · " + esc(p.kind || "Lieu") + " · cercle de " + LANDMARK_R + " m débloqué";
+      h = '<div class="rv-head"><b>Nouvelle carte</b><span>' + (rv.i + 1) + ' / ' + n + '</span></div>' +
+        '<div class="rv-stage">' + rvCard(x, rv.i, false) + '</div>' +
+        '<p class="rv-cap" id="rvcap">' + (rv.flipped ? '<b>' + RARITY[x.r].n + '</b> · ' + line : 'Touche la carte pour la découvrir') + '</p>' +
+        '<div class="rv-btns">' + (rv.flipped ? '<button class="btn" id="rvnext">' + (rv.i + 1 < n ? "Suivante" : "Terminer") + '</button>' : '') + (n - rv.i > 1 ? '<button class="btn ghost" id="rvall">Tout révéler</button>' : '') + '</div><button class="linkbtn rv-skip" id="rvclose">Passer</button>';
     }
-    if (newLms.length) toast(newLms[0].ic + " " + (newLms.length > 1 ? newLms.length + " lieux emblématiques visités, dont " : "Lieu emblématique : ") + newLms[0].name + " · cercle de " + LANDMARK_R + " m débloqué");
+    box.innerHTML = h;
+    if (rv.mode === "one" && rv.flipped) { var c0 = box.querySelector(".rv-card"); if (c0) c0.classList.add("flipped", "now"); }
+    box.querySelectorAll("[data-rv]").forEach(function (b) { b.addEventListener("click", function () { rvTap(b); }); });
+    var on = function (id, f) { var e = $(id); if (e) e.addEventListener("click", f); };
+    on("rvone", function () { rv.mode = "one"; rv.i = 0; rv.flipped = false; rvRender(); });
+    on("rvall", function () { rv.mode = "all"; rvRender(); rvCascade(); });
+    on("rvnext", rvNext);
+    on("rvclose", closeReveal);
+    on("rvcoll", function () { closeReveal(); succTab = rv0Peak ? "sommets" : "lieux"; ccOpen = ""; openTab("goals"); });
+    if (rv.mode === "all" || rv.i >= n) rv0Peak = rv.items.some(function (y) { return y.peak; });
+  }
+  var rv0Peak = true;
+  function rvSummary() {
+    var s = rv.items.filter(function (y) { return y.peak; }).length, l = rv.items.length - s, best = rv.items[rv.items.length - 1];
+    return (s ? s + " sommet" + (s > 1 ? "s" : "") : "") + (s && l ? " et " : "") + (l ? l + " lieu" + (l > 1 ? "x" : "") : "") + (best ? " · la plus rare : " + esc(best.p.name) + " (" + RARITY[best.r].n.toLowerCase() + ")" : "");
+  }
+  function rvTap(b) {
+    if (rv.mode === "intro") { rv.mode = "one"; rv.i = 0; rv.flipped = false; rvRender(); return; }
+    if (rv.mode === "all") { b.classList.add("flipped"); return; }
+    if (!rv.flipped) { rv.flipped = true; b.classList.add("flipped"); setTimeout(function () { if (rv && rv.flipped) rvRender(); }, 650); return; }
+    rvNext();
+  }
+  function rvNext() { rv.i++; rv.flipped = false; rvRender(); }
+  function rvCascade() { document.querySelectorAll("#revealBox .rv-card").forEach(function (c, j) { setTimeout(function () { c.classList.add("flipped"); }, 250 + j * Math.max(25, Math.min(120, 2400 / document.querySelectorAll("#revealBox .rv-card").length))); }); }
+  function closeReveal() { var b = $("revealBox"); if (b) b.remove(); rv = null; if (revealQ.length) setTimeout(openReveal, 300); }
+  if (window.__TEST) window.__queueReveal = queueReveal;   // banc d’essai
+  function announcePois(newPeaks, newLms) {
+    queueReveal(newPeaks, newLms);
   }
   var addRenderWait = false;
   function renderAddSoon() {   // pas de nouveau rendu pendant qu’une liste de sports est ouverte : le téléphone la refermerait et le choix serait perdu
@@ -2892,7 +2983,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v91e";
+  var BUILD = "31/10/2026 · v92";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
