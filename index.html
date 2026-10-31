@@ -373,6 +373,7 @@ details.advanced summary { cursor: pointer; font-size: 11.5px; color: var(--mute
 }
 #pendbar[hidden], body.friend-view #pendbar, body.sheet-open #pendbar { display: none; }
 .result .prem { float: right; margin: -4px -6px 0 8px; font-size: 11px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
+.guide-step.done h3 { color: var(--good, #2f9e5b); }
 .row.rrow { cursor: pointer; border: 3px solid var(--outline); border-radius: 16px; padding: 8px 12px; margin: 4px 0 10px; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }   /* chaque joueur du classement dans sa boîte */
 .row.me { margin: 4px 0 10px; }
 .row.rrow[aria-expanded="true"] { margin-bottom: 0; border-bottom-left-radius: 0; border-bottom-right-radius: 0; box-shadow: 3px 0 0 var(--outline); }
@@ -559,7 +560,7 @@ body.sheet-open #cellcard { display: none; }
         S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r), auto: hm.auto === true } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
-        S.onboarded = !!o.onboarded;
+        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true;
         S.goals = Array.isArray(o.goals) ? o.goals.filter(function (g) { return g && GOAL_TYPES[g.type] && GOAL_PERIODS[g.period] && g.target > 0; }) : [];
         S.unlocked = Array.isArray(o.unlocked) ? o.unlocked : null;
         S.colorMode = o.colorMode === "sport" || o.colorMode === "age" ? o.colorMode : "uniform";
@@ -840,6 +841,57 @@ body.sheet-open #cellcard { display: none; }
     visits.forEach(function (d, c) { var n = d.length, k = levelIdx(n); if (k >= 0) exact[k]++; if (n > mx) { mx = n; top = c; } });
     var atLeast = exact.map(function (v, i) { var t = 0; for (var j = i; j < exact.length; j++) t += exact[j]; return t; });
     masteryInfo = { exact: exact, atLeast: atLeast, max: mx, top: top };
+  }
+  var terrInfo = { key: "", ids: null, km2: 0, rings: null }, terrBusy = false, terrTimer = 0, terrHL = false;
+  function scheduleTerritory() { clearTimeout(terrTimer); terrTimer = setTimeout(computeTerritory, 1500); }
+  function computeTerritory() {   // plus grand amas d’hexagones explorés qui se touchent, calculé par petits morceaux
+    var key = cells.size + "|" + S.activities.length;
+    if (terrInfo.key === key || terrBusy || typeof h3 === "undefined") return;
+    terrBusy = true;
+    var all = Array.from(cells.keys()), seen = new Set(), best = [], comp = null, stack = [], i = 0;
+    (function step() {
+      var t0 = Date.now();
+      while (Date.now() - t0 < 30) {
+        if (!comp) {
+          while (i < all.length && seen.has(all[i])) i++;
+          if (i >= all.length) {
+            terrBusy = false;
+            if (cells.size + "|" + S.activities.length !== key) { scheduleTerritory(); return; }   // la carte a changé pendant le calcul
+            terrInfo = { key: key, ids: best, km2: best.length * AREA_M2 / 1e6, rings: null };
+            if (terrHL) terrRings();
+            checkAchievements(); if (current === "stats") render();
+            return;
+          }
+          comp = [all[i]]; seen.add(all[i]); stack = [all[i]];
+        }
+        for (var n = 0; stack.length && n < 1500; n++) {
+          var nb = h3.gridDisk(stack.pop(), 1);
+          for (var k = 0; k < nb.length; k++) { var x = nb[k]; if (!seen.has(x) && cells.has(x)) { seen.add(x); comp.push(x); stack.push(x); } }
+        }
+        if (!stack.length) { if (comp.length > best.length) best = comp; comp = null; }
+      }
+      setTimeout(step, 0);
+    })();
+  }
+  function terrRings() {   // contour du territoire (calculé une fois)
+    if (terrInfo.rings || !terrInfo.ids || !terrInfo.ids.length) return;
+    try { var mp = h3.cellsToMultiPolygon(terrInfo.ids); terrInfo.rings = []; mp.forEach(function (poly) { poly.forEach(function (r) { terrInfo.rings.push(r); }); }); }
+    catch (e) { terrInfo.rings = []; }
+  }
+  function drawTerritory() {
+    if (!terrInfo.rings || !terrInfo.rings.length) return;
+    var P = new Path2D();
+    terrInfo.rings.forEach(function (r) { r.forEach(function (ll, j) { var p = toScreen(ll[0], ll[1]); if (j) P.lineTo(p[0], p[1]); else P.moveTo(p[0], p[1]); }); P.closePath(); });
+    ctx.save(); ctx.lineJoin = "round";
+    ctx.globalAlpha = 0.16; ctx.fillStyle = "#ffd23f"; ctx.fill(P, "evenodd");
+    ctx.globalAlpha = 0.85; ctx.strokeStyle = "rgba(43,31,74,0.75)"; ctx.lineWidth = 5.5; ctx.stroke(P);
+    ctx.globalAlpha = 1; ctx.strokeStyle = "#ffd23f"; ctx.lineWidth = 3; ctx.stroke(P);
+    ctx.restore();
+  }
+  function showTerritory() {
+    if (!terrInfo.ids || !terrInfo.ids.length) return;
+    closeSheet(); terrHL = true; terrRings(); fitCells(new Set(terrInfo.ids));
+    toast("Ton plus grand territoire d’un seul tenant : " + fmtKm2(terrInfo.km2) + " km². Bouche les trous autour pour l’agrandir.");
   }
   function levelUps(it, tmp) {   // hexagones qui montent d’un palier avec cette course
     var ups = MASTERY.map(function () { return 0; }), d = it.act.date;
@@ -1173,6 +1225,7 @@ body.sheet-open #cellcard { display: none; }
     return afterLogin(acct.user).then(function () {
       acctSyncing = false; if (!acct) return;
       acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends(); schedulePushScore();
+      setTimeout(maybeGuide, 900);
     }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
@@ -1624,7 +1677,7 @@ body.sheet-open #cellcard { display: none; }
     });
     computeMastery();
     refreshDisp();
-    updateChip();
+    updateChip(); scheduleTerritory();
     $("hint").hidden = S.activities.length > 0;
     schedulePushScore();
   }
@@ -1884,6 +1937,8 @@ body.sheet-open #cellcard { display: none; }
     ctx.globalAlpha = 1;
     if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawFar(ag, onImg);
+    if (!friendView && terrHL) drawTerritory();
+    if (!friendView && glow && ag.wFine > 0 && vis.length) drawGlow(vis);
     if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
     if (homePick) drawHomeCircle();
     if (!friendView && selected !== null) {
@@ -1892,6 +1947,24 @@ body.sheet-open #cellcard { display: none; }
     }
     drawCellSel(ag);
     drawScaleBar();
+  }
+  var glow = null, glowTimer = 0;   // hexagones gagnés au dernier import : brillent en doré puis s’estompent
+  function startGlow(ids, delay) {
+    if (!ids.length) return;
+    glow = { set: new Set(ids), t0: Date.now() + (delay || 0), ms: 3200 };
+    clearTimeout(glowTimer); (function tick() { requestDraw(); if (glow) glowTimer = setTimeout(tick, 60); })();
+  }
+  function drawGlow(vis) {
+    var t = (Date.now() - glow.t0) / glow.ms;
+    if (t >= 1) { glow = null; return; }
+    if (t < 0) return;
+    var ids = vis.filter(function (c) { return glow.set.has(c); });
+    if (!ids.length) return;
+    var tinySave = tinyHex; tinyHex = false;
+    var P = buildCellsPath(ctx, ids); tinyHex = tinySave;
+    var a = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
+    ctx.save(); ctx.globalAlpha = 0.6 * a; ctx.fillStyle = "#ffd23f"; ctx.fill(P);
+    ctx.globalAlpha = 0.9 * a; ctx.strokeStyle = "#fff4b8"; ctx.lineWidth = 1.2; ctx.stroke(P); ctx.restore();
   }
   function drawScaleBar() {
     var mid = unproject(W / 2, H / 2), mPerPx = 40075016.7 * Math.cos(mid[0] * Math.PI / 180) / worldScale();
@@ -2411,6 +2484,7 @@ body.sheet-open #cellcard { display: none; }
     cells.forEach(function (v, id) { if (!before.has(id)) fresh.push(id); });
     fitLines(lines);
     if (periodF === "all") runReveal(fresh, 1800); else draw();
+    startGlow(fresh, periodF === "all" ? 1800 : 0);
     if (newPeaks.length) {
       var top = newPeaks.slice().sort(function (x, y) { return (y.ele || 0) - (x.ele || 0); })[0];
       toast("▲ " + (newPeaks.length > 1 ? newPeaks.length + " sommets atteints, dont " : "Sommet atteint : ") + top.name + (top.ele ? " (" + fmt(top.ele, 0) + " m)" : "") + " · cercle de " + top.r + " m débloqué");
@@ -2625,7 +2699,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v86";
+  var BUILD = "31/10/2026 · v87";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3235,13 +3309,16 @@ body.sheet-open #cellcard { display: none; }
     var sp = {}, dist = 0, maxNew = 0, sm = summitList(), maxEle = 0;
     S.activities.forEach(function (a) { sp[a.sport] = 1; dist += a.dist; if ((a.newCells || 0) > maxNew) maxNew = a.newCells; });
     sm.forEach(function (s) { if ((s.ele || 0) > maxEle) maxEle = s.ele; });
-    return { km2: totalKm2(), n: S.activities.length, sports: Object.keys(sp).length, dist: dist / 1000, maxNew: maxNew, summits: sm.length, maxEle: maxEle, landmarks: landmarkList().length, mv: masteryInfo.atLeast || [] };
+    return { km2: totalKm2(), n: S.activities.length, sports: Object.keys(sp).length, dist: dist / 1000, maxNew: maxNew, summits: sm.length, maxEle: maxEle, landmarks: landmarkList().length, mv: masteryInfo.atLeast || [], terr: terrInfo.km2 || 0 };
   }
   var ACH = [
     { id: "first", ic: "👟", name: "Premier pas", desc: "Importer une première course", ok: function (s) { return s.n >= 1; } },
     { id: "km1", ic: "🗺️", name: "Premier km²", desc: "Découvrir 1 km²", ok: function (s) { return s.km2 >= 1; } },
     { id: "km10", ic: "🧭", name: "Grand explorateur", desc: "Découvrir 10 km²", ok: function (s) { return s.km2 >= 10; } },
     { id: "km50", ic: "🌍", name: "Cartographe", desc: "Découvrir 50 km²", ok: function (s) { return s.km2 >= 50; } },
+    { id: "terr1", ic: "🧩", name: "Terre d’un seul tenant", desc: "Un territoire continu de 1 km²", ok: function (s) { return s.terr >= 1; } },
+    { id: "terr5", ic: "🏰", name: "Domaine", desc: "Un territoire continu de 5 km²", ok: function (s) { return s.terr >= 5; } },
+    { id: "terr20", ic: "👑", name: "Royaume", desc: "Un territoire continu de 20 km²", ok: function (s) { return s.terr >= 20; } },
     { id: "big100", ic: "⚡", name: "Grande sortie", desc: "100 nouveaux hexagones en une sortie", ok: function (s) { return s.maxNew >= 100; } },
     { id: "big1000", ic: "🚀", name: "Expédition", desc: "1 000 nouveaux hexagones en une sortie", ok: function (s) { return s.maxNew >= 1000; } },
     { id: "multi3", ic: "🎯", name: "Multisport", desc: "Pratiquer 3 sports", ok: function (s) { return s.sports >= 3; } },
@@ -3597,9 +3674,10 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
+  var TITLES = { guide: "Bienvenue sur Xplr", add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
   function openTab(k) {
     if (selected !== null) { selected = null; cellPickedSel = false; requestDraw(); }   // trace affichée : effacée dès qu’on change de menu
+    if (terrHL) { terrHL = false; requestDraw(); }   // territoire surligné : même règle
     if (current === k) { closeSheet(); return; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends") exitFriendView();   // les autres onglets parlent de ta propre carte
@@ -3617,10 +3695,43 @@ body.sheet-open #cellcard { display: none; }
   function render() {
     if (!current) return;
     $("sheetTitle").textContent = TITLES[current];
-    var html = { add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
+    var html = { guide: viewGuide, add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
     $("sheetBody").innerHTML = html;
     bindSheet(); updatePendBar();
     if (current === "friends") bindFriends();
+    if (current === "guide") bindGuide();
+  }
+  function viewGuide() {
+    var st = stravaConnected(), hm = homeSet(), nf = friends ? friends.friends.length : 0;
+    function step(n, done, title, text, btn) {
+      return '<div class="box guide-step' + (done ? ' done' : '') + '"><h3>' + (done ? '✓ ' : n + '. ') + title + '</h3><p class="note" style="margin:0 0 8px">' + text + '</p>' + btn + '</div>';
+    }
+    return '<p class="note" style="margin-top:0">Xplr colorie la carte là où tu passes : chaque sortie découvre des hexagones, les sommets et lieux atteints débloquent des cercles, et tu peux comparer ta carte avec celle de tes amis. Trois étapes pour bien démarrer :</p>' +
+      step(1, st || realActs().length > 0, "Ajoute tes sorties", st ? "Strava est connecté : tes sorties arrivent toutes seules, il suffit de les valider." : "Connecte Strava pour récupérer tes sorties automatiquement, ou importe des fichiers GPX, TCX ou FIT.", '<button class="btn block" data-gstep="add">' + (st ? "Voir mes sorties" : "Connecter Strava ou importer") + '</button>') +
+      step(2, hm, "Ta zone domicile", hm ? "Les hexagones autour de chez toi ne seront jamais montrés à tes amis. Tu peux la déplacer quand tu veux." : "Place un cercle autour de chez toi : ces hexagones ne seront jamais montrés à tes amis.", '<button class="btn ghost block" data-gstep="home">📍 ' + (hm ? "Vérifier sur la carte" : "Placer sur la carte") + '</button>') +
+      step(3, nf > 0, "Invite un ami", nf ? "Tu as " + nf + " ami" + (nf > 1 ? "s" : "") + ". Entre amis, vous voyez vos cartes respectives." : "Entre amis, vous voyez vos cartes respectives et vous vous classez entre vous.", '<div class="inv"><input type="text" id="guideinv" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="pseudo de ton ami" aria-label="Pseudo de ton ami"><button class="btn" id="guideinvok">Inviter</button></div>') +
+      '<div class="drawer-sec"><button class="btn block" id="guidego">C’est parti !</button></div>' +
+      '<p class="note">Tu peux revoir cet accueil depuis les Réglages.</p>';
+  }
+  function bindGuide() {
+    document.querySelectorAll("[data-gstep]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (b.dataset.gstep === "add") openTab("add");
+        else { closeSheet(); startHomePick(S.home && S.home.r || 500); }
+      });
+    });
+    var inp = $("guideinv"), ok = $("guideinvok");
+    function invite() {
+      var p = inp.value.trim().toLowerCase(); if (!p) { inp.focus(); return; }
+      friendAction("POST", "/friends/invite", { pseudo: p }, function (r) { return r.result === "accepted" ? "Vous êtes maintenant amis avec " + p + "." : "Invitation envoyée à " + p + "."; }).then(function () { if (current === "guide") render(); });
+    }
+    if (ok) ok.addEventListener("click", invite);
+    if (inp) inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); invite(); } });
+    var go = $("guidego"); if (go) go.addEventListener("click", closeSheet);
+  }
+  function maybeGuide() {   // première ouverture d’un compte sans sortie : l’accueil guidé, une seule fois
+    if (S.guideDone || realActs().length || pending || current || gateMode) return;
+    S.guideDone = true; save(); openTab("guide");
   }
 
   function viewAdd() {
@@ -3683,6 +3794,11 @@ body.sheet-open #cellcard { display: none; }
       html += '<div class="row"><span class="main"><span class="t" style="display:block">Hexagone le plus visité</span><span class="s" style="display:block">' + masteryInfo.max + (masteryInfo.max > 1 ? ' jours' : ' jour') + (tk >= 0 ? ' · ' + MASTERY[tk].name : '') + '</span></span><button class="linkbtn" data-go="mastery">📍 Carte</button></div>';
     }
     html += '<p class="note">Une visite est un jour où ta trace passe dans l’hexagone : plusieurs passages le même jour comptent pour un seul.</p></div>';
+    computeTerritory();
+    html += '<div class="box"><h3>Territoire d’un seul tenant</h3>' + (terrInfo.ids && terrInfo.key === cells.size + "|" + S.activities.length
+      ? '<div class="row"><span class="main"><span class="t" style="display:block">' + fmtKm2(terrInfo.km2) + ' km²</span><span class="s" style="display:block">' + fmt(terrInfo.ids.length, 0) + ' hexagones reliés entre eux</span></span><button class="linkbtn" id="terrgo">📍 Carte</button></div>'
+      : '<div class="empty-line">Calcul en cours…</div>') +
+      '<p class="note">Le plus grand ensemble d’hexagones explorés qui se touchent. Bouche les trous et relie tes zones pour l’agrandir.</p></div>';
     html += '<div class="box"><h3>Partager</h3><button class="btn block" id="shareBtn">Partager ma carte</button></div>';
     return html;
   }
@@ -3781,6 +3897,7 @@ body.sheet-open #cellcard { display: none; }
       pending = null; render(); draw(); updatePendBar();
     });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
+    var tg = $("terrgo"); if (tg) tg.addEventListener("click", showTerritory);
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
     var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
     document.querySelectorAll("[data-gdel]").forEach(function (b) { b.addEventListener("click", function () { S.goals.splice(+b.dataset.gdel, 1); save(); render(); }); });
@@ -3914,6 +4031,7 @@ body.sheet-open #cellcard { display: none; }
       '<p class="note" style="margin-top:4px">Automatique suit le réglage clair ou sombre du téléphone.</p></div>' +
       accountSettingsHTML() +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="guideagain">Revoir l’accueil</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="diagbtn">Diagnostic de connexion</button><pre class="diag" id="diagout" hidden></pre></div>' +
       '<p class="note">À utiliser si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap, ou pour corriger les surfaces de communes. Les nouvelles courses sont analysées automatiquement.</p>' +
@@ -3973,6 +4091,7 @@ body.sheet-open #cellcard { display: none; }
     document.querySelectorAll("[data-themeopt]").forEach(function (b) { b.addEventListener("click", function () { S.theme = b.dataset.themeopt; applyTheme(); save(); renderDrawer(); }); });
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
+    $("guideagain").addEventListener("click", function () { closeDrawer(); openTab("guide"); });
     $("diagbtn").addEventListener("click", runDiagnostic);
     bindAccount();
     $("exp").addEventListener("click", function () {
