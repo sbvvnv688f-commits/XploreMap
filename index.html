@@ -514,7 +514,7 @@ body.pend-wait #hint { display: none; }
 #homebar .fv-t { flex-basis: 100%; }
 #homebar select { padding: 6px 8px; border: 3px solid var(--outline); border-radius: 12px; background: var(--panel); font-size: 14px; font-weight: 600; }
 body.friend-view #chip { background: var(--pink); color: var(--on-accent); }
-body.friend-view #gradeBox, body.friend-view #hint,
+body.friend-view #hint,
 body.home-pick #gradeBox, body.home-pick #hint, body.home-pick #cellcard, body.home-pick #poicard { display: none; }
 #homecross { position: fixed; left: 50%; top: 50%; z-index: 6; width: 30px; height: 30px; margin: -15px 0 0 -15px; pointer-events: none; }
 #homecross::before, #homecross::after { content: ""; position: absolute; background: var(--outline); border: 1.5px solid #ffffff; }
@@ -1075,7 +1075,12 @@ body.sheet-open #cellcard { display: none; }
   var GRADES = [null, { n: "bois", c: "#8a5a2e", w: 2 }, { n: "bronze", c: "#cd7f32", w: 2.4 }, { n: "argent", c: "#e6ebf2", w: 2.6 }, { n: "or", c: "#ffd23f", w: 3 }, { n: "émeraude", c: "#2fd37a", w: 3 }, { n: "diamant", c: "#8ff3ff", w: 3.2 }];
   function drawGrades(vis, ag) {   // contour des hexagones selon le nombre de jours de visite
     var groups = [null, [], [], [], [], [], []], any = false, i, k;
-    for (i = 0; i < vis.length; i++) { var d = visits.get(vis[i]); if (!d) continue; k = levelIdx(d.length); if (k >= 1) { groups[k].push(vis[i]); any = true; } }
+    var fl = friendView && friendView.levels;   // carte d’un ami : ses paliers, publiés avec sa carte
+    for (i = 0; i < vis.length; i++) {
+      if (fl) k = fl.get(vis[i]) || 0;
+      else { var d = visits.get(vis[i]); if (!d) continue; k = levelIdx(d.length); }
+      if (k >= 1) { groups[k].push(vis[i]); any = true; }
+    }
     if (!any) return;
     var hexPx = 49 / ag.mpp, scale = Math.max(0.28, Math.min(1.7, hexPx / 28)), tinySave = tinyHex;   // traits plus fins quand les hexagones sont petits
     tinyHex = false;   // les hexagones gradés sont peu nombreux : on garde leur vraie forme
@@ -2307,7 +2312,7 @@ body.sheet-open #cellcard { display: none; }
       ctx.globalAlpha = strokeA * (onImg ? 0.3 : 0.4) * ag.wFine; ctx.strokeStyle = onImg ? "#ffffff" : css("--cell-edge"); ctx.lineWidth = 0.8; ctx.stroke(ep);
     }
     ctx.globalAlpha = 1;
-    if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
+    if (S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawFar(ag, onImg);
     if (!friendView && terrHL) drawTerritory();
     if (friendView && cmp) { drawRings(cmp.mineR, CMP_MINE, 0.42); drawRings(cmp.commonR, CMP_COMMON, 0.5); }
@@ -3144,7 +3149,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v94d";
+  var BUILD = "31/10/2026 · v94e";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
