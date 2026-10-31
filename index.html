@@ -2892,7 +2892,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v91d";
+  var BUILD = "31/10/2026 · v91e";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3167,9 +3167,29 @@ body.sheet-open #cellcard { display: none; }
       '<path d="M50 52 L62 75 L56 71 L50 79 L44 71 L38 76 Z" fill="#fff"/><path d="M80 74 L88 88 L82 85 L77 89 L74 84 Z" fill="#fff"/>' +
       '<path d="M-10 160 L-10 132 Q 20 118 46 134 T 130 128 L130 160 Z" fill="#6c9a5b"/></svg>';
   }
+  var LIEU_ART = {   // premier plan de chaque type de lieu (cadre 120 × 160, sol à partir de 128)
+    "Cascade": '<path d="M0 40 L34 40 L40 128 L0 128 Z M120 46 L80 46 L76 128 L120 128 Z" fill="#7d8796"/><path d="M34 40 L80 46 L76 128 L40 128 Z" fill="#7cc4ec"/><path d="M46 52 L45 120 M57 50 L56 124 M68 50 L67 122" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".85"/><ellipse cx="58" cy="132" rx="34" ry="8" fill="#5aaee0"/>',
+    "Grotte": '<path d="M-6 128 Q 8 46 60 40 Q 116 46 126 128 Z" fill="#7d8796"/><path d="M34 128 Q 36 84 60 80 Q 84 84 86 128 Z" fill="#2b2433"/><path d="M42 84 L46 96 L50 84 M66 82 L70 94 L74 83" fill="#7d8796"/>',
+    "Glacier": '<path d="M-10 128 L30 54 L50 80 L70 44 L130 128 Z" fill="#6e7a8e"/><path d="M30 54 L50 80 L70 44 L84 66 L74 128 L44 128 Z" fill="#e7f4fb"/><path d="M50 92 L58 100 M62 108 L70 114 M46 116 L54 120" stroke="#9fd0ec" stroke-width="3" stroke-linecap="round"/>',
+    "Source chaude": '<ellipse cx="60" cy="122" rx="44" ry="12" fill="#5aaee0"/><ellipse cx="60" cy="120" rx="34" ry="7" fill="#9fdcf6"/><path d="M44 104 q-8 -12 0 -24 q8 -12 0 -24 M60 100 q-8 -12 0 -24 q8 -12 0 -24 M76 104 q-8 -12 0 -24 q8 -12 0 -24" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" opacity=".9"/>',
+    "Château ou fort": '<path d="M-10 128 Q 60 100 130 128 Z" fill="#7aa35f"/><path d="M26 112 L26 60 L22 60 L22 52 L28 52 L28 56 L32 56 L32 52 L38 52 L38 60 L34 60 L34 74 L86 74 L86 60 L82 60 L82 52 L88 52 L88 56 L92 56 L92 52 L98 52 L98 60 L94 60 L94 112 Z" fill="#b9a68a" stroke="#45506a" stroke-width="2"/><path d="M52 112 L52 94 Q 60 84 68 94 L68 112 Z" fill="#45506a"/><path d="M58 74 L58 50 M58 50 L74 55 L58 60" stroke="#45506a" stroke-width="2" fill="#e8505b"/>',
+    "Ruines": '<path d="M-10 128 Q 60 108 130 128 Z" fill="#7aa35f"/><path d="M20 118 L20 66 L30 66 L30 74 L36 74 L36 118 Z M48 118 L48 80 L58 76 L58 118 Z M72 118 L72 58 L80 58 L82 66 L86 64 L86 118 Z" fill="#c8b89a" stroke="#45506a" stroke-width="2"/><path d="M92 120 L104 116 L108 122 L94 124 Z M6 122 L14 118 L18 124 Z" fill="#c8b89a" stroke="#45506a" stroke-width="1.5"/>',
+    "Site archéologique": '<path d="M-10 128 Q 60 110 130 128 Z" fill="#7aa35f"/><path d="M30 118 L32 84 L44 84 L44 118 Z M76 118 L76 84 L88 84 L90 118 Z" fill="#9b9488" stroke="#45506a" stroke-width="2"/><path d="M22 86 Q 60 70 98 84 L96 76 Q 60 62 24 78 Z" fill="#a9a194" stroke="#45506a" stroke-width="2"/>',
+    "Belvédère": '<path d="M-10 96 L20 70 L44 88 L70 60 L100 84 L130 74 L130 128 L-10 128 Z" fill="#9aa9c2" opacity=".7"/><path d="M-10 128 L-10 112 L70 104 L130 116 L130 160 L-10 160 Z" fill="#6c9a5b"/><path d="M60 104 L60 82 M60 82 L76 74" stroke="#45506a" stroke-width="4" stroke-linecap="round"/><circle cx="78" cy="73" r="5" fill="#45506a"/><path d="M52 106 L60 98 L68 106" stroke="#45506a" stroke-width="3" fill="none"/>',
+    "Monument": '<path d="M-10 128 Q 60 112 130 128 Z" fill="#7aa35f"/><path d="M40 124 L80 124 L76 112 L44 112 Z" fill="#b8b2a6" stroke="#45506a" stroke-width="2"/><path d="M52 112 L54 46 L60 36 L66 46 L68 112 Z" fill="#d5cfc2" stroke="#45506a" stroke-width="2"/>',
+    "Site historique": '<path d="M-10 128 Q 60 110 130 128 Z" fill="#7aa35f"/><path d="M24 118 L24 82 L60 62 L96 82 L96 118 Z" fill="#d9c9a8" stroke="#45506a" stroke-width="2"/><path d="M70 118 L70 54 L86 54 L86 118" fill="#cbb995" stroke="#45506a" stroke-width="2"/><path d="M68 54 L78 42 L88 54 Z" fill="#a1584a"/><path d="M38 118 L38 100 Q 44 92 50 100 L50 118 Z M74 70 L82 70 L82 80 L74 80 Z" fill="#45506a"/>',
+    "Édifice religieux": '<path d="M-10 128 Q 60 110 130 128 Z" fill="#7aa35f"/><path d="M30 118 L30 84 L62 84 L62 118 Z" fill="#efe6d2" stroke="#45506a" stroke-width="2"/><path d="M26 86 L46 68 L66 86 Z" fill="#a1584a" stroke="#45506a" stroke-width="2"/><path d="M62 118 L62 66 L82 66 L82 118 Z" fill="#efe6d2" stroke="#45506a" stroke-width="2"/><path d="M60 68 L72 46 L84 68 Z" fill="#a1584a" stroke="#45506a" stroke-width="2"/><path d="M72 46 L72 32 M66 38 L78 38" stroke="#45506a" stroke-width="3"/><path d="M40 118 L40 104 Q 46 96 52 104 L52 118 Z M68 76 L76 76 L76 88 L68 88 Z" fill="#45506a"/>',
+    "Phare": '<path d="M-10 128 L-10 118 Q 30 112 120 120 L130 128 Z" fill="#5aaee0"/><path d="M38 128 Q 60 108 84 128 Z" fill="#7d8796"/><path d="M50 116 L54 56 L66 56 L70 116 Z" fill="#fff" stroke="#45506a" stroke-width="2"/><path d="M51 100 L69 100 L68 88 L52 88 Z M53 76 L67 76 L66 66 L54 66 Z" fill="#e8505b"/><path d="M50 56 L60 44 L70 56 Z" fill="#45506a"/><path d="M66 50 L104 40 L104 58 Z" fill="#ffd96a" opacity=".8"/>'
+  };
+  function lieuSVG(kind) {   // lieu sans photo : décor commun et premier plan selon le type
+    var fg = LIEU_ART[kind] || '<path d="M-10 128 Q 60 110 130 128 Z" fill="#7aa35f"/><path d="M60 118 C 44 92 40 84 40 74 A 20 20 0 1 1 80 74 C 80 84 76 92 60 118 Z" style="fill:var(--rc)" stroke="#45506a" stroke-width="3"/><circle cx="60" cy="74" r="8" fill="#fff"/>';
+    return '<svg class="ph mtn" viewBox="0 0 120 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
+      '<defs><linearGradient id="ltsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bcdcf2"/><stop offset="1" stop-color="#f6efdc"/></linearGradient></defs>' +
+      '<rect width="120" height="160" fill="url(#ltsky)"/><circle cx="96" cy="22" r="9" fill="#ffd96a"/><rect y="112" width="120" height="48" fill="#6c9a5b"/><g transform="translate(0,-16)">' + fg + '</g></svg>';   // remonté : le bas est couvert par le nom
+  }
   function photoHTML(key, icon, isPeak) {
-    var r = S.info[key];
-    return r && r.i ? '<img class="ph" src="' + esc(r.i) + '" alt="" loading="lazy">' : isPeak ? mountainSVG() : '<span class="ph noph">' + icon + '</span>';
+    var r = S.info[key], p = poiIdx[key] || {};
+    return r && r.i ? '<img class="ph" src="' + esc(r.i) + '" alt="" loading="lazy">' : isPeak ? mountainSVG() : lieuSVG(p.kind);
   }
   function showPhoto(key) {
     var w = $("ph-" + key), r = S.info[key];
@@ -3191,7 +3211,7 @@ body.sheet-open #cellcard { display: none; }
       ? '<b>Première visite :</b> le ' + fmtDate(p.date) + (p.act ? ' (« ' + esc(p.act) + ' »)' : '') + ' · ' +
         (p._peak ? 'cercle de ' + (p.r || summitRadius(p.ele)) + ' m débloqué' : esc(p.kind || "Lieu") + ' · cercle de ' + LANDMARK_R + ' m débloqué')
       : '<b>Pas encore visité</b>' + (p._extra ? ' · à ' + p._extra + ' de chez toi' : '') + '. Passe à moins de ' + (p._peak ? SUMMIT_REACH_M : LANDMARK_REACH_M) + ' m pour l’ajouter à ta collection.';
-    return (big ? '<img class="ph" src="' + esc(big) + '" alt="">' : p._peak ? '<span class="dph" style="--rc:' + RARITY[rarityOf(p, true)].c + '">' + mountainSVG() + '</span>' : '') + '<div class="bd"><b class="t">' + esc(p.name) + (p._peak && p.ele ? ' · ' + fmt(p.ele, 0) + ' m' : '') + '</b>' + first +
+    return (big ? '<img class="ph" src="' + esc(big) + '" alt="">' : ('<span class="dph" style="--rc:' + RARITY[rarityOf(p, !!p._peak)].c + '">' + (p._peak ? mountainSVG() : lieuSVG(p.kind)) + '</span>')) + '<div class="bd"><b class="t">' + esc(p.name) + (p._peak && p.ele ? ' · ' + fmt(p.ele, 0) + ' m' : '') + '</b>' + first +
       '<div class="poi-text" id="infot-' + key + '">' + infoHTML(key) + '</div>' +
       '<div class="btns"><button class="btn" data-ccgo="' + key + '">📍 Carte</button><a class="btn ghost" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
       (r.i ? '<div class="cr">Photo : Wikimédia Commons, licence libre (auteur sur la page Wikipédia).</div>' : '') + '</div>';
