@@ -281,6 +281,24 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero .yr-y { display: block; font-weight: 700; font-size: 14px; letter-spacing: .1em; }
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
+#tutoBox { position: fixed; inset: 0; z-index: 1900; }
+#tutoBox .tu-dim { position: absolute; inset: 0; background: rgba(16, 10, 34, .78); }
+#tutoBox .tu-spot { position: absolute; border: 3px solid var(--accent); border-radius: 16px; box-shadow: 0 0 0 9999px rgba(16, 10, 34, .78), 0 0 18px 4px var(--accent); pointer-events: none; transition: all .25s; }
+#tutoBox .tu-card { position: absolute; left: 14px; right: 14px; max-width: 440px; margin: 0 auto; padding: 14px 16px 12px; border: 3px solid var(--outline); border-radius: 20px; background: var(--panel); color: var(--ink); box-shadow: 4px 4px 0 var(--outline); }
+#tutoBox .tu-card.top { top: calc(env(safe-area-inset-top, 0px) + 16px); }
+#tutoBox .tu-card.bot { bottom: calc(var(--nav) + env(safe-area-inset-bottom, 0px) + 16px); }
+#tutoBox .tu-card.mid { top: 50%; transform: translateY(-50%); }
+#tutoBox .tu-top { display: flex; justify-content: space-between; align-items: center; }
+#tutoBox .tu-ic { font-size: 28px; }
+#tutoBox .tu-n { font-size: 12px; color: var(--muted); font-weight: 700; }
+#tutoBox .tu-t { display: block; margin: 4px 0 4px; font-size: 18px; }
+#tutoBox .tu-x { margin: 0 0 10px; font-size: 13.5px; line-height: 1.45; }
+#tutoBox .tu-dots { display: flex; gap: 5px; justify-content: center; margin-bottom: 10px; }
+#tutoBox .tu-dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); opacity: .4; }
+#tutoBox .tu-dots i.on { background: var(--accent); opacity: 1; transform: scale(1.3); }
+#tutoBox .tu-btns { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+#tutoBox .tu-btns .btn { flex: 1; }
+#tutoBox .tu-skip { display: block; margin: 8px auto 0; }
 #revealBox { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px 16px calc(env(safe-area-inset-bottom, 0px) + 20px); background: rgba(16, 10, 34, .95); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); color: #fff; overflow-y: auto; }
 .rv-head { text-align: center; }
 .rv-head b { display: block; font-size: 22px; }
@@ -1269,7 +1287,7 @@ body.sheet-open #cellcard { display: none; }
     if (window.confirm("Une sauvegarde plus récente existe en ligne (un autre appareil ?).\nOK = l’écraser avec les données de cet appareil.\nAnnuler = restaurer la sauvegarde en ligne ici.")) return doBackup(true, true);
     return doRestore(true);
   }
-  function scheduleBackup() { if (!acct || acct.auto === false || restoring || acctSyncing) return; clearTimeout(bkTimer); bkTimer = setTimeout(function () { doBackup(false); }, window.__BK_DELAY !== undefined ? window.__BK_DELAY : 20000); }   // une sauvegarde 20 s après le dernier changement
+  function scheduleBackup() { if (!acct || restoring || acctSyncing) return; clearTimeout(bkTimer); bkTimer = setTimeout(function () { doBackup(false); }, window.__BK_DELAY !== undefined ? window.__BK_DELAY : 20000); }   // une sauvegarde 20 s après le dernier changement
   function applyBackup(txt) {
     var keep = Object.assign({}, S.strava); restoring = true;
     try {
@@ -1352,22 +1370,15 @@ body.sheet-open #cellcard { display: none; }
     if (!acct) return "";
     var u = acct.user || {}, h = '<h3>Compte</h3>';
     h += '<p class="note">Connecté' + (u.pseudo ? ' : <b>' + esc(u.pseudo) + '</b>' : '') + '</p>';
-    h += '<p class="note" id="acctinfo">' + (acct.lastBackup ? 'Dernière sauvegarde : ' + new Date(acct.lastBackup).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) + '.' : 'Pas encore de sauvegarde sur ce compte.') + '</p>' +
-      '<label class="gradechk" style="margin:8px 0"><input type="checkbox" id="acctauto"' + (acct.auto !== false ? ' checked' : '') + '><span>Sauvegarde automatique</span></label>' +
+    h += '<p class="note" id="acctinfo">Sauvegarde automatique sur ton compte' + (acct.lastBackup ? ' · dernière le ' + new Date(acct.lastBackup).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : '') + '. Reconnecte-toi sur un autre appareil pour tout retrouver.</p>' +
       '<p class="note" id="acctmsg">' + esc(acctMsg) + '</p>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="acctbk">Sauvegarder maintenant</button></div>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="acctrs">Restaurer ma sauvegarde</button></div>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="acctout">Se déconnecter</button></div>' +
-      '<div class="drawer-sec"><button class="btn danger block" id="acctdel">Supprimer mon compte</button></div>';
+      '<div class="drawer-sec"><button class="btn ghost block" id="acctout">Se déconnecter</button></div>';
     return h;
   }
   function bindAccount() {
     if (!acct) return;
-    $("acctauto").addEventListener("change", function (e) { acct.auto = e.target.checked; saveAcct(); if (acct.auto) scheduleBackup(); });
-    $("acctbk").addEventListener("click", function () { doBackup(true, false); });
-    $("acctrs").addEventListener("click", function () { doRestore(false); });
     $("acctout").addEventListener("click", logout);
-    $("acctdel").addEventListener("click", function () {
+    var ad = $("acctdel"); if (ad) ad.addEventListener("click", function () {
       if (!window.confirm("Supprimer définitivement ton compte, ta sauvegarde en ligne et les données de cet appareil ?\nPour garder tes courses, exporte-les d’abord (Exporter mes données). Cette action est irréversible.")) return;
       apiCall("DELETE", "/me").then(function () { wipeDevice(false); }, function (e) { setAcctMsg("Suppression impossible : " + e.message); });
     });
@@ -2983,7 +2994,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v92";
+  var BUILD = "31/10/2026 · v93";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4194,8 +4205,8 @@ body.sheet-open #cellcard { display: none; }
       step(1, st || realActs().length > 0, "Ajoute tes sorties", st ? "Strava est connecté : tes sorties arrivent toutes seules, il suffit de les valider." : "Connecte Strava pour récupérer tes sorties automatiquement, ou importe des fichiers GPX, TCX ou FIT.", '<button class="btn block" data-gstep="add">' + (st ? "Voir mes sorties" : "Connecter Strava ou importer") + '</button>') +
       step(2, hm, "Ta zone domicile", hm ? "Les hexagones autour de chez toi ne seront jamais montrés à tes amis. Tu peux la déplacer quand tu veux." : "Place un cercle autour de chez toi : ces hexagones ne seront jamais montrés à tes amis.", '<button class="btn ghost block" data-gstep="home">📍 ' + (hm ? "Vérifier sur la carte" : "Placer sur la carte") + '</button>') +
       step(3, nf > 0, "Invite un ami", nf ? "Tu as " + nf + " ami" + (nf > 1 ? "s" : "") + ". Entre amis, vous voyez vos cartes respectives." : "Entre amis, vous voyez vos cartes respectives et vous vous classez entre vous.", '<div class="inv"><input type="text" id="guideinv" maxlength="20" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="pseudo de ton ami" aria-label="Pseudo de ton ami"><button class="btn" id="guideinvok">Inviter</button></div>') +
-      '<div class="drawer-sec"><button class="btn block" id="guidego">C’est parti !</button></div>' +
-      '<p class="note">Tu peux revoir cet accueil depuis les Réglages.</p>';
+      '<div class="drawer-sec"><button class="btn ghost block" id="guidetuto">📖 Voir le tutoriel (2 minutes)</button><button class="btn block" id="guidego">C’est parti !</button></div>' +
+      '<p class="note">Le tutoriel reste disponible dans Profil → Réglages.</p>';
   }
   function bindGuide() {
     document.querySelectorAll("[data-gstep]").forEach(function (b) {
@@ -4212,7 +4223,48 @@ body.sheet-open #cellcard { display: none; }
     if (ok) ok.addEventListener("click", invite);
     if (inp) inp.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); invite(); } });
     var go = $("guidego"); if (go) go.addEventListener("click", closeSheet);
+    var gt = $("guidetuto"); if (gt) gt.addEventListener("click", function () { closeSheet(); startTuto(); });
   }
+  var TUTO = [
+    { ic: "🧭", t: "Bienvenue sur Xplr", x: function () { return "Xplr transforme tes sorties en territoire. La carte est découpée en petits hexagones d’environ 50 m : chaque hexagone que tu traverses se colore. Le but : explorer le plus de terrain possible, seul ou avec tes amis."; } },
+    { ic: "➕", t: "Ajouter tes sorties", sel: ".tab[data-tab=add]", x: function () { return "Onglet Ajouter : connecte Strava, choisis la période puis « Récupérer mes sorties Strava », ou importe des fichiers GPX, TCX ou FIT (Garmin, Suunto, Coros…). Les sorties arrivent en attente : vérifie-les, retire celles que tu ne veux pas, puis touche « Valider »."; } },
+    { ic: "🗺️", t: "Ton territoire", sel: "#chip", x: function () { return "En haut à droite : ta surface explorée en km² et ton nombre d’hexagones. Pince pour zoomer : de loin tu vois l’étendue de ton territoire, de près chaque hexagone, avec l’imagerie en couleur là où tu es passé et le relief ailleurs."; } },
+    { ic: "🎛️", t: "Les boutons de la carte", sel: "#ctrl", x: function () { return "À droite, de haut en bas : filtrer par période et par sport, changer le fond de carte, chercher un lieu, afficher ta position, zoomer, et recentrer sur tout ton territoire."; } },
+    { ic: "🥾", t: "La maîtrise des hexagones", sel: "#gradeBox", x: function () { return "Chaque jour où tu repasses dans un hexagone compte : Patrouilleur à 5 jours, puis Cartographe (20), Guide local (50), Gardien des lieux (100), Bâtisseur (200) et Légende (500). La légende montre la couleur des contours de chaque palier ; décoche « Contours par grade » pour les masquer."; } },
+    { ic: "▲", t: "Sommets, lieux et cartes", sel: ".tab[data-tab=goals]", x: function () { return "Passe à moins de " + SUMMIT_REACH_M + " m d’un sommet nommé ou d’un lieu remarquable (cascade, château, chapelle…) : un cercle d’exploration se débloque et une carte rejoint ta collection. Tu la retournes après l’import. Onglet Succès : tes succès, tes cartes de sommets et de lieux (rareté, photo, infos) et les communes explorées."; } },
+    { ic: "📊", t: "Tes statistiques", sel: ".tab[data-tab=stats]", x: function () { return "Onglet Stats : surface, sorties et kilomètres, ton plus grand territoire d’un seul tenant (bouche les trous pour l’agrandir), le territoire gagné par mois et par sport, tes records, et « Mon année » pour une rétrospective à partager."; } },
+    { ic: "🏆", t: "Niveaux", sel: "#chip", x: function () { return "Ta surface te fait monter de niveau : " + TROPHIES[0].name + " à " + TROPHIES[0].km + " km², puis " + TROPHIES[1].name + ", " + TROPHIES[2].name + "… jusqu’à " + TROPHIES[TROPHIES.length - 1].name + " à " + fmt(TROPHIES[TROPHIES.length - 1].km, 0) + " km². Ton niveau apparaît dans ton profil et dans le classement."; } },
+    { ic: "👥", t: "Tes amis", sel: ".tab[data-tab=friends]", x: function () { return "Onglet Amis : invite quelqu’un avec son pseudo. Entre amis, vous voyez vos cartes et vos statistiques, jamais vos traces, et « Quoi de neuf » montre vos progrès. Sur la carte d’un ami, ⚖️ compare vos territoires ; le mode conquête colore chaque hexagone selon qui le maîtrise le mieux. Ta zone domicile reste toujours cachée."; } },
+    { ic: "🥇", t: "Le classement", sel: ".tab[data-tab=rank]", x: function () { return "Onglet Classement : tous les joueurs ou tes amis seulement, par sport, depuis le début ou cette semaine (remise à zéro chaque lundi). Touche un joueur pour lui envoyer une demande d’ami."; } },
+    { ic: "⚙️", t: "Profil et réglages", sel: "#profileBtn", x: function () { return "Profil : ton pseudo, ta photo et tes trophées. Réglages : apparence claire ou sombre, ce tutoriel et la mise à jour de l’appli. Tes données sont sauvegardées automatiquement sur ton compte."; } },
+    { ic: "🚀", t: "À toi de jouer !", x: function () { return realActs().length ? "Bonne exploration ! Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages." : "Ajoute ta première sortie et regarde ton territoire se colorier. Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages."; }, end: true }
+  ];
+  var tuto = null;
+  function startTuto() {
+    closeSheet(); closeDrawer(); closeCellCard(); closePoiCard();
+    if (!$("tutoBox")) { var b = document.createElement("div"); b.id = "tutoBox"; b.setAttribute("role", "dialog"); b.setAttribute("aria-modal", "true"); b.setAttribute("aria-label", "Tutoriel"); document.body.appendChild(b); }
+    tuto = { i: 0 }; tutoRender();
+  }
+  function tutoRender() {
+    var box = $("tutoBox"); if (!box || !tuto) return;
+    var st = TUTO[tuto.i], el = st.sel ? document.querySelector(st.sel) : null, r = el ? el.getBoundingClientRect() : null, n = TUTO.length, pad = 6;
+    if (r && (!r.width || !r.height)) r = null;   // élément masqué : pas de projecteur
+    var spot = r ? '<div class="tu-spot" style="left:' + (r.left - pad) + 'px;top:' + (r.top - pad) + 'px;width:' + (r.width + 2 * pad) + 'px;height:' + (r.height + 2 * pad) + 'px"></div>' : '<div class="tu-dim"></div>';
+    var low = r && r.top + r.height / 2 > window.innerHeight * 0.45;   // cible en bas : carte d’explication en haut, et inversement
+    box.innerHTML = spot + '<div class="tu-card ' + (!r ? 'mid' : low ? 'top' : 'bot') + '"><div class="tu-top"><span class="tu-ic">' + st.ic + '</span><span class="tu-n">' + (tuto.i + 1) + ' / ' + n + '</span></div>' +
+      '<b class="tu-t">' + st.t + '</b><p class="tu-x">' + st.x() + '</p>' +
+      '<div class="tu-dots">' + TUTO.map(function (s, j) { return '<i' + (j === tuto.i ? ' class="on"' : '') + '></i>'; }).join("") + '</div>' +
+      '<div class="tu-btns">' + (tuto.i ? '<button class="btn ghost" id="tuprev">Précédent</button>' : '<button class="linkbtn" id="tuskip">Passer</button>') +
+      (st.end ? (realActs().length ? '<button class="btn" id="tuend">Terminer</button>' : '<button class="btn" id="tuadd">Ajouter une sortie</button>') : '<button class="btn" id="tunext">Suivant</button>') + '</div>' +
+      (tuto.i && !st.end ? '<button class="linkbtn tu-skip" id="tuskip">Passer le tutoriel</button>' : '') + '</div>';
+    var on = function (id, f) { var e = $(id); if (e) e.addEventListener("click", f); };
+    on("tunext", function () { tuto.i++; tutoRender(); });
+    on("tuprev", function () { tuto.i--; tutoRender(); });
+    on("tuskip", endTuto); on("tuend", endTuto);
+    on("tuadd", function () { endTuto(); openTab("add"); });
+  }
+  function endTuto() { tuto = null; var b = $("tutoBox"); if (b) b.remove(); }
+  window.addEventListener("resize", function () { if (tuto) tutoRender(); });
   function maybeGuide() {   // première ouverture d’un compte sans sortie : l’accueil guidé, une seule fois
     if (S.guideDone || realActs().length || pending || current || gateMode) return;
     S.guideDone = true; save(); openTab("guide");
@@ -4605,20 +4657,17 @@ body.sheet-open #cellcard { display: none; }
       '<div class="field"><label>Apparence</label><div class="seg">' + [["auto", "Automatique"], ["light", "Clair"], ["dark", "Sombre"]].map(function (o) { return '<button data-themeopt="' + o[0] + '" aria-pressed="' + ((S.theme || "light") === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>' +
       '<p class="note" style="margin-top:4px">Automatique suit le réglage clair ou sombre du téléphone.</p></div>' +
       accountSettingsHTML() +
+      '<h3>Aide</h3><div class="drawer-sec"><button class="btn block" id="tutogo">📖 Tutoriel</button></div>' +
+      '<h3>Application</h3><div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli</button></div>' +
+      '<p class="note">Version : ' + BUILD + '. Un bandeau te prévient quand une nouvelle version est disponible.</p>' +
+      '<details class="advanced"><summary>Options avancées</summary>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="scanpk">Tout recalculer (sommets, lieux, communes)</button></div>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="guideagain">Revoir l’accueil</button></div>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="updapp">Mettre à jour l’appli (vider le cache)</button></div>' +
+      '<p class="note">Si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap. Les nouvelles sorties sont analysées automatiquement.</p>' +
+      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' sorties analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.' + (poiViaWiki ? ' Source de secours utilisée : Wikipédia.' : '') + '</p>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="diagbtn">Diagnostic de connexion</button><pre class="diag" id="diagout" hidden></pre></div>' +
-      '<p class="note">À utiliser si de nouveaux sommets ou lieux ont été ajoutés sur OpenStreetMap, ou pour corriger les surfaces de communes. Les nouvelles courses sont analysées automatiquement.</p>' +
-      '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (JSON)</button>' +
-      '<label class="btn ghost block drop">Importer une sauvegarde<input type="file" id="imp" accept="application/json,.json"></label>' +
-      '<button class="btn danger block" id="wipe">Tout effacer</button></div>' +
-      '<p class="note">Version de l’appli : ' + BUILD + '</p>' +
-      '<p class="note">Stockage de l’appli : ' + storageInfo() + '</p>' +
-      '<p class="note">Sommets et lieux : ' + S.activities.filter(function (a) { return a.sumDone && a.lmDone && a.poiV === 2; }).length + ' / ' + S.activities.length + ' courses analysées' + (S.activities.some(function (a) { return !a.sumDone || !a.lmDone || a.poiV !== 2; }) ? poiFailText() + (lastPoiError ? ' · dernière erreur réseau : ' + esc(lastPoiError) : '') : '') + '.' + (poiViaWiki ? ' Source de secours utilisée : Wikipédia (les serveurs OpenStreetMap ne répondent pas ; seuls les sommets et lieux ayant un article sont trouvés).' : '') + '</p>' +
-      (/claude|anthropic/i.test(location.hostname) ? '<p class="note">Cette page est un aperçu : les recherches en ligne (sommets, lieux, communes, résumés Wikipédia) y sont bloquées. Ouvre l’appli à son adresse hébergée.</p>' : '') +
-      '<p class="note">Dernière sauvegarde : ' + (S.lastBackup ? new Date(S.lastBackup).toLocaleDateString("fr-FR") : "jamais") + '.</p>' +
-      '<p class="note">Tes courses sont enregistrées dans ce navigateur et sauvegardées sur ton compte : reconnecte-toi sur un autre appareil pour les retrouver.</p>' +
+      '<div class="drawer-sec"><button class="btn ghost block" id="exp">Exporter mes données (fichier)</button></div>' +
+      (acct ? '<div class="drawer-sec"><button class="btn danger block" id="acctdel">Supprimer mon compte</button></div>' : '') +
+      '<p class="note">Stockage sur cet appareil : ' + storageInfo() + '</p></details>' +
       '<div class="drawer-sec"><button class="btn ghost block" id="sback">Retour au profil</button></div>';
   }
   function squarePhoto(file) {
@@ -4666,7 +4715,7 @@ body.sheet-open #cellcard { display: none; }
     document.querySelectorAll("[data-themeopt]").forEach(function (b) { b.addEventListener("click", function () { S.theme = b.dataset.themeopt; applyTheme(); save(); renderDrawer(); }); });
     $("scanpk").addEventListener("click", recomputeAll);
     $("updapp").addEventListener("click", forceUpdate);
-    $("guideagain").addEventListener("click", function () { closeDrawer(); openTab("guide"); });
+    $("tutogo").addEventListener("click", function () { closeDrawer(); startTuto(); });
     $("diagbtn").addEventListener("click", runDiagnostic);
     bindAccount();
     $("exp").addEventListener("click", function () {
@@ -4674,32 +4723,6 @@ body.sheet-open #cellcard { display: none; }
       var blob = new Blob([JSON.stringify({ app: "hexplore", version: 1, data: Object.assign({}, S, { strava: undefined }) })], { type: "application/json" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "xplr-sauvegarde.json"; document.body.appendChild(a); a.click();
       setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    });
-    $("imp").addEventListener("change", function (e) {
-      var f = e.target.files && e.target.files[0]; if (!f) return;
-      readFile(f).then(function (txt) {
-        var o = JSON.parse(typeof txt === "string" ? txt : new TextDecoder("utf-8").decode(txt)), d = o && o.data; if (!d || !Array.isArray(d.activities)) throw new Error("format inconnu");   // readFile renvoie un tampon binaire : il faut le décoder en texte
-        var added = 0, restored = 0;
-        d.activities.forEach(function (a) {
-          if (!a || !Array.isArray(a.lines) || !a.date) return;
-          var dup = S.activities.filter(function (x) { return x.date === a.date && Math.abs(x.dist - a.dist) < 20 && x.name === a.name; })[0];
-          if (dup) {   // course déjà présente : on y retrouve les sommets et lieux de la sauvegarde qui lui manquent
-            var n0 = (dup.summits || []).length + (dup.landmarks || []).length;
-            if (Array.isArray(a.summits)) dup.summits = mergePois(dup.summits, a.summits, true);
-            if (Array.isArray(a.landmarks)) dup.landmarks = mergePois(dup.landmarks, a.landmarks, true);
-            restored += (dup.summits || []).length + (dup.landmarks || []).length - n0;
-            return;
-          }
-          S.activities.push({ id: S.nextId++, name: String(a.name || "Course"), sport: SPORTS[a.sport] ? a.sport : "autre", date: String(a.date), dist: +a.dist || 0, skipped: +a.skipped || 0, lines: a.lines, trust: a.trust === "non" ? "non" : "ok", summits: Array.isArray(a.summits) ? a.summits : [], sumDone: !!a.sumDone, landmarks: Array.isArray(a.landmarks) ? a.landmarks : [], lmDone: !!a.lmDone, poiV: a.poiV === 2 ? 2 : 0, t0: +a.t0 || 0, strava: +a.strava || 0 });
-          added++;
-        });
-        rebuild(); save(); fitAll(); renderDrawer(); toast(added + " course" + (added > 1 ? "s" : "") + " importée" + (added > 1 ? "s" : "") + (restored ? " · " + restored + " sommet" + (restored > 1 ? "s" : "") + " ou lieu" + (restored > 1 ? "x" : "") + " retrouvé" + (restored > 1 ? "s" : "") : ""));
-      }).catch(function (err) { toast("Import impossible : " + err.message); });
-      e.target.value = "";
-    });
-    $("wipe").addEventListener("click", function () {
-      if (!window.confirm("Effacer toutes les courses et le territoire découvert ? Cette action est définitive.")) return;
-      S.activities = []; S.strava.lastSync = 0; selected = null; rebuild(); save(); draw(); renderDrawer();
     });
     $("sback").addEventListener("click", function () { drawerView = "profile"; renderDrawer(); });
   }
