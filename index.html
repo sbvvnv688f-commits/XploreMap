@@ -273,6 +273,14 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .goal .t { font-weight: 600; font-size: 14.5px; }
 .goal .del { font-size: 11px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
 .goal .s { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.lg { display: inline-block; width: 9px; height: 9px; margin: 0 4px 0 2px; border: 1.5px solid var(--outline); border-radius: 3px; vertical-align: 0; }
+#fvcmp[aria-pressed="true"] { background: var(--accent); }
+.yrs { display: flex; flex-wrap: wrap; gap: 8px; }
+.yrs .btn { padding: 8px 16px; }
+.yr-hero { text-align: center; background: var(--accent); }
+.yr-hero .yr-y { display: block; font-weight: 700; font-size: 14px; letter-spacing: .1em; }
+.yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
+.yr-hero span { font-size: 12px; }
 .feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
 .fitem { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); font-size: 12.5px; }
 .fitem.me { opacity: .8; }
@@ -589,7 +597,7 @@ body.sheet-open #cellcard { display: none; }
         S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r), auto: hm.auto === true } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
-        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true;
+        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true; S.retroSeen = typeof o.retroSeen === "string" ? o.retroSeen : "";
         S.goals = Array.isArray(o.goals) ? o.goals.filter(function (g) { return g && GOAL_TYPES[g.type] && GOAL_PERIODS[g.period] && g.target > 0; }) : [];
         S.unlocked = Array.isArray(o.unlocked) ? o.unlocked : null;
         S.colorMode = o.colorMode === "sport" || o.colorMode === "age" ? o.colorMode : "uniform";
@@ -906,6 +914,20 @@ body.sheet-open #cellcard { display: none; }
     if (terrInfo.rings || !terrInfo.ids || !terrInfo.ids.length) return;
     try { var mp = h3.cellsToMultiPolygon(terrInfo.ids); terrInfo.rings = []; mp.forEach(function (poly) { poly.forEach(function (r) { terrInfo.rings.push(r); }); }); }
     catch (e) { terrInfo.rings = []; }
+  }
+  function ringsOf(ids) {   // contours d’un ensemble d’hexagones (une fois), pour les calques de comparaison et de conquête
+    if (!ids.length || ids.length > 250000) return [];
+    try { var out = []; h3.cellsToMultiPolygon(ids).forEach(function (poly) { poly.forEach(function (r) { out.push(r); }); }); return out; } catch (e) { return []; }
+  }
+  function drawRings(rings, color, fillA) {
+    if (!rings || !rings.length) return;
+    var P = new Path2D();
+    rings.forEach(function (r) { r.forEach(function (ll, j) { var p = toScreen(ll[0], ll[1]); if (j) P.lineTo(p[0], p[1]); else P.moveTo(p[0], p[1]); }); P.closePath(); });
+    ctx.save(); ctx.lineJoin = "round";
+    ctx.globalAlpha = fillA; ctx.fillStyle = color; ctx.fill(P, "evenodd");
+    ctx.globalAlpha = 0.9; ctx.strokeStyle = "rgba(43,31,74,0.7)"; ctx.lineWidth = 3.2; ctx.stroke(P);
+    ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke(P);
+    ctx.restore();
   }
   function drawTerritory() {
     if (!terrInfo.rings || !terrInfo.rings.length) return;
@@ -1262,7 +1284,7 @@ body.sheet-open #cellcard { display: none; }
     return afterLogin(acct.user).then(function () {
       acctSyncing = false; if (!acct) return;
       acct.synced = true; saveAcct(); applyProfile(); refreshAcctUI(); loadFriends(); schedulePushScore();
-      setTimeout(maybeGuide, 900);
+      setTimeout(maybeGuide, 900); setTimeout(retroReminder, 5000);
     }, function (e) { acctSyncing = false; toast("Synchronisation impossible : " + e.message); });
   }
   function initGoogleButton() {
@@ -1440,6 +1462,7 @@ body.sheet-open #cellcard { display: none; }
   var friends = null, friendsErr = "", friendsBusy = false, friendsAt = 0, friendView = null, mapTimer = 0, mapBusy = false, homePick = null;
   var HOME_RADII = [[300, "300 m"], [500, "500 m"], [1000, "1 km"], [2000, "2 km"]], HOME_MARGIN_M = 30;   // marge d’un demi-hexagone autour du cercle
   function capFirst(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); }
+  function cellLevel(c) { var d = visits.get(c); return Math.max(0, levelIdx(d ? d.length : 0)); }   // palier d’un hexagone (0 à 6)
   function homeSet() { return !!(S.home && (S.home.none || S.home.r > 0)); }
   function autoHome() {   // partage par défaut entre amis : sans zone domicile, on masque 500 m autour du point de départ le plus fréquent
     if (homeSet()) return true;
@@ -1503,7 +1526,7 @@ body.sheet-open #cellcard { display: none; }
       mapBusy = true;
       return apiCall("DELETE", "/map").then(function () { mapBusy = false; if (acct) { acct.mapSig = ""; saveAcct(); } }, function () { mapBusy = false; });
     }
-    var set = sharedCells(), ids = Array.from(set).sort(), st = sharedStats(set), txt = ids.join(","), sig = hashStr(txt) + "|" + JSON.stringify(st);
+    var set = sharedCells(), ids = Array.from(set).sort(), st = sharedStats(set), txt = ids.join(",") + "|" + ids.map(cellLevel).join(""), sig = hashStr(txt) + "|" + JSON.stringify(st);
     if (sig === acct.mapSig) return Promise.resolve();
     mapBusy = true;
     return packText(txt).then(function (p) {
@@ -1599,6 +1622,7 @@ body.sheet-open #cellcard { display: none; }
     }).join("");
     if (friends.friends.length) h += feedHTML();
     h += '<h3>Mes amis</h3>' + (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
+    if (friends.friends.some(function (f) { return f.theyShare && f.map; })) h += '<div class="drawer-sec"><button class="btn block" id="cqgo">👑 Mode conquête</button></div><p class="note" style="margin-top:-4px">Chaque hexagone prend la couleur de celui qui y a le plus haut palier (le plus de jours de visite), entre toi et tes amis.</p>';
     if (friends.outgoing.length) h += '<h3>Invitations envoyées</h3>' + friends.outgoing.map(function (f) {
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
     }).join("");
@@ -1629,6 +1653,7 @@ body.sheet-open #cellcard { display: none; }
     });
     document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
     var fm = $("feedmore"); if (fm) fm.addEventListener("click", function () { feedAll = !feedAll; render(); });
+    var cq = $("cqgo"); if (cq) cq.addEventListener("click", startConquest);
     document.querySelectorAll("[data-fstats]").forEach(function (b) { b.addEventListener("click", function () { openFriendStats(b.dataset.fstats); }); });
     var hr = $("homer");
     if (hr) hr.addEventListener("change", function () { if (S.home && !S.home.none) { S.home.r = +hr.value; save(); scheduleMapPush(1500); render(); } });
@@ -1675,31 +1700,88 @@ body.sheet-open #cellcard { display: none; }
     ctx.globalAlpha = 0.22; ctx.fillStyle = css("--blue"); ctx.fill();
     ctx.globalAlpha = 1; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.strokeStyle = css("--outline"); ctx.stroke(); ctx.setLineDash([]);
   }
+  function readFriendMap(map) {   // « id,id,…|paliers » (paliers absents avant la v91)
+    return (map.enc === "gzip-b64" ? unpackText("gzip-b64", map.data) : Promise.resolve(map.data)).then(function (txt) {
+      var parts = String(txt || "").split("|"), lv = parts[1] || "", m = new Map(), levels = new Map(), info = { sport: "autre", date: "1970-01-01" };
+      parts[0].split(",").forEach(function (c, i) { if (c && h3.isValidCell(c) && h3.getResolution(c) === RES) { m.set(c, info); levels.set(c, +lv.charAt(i) || 0); } });
+      return { cells: m, levels: levels };
+    });
+  }
   function openFriendMap(id) {
     var f = friends && friends.friends.filter(function (x) { return x.id === id; })[0]; if (!f) return;
     toast("Chargement de la carte de " + f.pseudo + "…");
     apiCall("GET", "/friends/map?id=" + encodeURIComponent(id)).then(function (r) {
       if (!r.map) { toast(f.pseudo + " n’a pas encore publié sa carte."); return; }
-      return (r.map.enc === "gzip-b64" ? unpackText("gzip-b64", r.map.data) : Promise.resolve(r.map.data)).then(function (txt) {
-        var m = new Map(), info = { sport: "autre", date: "1970-01-01" };
-        String(txt || "").split(",").forEach(function (c) { if (c && h3.isValidCell(c) && h3.getResolution(c) === RES) m.set(c, info); });
-        enterFriendView(f, m, r.map.stats || {});
-      });
+      return readFriendMap(r.map).then(function (fm) { enterFriendView(f, fm.cells, r.map.stats || {}, fm.levels); });
     }).catch(function (e) { toast("Carte indisponible : " + e.message + "."); });
   }
-  function enterFriendView(f, m, st) {
-    friendView = { id: f.id, pseudo: f.pseudo, cells: m, stats: st };
+  function enterFriendView(f, m, st, levels) {
+    exitConquest(true); cmp = null;
+    friendView = { id: f.id, pseudo: f.pseudo, cells: m, stats: st, levels: levels || new Map() };
     closeSheet(); closeCellCard(); closePoiCard(); selected = null; peakHits = [];
     document.body.classList.add("friend-view");
     var bar = $("fvbar");
-    bar.innerHTML = '<div class="fv-box"><div class="fv-t"><b>Carte de ' + esc(f.pseudo) + '</b><small>' + esc(friendStatsLine(st) || placeLabel(f)) + '</small></div></div><button class="btn ghost" id="fvstats" aria-label="Statistiques de ' + esc(f.pseudo) + '">📊</button><button class="btn" id="fvclose">Ma carte</button>';
-    bar.hidden = false; $("fvclose").addEventListener("click", exitFriendView); $("fvstats").addEventListener("click", function () { openFriendStats(f.id); });
+    bar.innerHTML = '<div class="fv-box"><div class="fv-t"><b>Carte de ' + esc(f.pseudo) + '</b><small>' + esc(friendStatsLine(st) || placeLabel(f)) + '</small></div></div><button class="btn ghost" id="fvcmp" aria-label="Comparer avec ma carte" aria-pressed="false">⚖️</button><button class="btn ghost" id="fvstats" aria-label="Statistiques de ' + esc(f.pseudo) + '">📊</button><button class="btn" id="fvclose">Ma carte</button>';
+    bar.hidden = false; $("fvclose").addEventListener("click", exitFriendView); $("fvstats").addEventListener("click", function () { openFriendStats(f.id); }); $("fvcmp").addEventListener("click", toggleCompare);
     refreshDisp(); updateChip();
     if (m.size) fitCells(m); else draw();
   }
+  /* ---- comparer ma carte avec celle d’un ami ---- */
+  var cmp = null, CMP_MINE = "#4fa3ff", CMP_COMMON = "#a46dff";
+  function toggleCompare() {
+    if (!friendView) return;
+    var b = $("fvcmp");
+    if (cmp) { cmp = null; if (b) b.setAttribute("aria-pressed", "false"); fvSubtitle(); draw(); return; }
+    var th = friendView.cells, common = [], mine = [], theirs = 0;
+    cells.forEach(function (v, c) { if (th.has(c)) common.push(c); else mine.push(c); });
+    th.forEach(function (v, c) { if (!cells.has(c)) theirs++; });
+    cmp = { mineR: ringsOf(mine), commonR: ringsOf(common), n: { mine: mine.length, common: common.length, theirs: theirs } };
+    if (b) b.setAttribute("aria-pressed", "true");
+    fvSubtitle(); draw();
+  }
+  function fvSubtitle() {
+    var sm = document.querySelector("#fvbar .fv-t small"); if (!sm || !friendView) return;
+    if (!cmp) { sm.textContent = friendStatsLine(friendView.stats) || ""; return; }
+    var k = function (n) { return fmtKm2(n * AREA_M2 / 1e6); };
+    sm.innerHTML = '<i class="lg" style="background:' + CMP_MINE + '"></i>toi seul ' + k(cmp.n.mine) + ' · <i class="lg" style="background:' + CMP_COMMON + '"></i>commun ' + k(cmp.n.common) + ' · <i class="lg" style="background:var(--accent)"></i>' + esc(friendView.pseudo) + ' seul ' + k(cmp.n.theirs) + ' km²';
+  }
+
+  /* ---- mode conquête : sur chaque hexagone, le joueur au palier le plus haut ---- */
+  var conquest = null, CQ_COLORS = ["#e8505b", "#4fa3ff", "#5fbf6a", "#a46dff", "#ff9f1c", "#16b8a6", "#ff5dd8", "#8a5a2e"], CQ_TIE = "#9aa3ad";
+  function startConquest() {
+    var fl = (friends ? friends.friends : []).filter(function (f) { return f.theyShare && f.map; });
+    if (!fl.length) { toast("Aucun ami ne te partage encore sa carte."); return; }
+    toast("Chargement des cartes de tes amis…");
+    Promise.all(fl.map(function (f) {
+      return apiCall("GET", "/friends/map?id=" + encodeURIComponent(f.id)).then(function (r) { return r.map ? readFriendMap(r.map).then(function (m) { return { name: f.pseudo, cells: m.cells, levels: m.levels }; }) : null; }, function () { return null; });
+    })).then(function (maps) {
+      var mineLv = new Map(); cells.forEach(function (v, c) { mineLv.set(c, cellLevel(c)); });
+      var players = [{ name: "toi", me: true, levels: mineLv }].concat(maps.filter(Boolean).map(function (m) { return { name: m.name, levels: m.levels }; }));
+      var best = new Map();   // hexagone -> [palier, joueur ou -1 en cas d’égalité]
+      players.forEach(function (p, i) { p.levels.forEach(function (lv, c) { var b = best.get(c); if (!b || lv > b[0]) best.set(c, [lv, i]); else if (lv === b[0] && b[1] !== i) b[1] = -1; }); });
+      var own = players.map(function () { return []; }), tie = [];
+      best.forEach(function (b, c) { if (b[1] < 0) tie.push(c); else own[b[1]].push(c); });
+      conquest = { players: players.map(function (p, i) { return { name: p.name, me: !!p.me, color: CQ_COLORS[i % CQ_COLORS.length], n: own[i].length, rings: ringsOf(own[i]) }; }) };
+      if (tie.length) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie.length, rings: ringsOf(tie) });
+      closeSheet(); showConquestBar(); draw();
+    });
+  }
+  function showConquestBar() {
+    var bar = $("fvbar"), me = conquest.players[0];
+    bar.innerHTML = '<div class="fv-box cq-box"><div class="fv-t"><b>👑 Conquête · tu règnes sur ' + fmt(me.n, 0) + ' hexagone' + (me.n > 1 ? "s" : "") + '</b><small>' +
+      conquest.players.slice().sort(function (a, b) { return b.n - a.n; }).map(function (p) { return '<i class="lg" style="background:' + p.color + '"></i>' + esc(p.name) + ' ' + fmt(p.n, 0); }).join(" · ") +
+      '</small></div></div><button class="btn" id="cqclose">Quitter</button>';
+    bar.hidden = false; $("cqclose").addEventListener("click", function () { exitConquest(); });
+  }
+  function exitConquest(silent) {
+    if (!conquest) return;
+    conquest = null;
+    if (!friendView) { $("fvbar").hidden = true; $("fvbar").innerHTML = ""; }
+    if (!silent) draw();
+  }
   function exitFriendView() {
     if (!friendView) return;
-    friendView = null; document.body.classList.remove("friend-view"); $("fvbar").hidden = true; $("fvbar").innerHTML = "";
+    friendView = null; cmp = null; document.body.classList.remove("friend-view"); $("fvbar").hidden = true; $("fvbar").innerHTML = "";
     refreshDisp(); updateChip(); draw();
   }
   function fitCells(m) { var pts = []; m.forEach(function (v, id) { pts.push(centerOf(id)); }); if (pts.length) fitLines([pts]); draw(); }
@@ -2022,6 +2104,8 @@ body.sheet-open #cellcard { display: none; }
     if (!friendView && S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
     if (ag.wAgg > 0) drawFar(ag, onImg);
     if (!friendView && terrHL) drawTerritory();
+    if (friendView && cmp) { drawRings(cmp.mineR, CMP_MINE, 0.42); drawRings(cmp.commonR, CMP_COMMON, 0.5); }
+    if (!friendView && conquest) conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); });
     if (!friendView && glow && ag.wFine > 0 && vis.length) drawGlow(vis);
     if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
     if (homePick) drawHomeCircle();
@@ -2783,7 +2867,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v90";
+  var BUILD = "31/10/2026 · v91";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3821,10 +3905,11 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= fenêtres ================= */
-  var TITLES = { fstats: "Statistiques", guide: "Bienvenue sur Xplr", add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
+  var TITLES = { year: "Mon année", fstats: "Statistiques", guide: "Bienvenue sur Xplr", add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
   function openTab(k) {
     if (selected !== null) { selected = null; cellPickedSel = false; requestDraw(); }   // trace affichée : effacée dès qu’on change de menu
     if (terrHL) { terrHL = false; requestDraw(); }   // territoire surligné : même règle
+    if (conquest) exitConquest();
     if (current === k) { closeSheet(); return; }
     if (homePick) endHomePick(false);
     if (friendView && k !== "friends" && k !== "fstats") exitFriendView();   // les autres onglets parlent de ta propre carte
@@ -3842,7 +3927,7 @@ body.sheet-open #cellcard { display: none; }
   function render() {
     if (!current) return;
     $("sheetTitle").textContent = TITLES[current];
-    var html = { fstats: viewFriendStats, guide: viewGuide, add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
+    var html = { year: viewYear, fstats: viewFriendStats, guide: viewGuide, add: viewAdd, list: viewList, stats: viewStats, goals: viewGoals, friends: viewFriends, rank: viewRank }[current]();
     $("sheetBody").innerHTML = html;
     bindSheet(); updatePendBar();
     if (current === "friends") bindFriends();
@@ -3960,6 +4045,80 @@ body.sheet-open #cellcard { display: none; }
     return '<div class="kpi wide"><div class="kpi-row"><div><b>' + (ok ? fmtKm2(terrInfo.km2) : "…") + '</b><span>km² d’un seul tenant · ' + (ok ? fmt(terrInfo.ids.length, 0) + ' hexagones reliés' : 'calcul en cours') + '</span></div>' +
       (ok ? '<button class="linkbtn" id="terrgo">📍 Carte</button>' : '') + '</div><small class="kpi-note">Ton plus grand territoire continu : bouche les trous et relie tes zones pour l’agrandir.</small></div>';
   }
+  var yearSel = "";
+  function openYear(y) { yearSel = String(y); TITLES.year = "Mon année " + y; if (current === "year") render(); else openTab("year"); }
+  function yearData(y) {
+    var acts = sortedActs().filter(function (a) { return a.date.slice(0, 4) === y; }), d = { y: y, n: acts.length, km: 0, km2: 0, days: {}, months: {}, sports: {}, longest: null, best: null };
+    acts.forEach(function (a) {
+      d.km += (a.dist || 0) / 1000; d.km2 += actArea(a); d.days[a.date] = 1;
+      var m = a.date.slice(5, 7); d.months[m] = (d.months[m] || 0) + actArea(a);
+      d.sports[a.sport] = (d.sports[a.sport] || 0) + 1;
+      if (!d.longest || a.dist > d.longest.dist) d.longest = a;
+      if (!d.best || actArea(a) > actArea(d.best)) d.best = a;
+    });
+    d.summits = summitList().filter(function (s) { return String(s.date).slice(0, 4) === y; }).sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); });
+    d.lms = landmarkList().filter(function (l) { return String(l.date).slice(0, 4) === y; });
+    d.nDays = Object.keys(d.days).length;
+    d.topMonth = Object.keys(d.months).sort(function (a, b) { return d.months[b] - d.months[a]; })[0];
+    d.cells = []; cells.forEach(function (v, c) { if (v && String(v.date).slice(0, 4) === y) d.cells.push(c); });
+    return d;
+  }
+  var MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+  function viewYear() {
+    var d = yearData(yearSel);
+    if (!d.n) return '<div class="empty-line">Aucune sortie en ' + esc(yearSel) + '.</div><div class="drawer-sec"><button class="btn ghost block" id="yback">← Retour aux statistiques</button></div>';
+    var sp = Object.keys(d.sports).sort(function (a, b) { return d.sports[b] - d.sports[a]; });
+    var h = '<div class="box yr-hero"><span class="yr-y">' + esc(yearSel) + '</span><b>+' + fmtKm2(d.km2) + ' km²</b><span>de nouveau territoire · ' + fmt(d.cells.length, 0) + ' hexagones découverts</span></div>' +
+      '<div class="kpis"><div class="kpi"><b>' + d.n + '</b><span>sortie' + (d.n > 1 ? "s" : "") + '</span></div><div class="kpi"><b>' + fmt(d.km, 0) + '</b><span>km parcourus</span></div>' +
+      '<div class="kpi"><b>' + d.nDays + '</b><span>jour' + (d.nDays > 1 ? "s" : "") + ' dehors</span></div><div class="kpi"><b>' + (d.summits.length + d.lms.length) + '</b><span>sommets et lieux</span></div></div>' +
+      '<div class="box"><h3>Temps forts</h3>' +
+      '<div class="row"><span class="main"><span class="t" style="display:block">Mois record</span><span class="s" style="display:block">' + MONTHS[+d.topMonth - 1] + '</span></span><span class="v">+' + fmtKm2(d.months[d.topMonth]) + '<small>km²</small></span></div>' +
+      '<div class="row"><span class="main"><span class="t" style="display:block">Plus grande découverte</span><span class="s" style="display:block">' + esc(d.best.name) + ' · ' + fmtDate(d.best.date) + '</span></span><span class="v">+' + fmtKm2(actArea(d.best)) + '<small>km²</small></span></div>' +
+      '<div class="row"><span class="main"><span class="t" style="display:block">Sortie la plus longue</span><span class="s" style="display:block">' + esc(d.longest.name) + ' · ' + fmtDate(d.longest.date) + '</span></span><span class="v">' + fmt(d.longest.dist / 1000, 1) + '<small>km</small></span></div>' +
+      (d.summits.length ? '<div class="row"><span class="main"><span class="t" style="display:block">Plus haut sommet</span><span class="s" style="display:block">' + esc(d.summits[0].name) + ' · ' + d.summits.length + ' nouveau' + (d.summits.length > 1 ? "x sommets" : " sommet") + '</span></span><span class="v">' + (d.summits[0].ele ? fmt(d.summits[0].ele, 0) + '<small>m</small>' : '▲') + '</span></div>' : '') +
+      '<div class="row"><span class="main"><span class="t" style="display:block">Sport favori</span><span class="s" style="display:block">' + d.sports[sp[0]] + ' sortie' + (d.sports[sp[0]] > 1 ? "s" : "") + '</span></span><span class="v">' + sl(sp[0]) + '</span></div></div>' +
+      '<div class="drawer-sec"><button class="btn block" id="yshare">Partager mon année</button><button class="btn ghost block" id="yback">← Retour aux statistiques</button></div>';
+    return h;
+  }
+  function shareYear(y) {
+    var d = yearData(y), w = 1080, h = 1350, c = document.createElement("canvas"), g = c.getContext("2d"), fam = "Fredoka, system-ui, sans-serif";
+    c.width = w; c.height = h;
+    g.fillStyle = css("--bg"); g.fillRect(0, 0, w, h);
+    var mx = 60, box = [mx, 300, w - 2 * mx, 560];
+    g.fillStyle = css("--panel"); g.fillRect(box[0], box[1], box[2], box[3]);
+    if (d.cells.length) {   // les hexagones découverts dans l’année, en points dorés
+      var pts = d.cells.map(function (cc) { return centerOf(cc); }), la0 = Infinity, la1 = -Infinity, lo0 = Infinity, lo1 = -Infinity;
+      pts.forEach(function (p) { la0 = Math.min(la0, p[0]); la1 = Math.max(la1, p[0]); lo0 = Math.min(lo0, p[1]); lo1 = Math.max(lo1, p[1]); });
+      var kx = Math.cos((la0 + la1) / 2 * Math.PI / 180), sw = Math.max(1e-6, (lo1 - lo0) * kx), sh = Math.max(1e-6, la1 - la0), sc = Math.min((box[2] - 60) / sw, (box[3] - 60) / sh);
+      var ox = box[0] + (box[2] - sw * sc) / 2, oy = box[1] + (box[3] - sh * sc) / 2, r = Math.max(2, Math.min(6, sc * 0.0006));
+      g.fillStyle = "#d9a21b";
+      pts.forEach(function (p) { g.fillRect(ox + (p[1] - lo0) * kx * sc - r / 2, oy + (la1 - p[0]) * sc - r / 2, r, r); });
+    }
+    g.lineWidth = 6; g.strokeStyle = css("--outline"); g.strokeRect(box[0], box[1], box[2], box[3]);
+    g.fillStyle = css("--ink"); g.textAlign = "left";
+    g.font = "700 60px " + fam; g.fillText("Mon année " + y, mx, 120);
+    g.font = "700 96px " + fam; g.fillText("+" + fmtKm2(d.km2) + " km²", mx, 235);
+    var stats = [[d.n, "sorties"], [fmt(d.km, 0), "km parcourus"], [d.nDays, "jours dehors"], [d.summits.length, "sommets"], [d.lms.length, "lieux"], [fmt(d.cells.length, 0), "hexagones"]];
+    stats.forEach(function (s, i) {
+      var x = mx + (i % 3) * 330, yy = 960 + Math.floor(i / 3) * 150;
+      g.font = "700 58px " + fam; g.fillText(String(s[0]), x, yy);
+      g.font = "500 30px " + fam; g.fillText(s[1], x, yy + 42);
+    });
+    g.font = "500 32px " + fam; g.fillText((S.name || "Explorateur") + (d.topMonth ? " · mois record : " + MONTHS[+d.topMonth - 1] : ""), mx, 1290);
+    g.textAlign = "right"; g.font = "700 44px " + fam; g.fillText("Xplr", w - mx, 1290);
+    c.toBlob(function (blob) {
+      if (!blob) { toast("Création de l’image impossible."); return; }
+      var file = new File([blob], "xplr-" + y + ".png", { type: "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: "Mon année " + y + " sur Xplr" }).catch(function () { /* annulé */ }); return; }
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.name; document.body.appendChild(a); a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }, "image/png");
+  }
+  function retroReminder() {   // du 15 décembre au 15 janvier : la rétrospective est proposée une fois
+    var n = new Date(), y = n.getMonth() === 11 ? n.getFullYear() : n.getFullYear() - 1, on = (n.getMonth() === 11 && n.getDate() >= 15) || (n.getMonth() === 0 && n.getDate() <= 15);
+    if (!on || S.retroSeen === String(y) || !S.activities.some(function (a) { return a.date.slice(0, 4) === String(y); })) return;
+    S.retroSeen = String(y); save(); toast("🎉 Ta rétrospective " + y + " est prête : Stats → Mon année.");
+  }
   function viewStats() {
     var acts = sortedActs();
     if (!acts.length) return '<div class="empty-line">Les statistiques apparaîtront dès ta première course.</div>';
@@ -3998,6 +4157,8 @@ body.sheet-open #cellcard { display: none; }
       html += '<div class="row"><span class="main"><span class="t" style="display:block">Hexagone le plus visité</span><span class="s" style="display:block">' + masteryInfo.max + (masteryInfo.max > 1 ? ' jours' : ' jour') + (tk >= 0 ? ' · ' + MASTERY[tk].name : '') + '</span></span><button class="linkbtn" data-go="mastery">📍 Carte</button></div>';
     }
     html += '<p class="note">Une visite est un jour où ta trace passe dans l’hexagone : plusieurs passages le même jour comptent pour un seul.</p></div>';
+    var years = {}; acts.forEach(function (a) { years[a.date.slice(0, 4)] = 1; });
+    html += '<div class="box"><h3>🎉 Mon année</h3><div class="yrs">' + Object.keys(years).sort().reverse().map(function (y) { return '<button class="btn ghost" data-year="' + y + '">' + y + '</button>'; }).join("") + '</div><p class="note" style="margin:6px 0 0">Le récapitulatif de ton année d’exploration, avec une image à partager.</p></div>';
     html += '<div class="box"><h3>Partager</h3><button class="btn block" id="shareBtn">Partager ma carte</button></div>';
     return html;
   }
@@ -4104,6 +4265,9 @@ body.sheet-open #cellcard { display: none; }
     });
     var sb = $("shareBtn"); if (sb) sb.addEventListener("click", shareMap);
     var tg = $("terrgo"); if (tg) tg.addEventListener("click", showTerritory);
+    document.querySelectorAll("[data-year]").forEach(function (b) { b.addEventListener("click", function () { openYear(b.dataset.year); }); });
+    var ys = $("yshare"); if (ys) ys.addEventListener("click", function () { shareYear(yearSel); });
+    var yb = $("yback"); if (yb) yb.addEventListener("click", function () { openTab("stats"); });
     document.querySelectorAll("[data-gquick]").forEach(function (b) { b.addEventListener("click", function () { var q = QUICK[+b.dataset.gquick]; S.goals.push({ type: q.type, target: q.target, period: q.period }); save(); render(); }); });
     var ga = $("gadd"); if (ga) ga.addEventListener("click", function () { var t = parseFloat($("gtarget").value); if (!(t > 0)) { toast("Indique un objectif supérieur à 0."); return; } S.goals.push({ type: $("gtype").value, target: t, period: $("gper").value }); save(); render(); });
     document.querySelectorAll("[data-gdel]").forEach(function (b) { b.addEventListener("click", function () { S.goals.splice(+b.dataset.gdel, 1); save(); render(); }); });
