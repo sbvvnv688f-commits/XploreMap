@@ -294,16 +294,19 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .pcoll { gap: 9px; }
 .pc { position: relative; display: block; aspect-ratio: 3 / 4; padding: 4px; border: 3px solid var(--outline); border-radius: 14px; overflow: hidden; background: var(--rc); box-shadow: 2px 2px 0 var(--outline); font: inherit; cursor: pointer; }
 .pc[aria-expanded="true"] { outline: 3px solid var(--ink); outline-offset: 1px; }
+.pc .frame { position: relative; display: block; height: 100%; border: 2px solid var(--outline); border-radius: 9px; overflow: hidden; }
 .pc .ph-w, .pc .ph { display: block; width: 100%; height: 100%; }
-.pc .ph { object-fit: cover; border-radius: 9px; border: 2px solid var(--outline); box-sizing: border-box; }
+.pc .ph { object-fit: cover; }
 .pc .noph { display: flex; align-items: center; justify-content: center; font-size: 30px; color: var(--ink); background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--rc) 35%, var(--panel)) 0 8px, color-mix(in srgb, var(--rc) 22%, var(--panel)) 8px 16px); }
 .pc .rb { position: absolute; top: 8px; left: 8px; padding: 1px 6px; border: 2px solid var(--outline); border-radius: 999px; background: var(--rc); font-weight: 700; font-size: 8.5px; text-transform: uppercase; color: #2b1f4a; }
-.pc .nm { position: absolute; left: 4px; right: 4px; bottom: 4px; padding: 16px 5px 6px; border-radius: 0 0 9px 9px; background: linear-gradient(transparent, rgba(20, 12, 40, .88) 45%); color: #fff; font-weight: 700; font-size: 11px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.pc .nm { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 5px 6px; background: linear-gradient(transparent, rgba(20, 12, 40, .88) 45%); color: #fff; font-weight: 700; font-size: 11px; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
 .pc .nm small { display: block; font-weight: 500; font-size: 10px; opacity: .85; }
 .pc.empty { opacity: .85; border-style: dashed; box-shadow: none; }
 .pc.empty .ph { filter: grayscale(1) contrast(.9); }
 .pdet { grid-column: 1 / -1; border: 3px solid var(--outline); border-radius: 16px; overflow: hidden; background: var(--panel); box-shadow: 3px 3px 0 var(--outline); }
 .pdet[hidden] { display: none; }
+.pdet > .dph { display: block; height: 170px; border-bottom: 3px solid var(--outline); }
+.pdet > .dph .ph { display: block; width: 100%; height: 100%; }
 .pdet > .ph { display: block; width: 100%; height: 170px; object-fit: cover; border-bottom: 3px solid var(--outline); }
 .pdet .bd { padding: 10px 12px; font-size: 12px; }
 .pdet .bd b.t { display: block; font-size: 16px; margin-bottom: 4px; }
@@ -2889,7 +2892,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v91c";
+  var BUILD = "31/10/2026 · v91d";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3155,30 +3158,40 @@ body.sheet-open #cellcard { display: none; }
       }).then(function () { photoBusy--; showPhoto(key); pumpPhotos(); });
     })(photoQ.shift());
   }
-  function photoHTML(key, icon) {
+  function mountainSVG() {   // sommet sans photo : petite illustration aux couleurs de la rareté
+    return '<svg class="ph mtn" viewBox="0 0 120 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
+      '<defs><linearGradient id="mtsky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bcdcf2"/><stop offset="1" stop-color="#f6efdc"/></linearGradient></defs>' +
+      '<rect width="120" height="160" fill="url(#mtsky)"/><circle cx="92" cy="34" r="11" fill="#ffd96a"/>' +
+      '<path d="M-10 118 L22 70 L40 92 L62 58 L88 96 L104 80 L130 118 Z" style="fill:var(--rc)" opacity=".55"/>' +
+      '<path d="M-6 160 L50 52 L70 84 L80 74 L126 160 Z" fill="#45506a"/>' +
+      '<path d="M50 52 L62 75 L56 71 L50 79 L44 71 L38 76 Z" fill="#fff"/><path d="M80 74 L88 88 L82 85 L77 89 L74 84 Z" fill="#fff"/>' +
+      '<path d="M-10 160 L-10 132 Q 20 118 46 134 T 130 128 L130 160 Z" fill="#6c9a5b"/></svg>';
+  }
+  function photoHTML(key, icon, isPeak) {
     var r = S.info[key];
-    return r && r.i ? '<img class="ph" src="' + esc(r.i) + '" alt="" loading="lazy">' : '<span class="ph noph">' + icon + '</span>';
+    return r && r.i ? '<img class="ph" src="' + esc(r.i) + '" alt="" loading="lazy">' : isPeak ? mountainSVG() : '<span class="ph noph">' + icon + '</span>';
   }
   function showPhoto(key) {
     var w = $("ph-" + key), r = S.info[key];
-    if (w && r && r.i) w.innerHTML = photoHTML(key, "");
+    if (w && r && r.i) w.innerHTML = photoHTML(key, "", false);
+    if (r && r.i && ccOpen === key && $("det-" + key)) { $("det-" + key).innerHTML = detHTML(key); var g = $("det-" + key).querySelector("[data-ccgo]"); if (g) g.addEventListener("click", function () { goToPoi(poiIdx[key]); }); }
   }
   function collCard(p, isPeak, owned, extra) {
     var r = rarityOf(p, isPeak), key = poiKey(isPeak ? "s" : "l", p.id), icon = owned ? (isPeak ? "▲" : p.ic || "📍") : "?";
     poiIdx[key] = p; p._owned = owned; p._peak = isPeak; p._extra = extra || "";
     wantPhoto(key);
     return '<button class="pc' + (owned ? '' : ' empty') + '" style="--rc:' + RARITY[r].c + '" data-ccopen="' + key + '" aria-expanded="' + (ccOpen === key) + '" aria-label="' + esc(p.name) + (owned ? '' : ' (pas encore atteint)') + '">' +
-      '<span class="ph-w" id="ph-' + key + '">' + photoHTML(key, icon) + '</span><span class="rb">' + RARITY[r].n + '</span>' +
-      '<span class="nm">' + esc(p.name) + '<small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small></span></button>' +
+      '<span class="frame"><span class="ph-w" id="ph-' + key + '">' + photoHTML(key, icon, isPeak) + '</span>' +
+      '<span class="nm">' + esc(p.name) + '<small>' + (isPeak ? (p.ele ? fmt(p.ele, 0) + " m" : "Sommet") : esc(p.kind || "Lieu")) + (extra ? " · " + extra : "") + '</small></span></span><span class="rb">' + RARITY[r].n + '</span></button>' +
       '<div class="pdet" id="det-' + key + '"' + (ccOpen === key ? '' : ' hidden') + '>' + (ccOpen === key ? detHTML(key) : '') + '</div>';
   }
   function detHTML(key) {
-    var p = poiIdx[key], r = S.info[key] || {}, url = r.u || wikiUrl(p), big = r.i ? r.i.replace(/\/(\d+)px-/, "/640px-") : "";
+    var p = poiIdx[key], r = S.info[key] || {}, url = r.u || wikiUrl(p), big = r.i || "";
     var first = p._owned
       ? '<b>Première visite :</b> le ' + fmtDate(p.date) + (p.act ? ' (« ' + esc(p.act) + ' »)' : '') + ' · ' +
         (p._peak ? 'cercle de ' + (p.r || summitRadius(p.ele)) + ' m débloqué' : esc(p.kind || "Lieu") + ' · cercle de ' + LANDMARK_R + ' m débloqué')
       : '<b>Pas encore visité</b>' + (p._extra ? ' · à ' + p._extra + ' de chez toi' : '') + '. Passe à moins de ' + (p._peak ? SUMMIT_REACH_M : LANDMARK_REACH_M) + ' m pour l’ajouter à ta collection.';
-    return (big ? '<img class="ph" src="' + esc(big) + '" alt="">' : '') + '<div class="bd"><b class="t">' + esc(p.name) + (p._peak && p.ele ? ' · ' + fmt(p.ele, 0) + ' m' : '') + '</b>' + first +
+    return (big ? '<img class="ph" src="' + esc(big) + '" alt="">' : p._peak ? '<span class="dph" style="--rc:' + RARITY[rarityOf(p, true)].c + '">' + mountainSVG() + '</span>' : '') + '<div class="bd"><b class="t">' + esc(p.name) + (p._peak && p.ele ? ' · ' + fmt(p.ele, 0) + ' m' : '') + '</b>' + first +
       '<div class="poi-text" id="infot-' + key + '">' + infoHTML(key) + '</div>' +
       '<div class="btns"><button class="btn" data-ccgo="' + key + '">📍 Carte</button><a class="btn ghost" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">Wikipédia ↗</a></div>' +
       (r.i ? '<div class="cr">Photo : Wikimédia Commons, licence libre (auteur sur la page Wikipédia).</div>' : '') + '</div>';
