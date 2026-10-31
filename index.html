@@ -454,7 +454,7 @@ body.sheet-open #cellcard { display: none; }
 <div class="float menu" id="bmMenu" role="menu" aria-label="Fond de carte" hidden></div>
 <div class="float menu" id="filterMenu" role="dialog" aria-label="Filtrer la carte" hidden></div>
 <div class="float" id="searchbar" hidden><input type="search" id="searchq" placeholder="Rechercher un lieu…" aria-label="Rechercher un lieu"><button class="btn" id="searchGo">OK</button></div>
-<div class="float" id="gradeBox"><div class="gl-wrap" id="glWrap" hidden><div class="gradelegend" id="gradeLegend"><div><i style="border-color:#8a5a2e"></i><span class="gl-t">5 visites · bois</span></div><div><i style="border-color:#cd7f32"></i><span class="gl-t">20 · bronze</span></div><div><i style="border-color:#e6ebf2"></i><span class="gl-t">50 · argent</span></div><div><i style="border-color:#ffd23f"></i><span class="gl-t">100 · or</span></div><div><i style="border-color:#2fd37a"></i><span class="gl-t">200 · émeraude</span></div><div><i style="border-color:#8ff3ff"></i><span class="gl-t">500 · diamant 💎</span></div></div><button class="gl-tab" id="glTab" aria-label="Masquer les textes de la légende" aria-expanded="true"></button></div><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label></div>
+<div class="float" id="gradeBox"><div class="gl-wrap" id="glWrap" hidden><div class="gradelegend" id="gradeLegend"><div><i style="border-color:#8a5a2e"></i><span class="gl-t">5 visites · 🥾 Patrouilleur</span></div><div><i style="border-color:#cd7f32"></i><span class="gl-t">20 · 🗺️ Cartographe</span></div><div><i style="border-color:#e6ebf2"></i><span class="gl-t">50 · 🚩 Guide local</span></div><div><i style="border-color:#ffd23f"></i><span class="gl-t">100 · 🛡️ Gardien des lieux</span></div><div><i style="border-color:#2fd37a"></i><span class="gl-t">200 · 🏗️ Bâtisseur</span></div><div><i style="border-color:#8ff3ff"></i><span class="gl-t">500 · 🌟 Légende</span></div></div><button class="gl-tab" id="glTab" aria-label="Masquer les textes de la légende" aria-expanded="true"></button></div><label class="gradechk"><input type="checkbox" id="gradeChk"><span>Contours par grade</span></label></div>
 <div class="float" id="cellcard" hidden role="dialog" aria-label="Sorties dans cet hexagone"></div>
 <div id="dropzone" hidden>Dépose tes fichiers GPX, TCX ou FIT</div>
 
@@ -556,7 +556,7 @@ body.sheet-open #cellcard { display: none; }
         S.owner = typeof o.owner === "string" ? o.owner : "";   // compte auquel appartiennent ces données
         S.rankOptOut = o.rankOptOut === true;   // retiré du classement de tous les joueurs
         var hm = o.home;   // zone domicile jamais partagée : { lat, lng, r } ou { none: true }
-        S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r) } : null;
+        S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r), auto: hm.auto === true } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
         S.onboarded = !!o.onboarded;
@@ -1351,6 +1351,23 @@ body.sheet-open #cellcard { display: none; }
   var HOME_RADII = [[300, "300 m"], [500, "500 m"], [1000, "1 km"], [2000, "2 km"]], HOME_MARGIN_M = 30;   // marge d’un demi-hexagone autour du cercle
   function capFirst(t) { t = String(t || ""); return t.charAt(0).toUpperCase() + t.slice(1); }
   function homeSet() { return !!(S.home && (S.home.none || S.home.r > 0)); }
+  function autoHome() {   // partage par défaut entre amis : sans zone domicile, on masque 500 m autour du point de départ le plus fréquent
+    if (homeSet()) return true;
+    var cnt = {}, best = null, bn = 0;
+    realActs().forEach(function (a) {
+      var l = a.lines, f = l && l[0] && l[0][0], e = l && l[l.length - 1] && l[l.length - 1][l[l.length - 1].length - 1];
+      [f, e].forEach(function (p) {
+        if (!p) return;
+        var k = Math.round(p[0] / 0.003) + "," + Math.round(p[1] / 0.003), c = cnt[k] || (cnt[k] = { n: 0, la: 0, ln: 0 });
+        c.n++; c.la += p[0]; c.ln += p[1];
+        if (c.n > bn) { bn = c.n; best = c; }
+      });
+    });
+    if (!best) return false;
+    S.home = { lat: Math.round(best.la / best.n * 1e5) / 1e5, lng: Math.round(best.ln / best.n * 1e5) / 1e5, r: 500, auto: true }; save();
+    if (current === "friends") render();
+    return true;
+  }
   function shareCount() { return friends ? friends.friends.filter(function (f) { return f.iShare; }).length : 0; }
   function sharedActs() { return realActs().filter(function (a) { return SHARE_STRAVA || !a.strava; }); }
   function sharedCells() {
@@ -1374,6 +1391,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function pushMap() {   // publie ma carte partageable si au moins un ami la voit ; la retire sinon
     if (!acct || !friends || mapBusy || typeof h3 === "undefined") return Promise.resolve();
+    if (shareCount()) autoHome();
     if (!shareCount() || !homeSet()) {
       if (!acct.mapSig) return Promise.resolve();
       mapBusy = true;
@@ -1427,7 +1445,7 @@ body.sheet-open #cellcard { display: none; }
     var h = S.home, rsel = '<select id="homer" aria-label="Rayon de la zone">' + HOME_RADII.map(function (o) { return '<option value="' + o[0] + '"' + ((h && h.r === o[0]) || (!(h && h.r) && o[0] === 500) ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>';
     var status = !h ? "<b>Non définie.</b> Elle est obligatoire avant de partager ta carte : les hexagones autour de chez toi ne seront jamais montrés."
       : h.none ? "<b>Aucune zone masquée.</b> Tes amis voient aussi les hexagones autour de chez toi."
-      : "<b>Rayon de " + (h.r >= 1000 ? fmt(h.r / 1000, h.r % 1000 ? 1 : 0) + " km" : h.r + " m") + " masqué</b> autour du point choisi. Ce point reste sur ton appareil et dans ta sauvegarde privée.";
+      : "<b>Rayon de " + (h.r >= 1000 ? fmt(h.r / 1000, h.r % 1000 ? 1 : 0) + " km" : h.r + " m") + " masqué</b> autour " + (h.auto ? "du point de départ le plus fréquent de tes sorties (placé automatiquement : vérifie-le avec « Placer sur la carte »)" : "du point choisi") + ". Ce point reste sur ton appareil et dans ta sauvegarde privée.";
     return '<div class="homebox" id="homebox"><div class="t" style="font-weight:700">🏠 Zone domicile</div><p class="note" style="margin-top:4px">' + status + '</p>' +
       '<div class="frow-act">' + rsel + '<button class="linkbtn" data-home="pick">📍 Placer sur la carte</button>' +
       (h && h.none ? '' : '<button class="linkbtn" data-home="none">Ne rien masquer</button>') + '</div></div>';
@@ -1447,7 +1465,7 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
     }).join("");
     var n = shareCount(), set = n && homeSet() ? sharedCells() : null;
-    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Le partage se décide ami par ami et reste désactivé tant que tu ne l’actives pas. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates.' + (SHARE_STRAVA ? '' : ' Les sorties importées depuis Strava ne sont pas partagées.') +
+    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Entre amis, les cartes sont partagées par défaut ; décoche « Partager ma carte » pour la cacher à un ami. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates.' + (SHARE_STRAVA ? '' : ' Les sorties importées depuis Strava ne sont pas partagées.') +
       (set ? ' Actuellement : <b>' + fmt(set.size, 0) + ' hexagones</b> partagés avec ' + n + ' ami' + (n > 1 ? "s" : "") + '.' : '') + '</p>' +
       (realActs().length && !sharedActs().length ? '<p class="note" style="margin:0 0 10px"><b>Ta carte partagée est vide :</b> toutes tes sorties viennent de la synchronisation Strava, qui n’est pas partagée. Seules les sorties importées depuis un fichier (GPX, TCX, FIT) le sont.</p>' : '') +
       homeHTML();
@@ -1467,8 +1485,8 @@ body.sheet-open #cellcard { display: none; }
     });
     document.querySelectorAll("[data-fshare]").forEach(function (b) {
       b.addEventListener("change", function () {
-        if (b.checked && !homeSet()) { b.checked = false; toast("Définis d’abord ta zone domicile (en bas de cette page)."); var hb = $("homebox"); if (hb) hb.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
-        friendAction("PUT", "/friends/share", { id: b.dataset.fshare, share: b.checked }, b.checked ? "Ta carte est partagée avec cet ami." : "Partage arrêté.");
+        if (b.checked && !autoHome()) { b.checked = false; toast("Définis d’abord ta zone domicile (en bas de cette page)."); var hb = $("homebox"); if (hb) hb.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+        friendAction("PUT", "/friends/share", { id: b.dataset.fshare, share: b.checked }, b.checked ? "Ta carte est partagée avec cet ami." : "Partage arrêté : cet ami ne voit plus ta carte.");
       });
     });
     document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
@@ -2607,7 +2625,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "30/10/2026 · v85";
+  var BUILD = "31/10/2026 · v86";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
