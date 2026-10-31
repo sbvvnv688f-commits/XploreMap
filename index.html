@@ -273,15 +273,24 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .goal .t { font-weight: 600; font-size: 14.5px; }
 .goal .del { font-size: 11px; font-weight: 600; color: var(--danger); background: none; border: 0; padding: 6px; }
 .goal .s { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.feed { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.fitem { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); font-size: 12.5px; }
+.fitem.me { opacity: .8; }
+.fitem .fi-ic { font-size: 18px; line-height: 1.2; }
+.fitem small { display: block; color: var(--muted); font-size: 10.5px; margin-top: 1px; }
 .kpi.wide { grid-column: 1 / -1; background: var(--accent); }
 .kpi.wide .kpi-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .kpi.wide .kpi-note { display: block; margin-top: 4px; font-size: 11px; color: var(--k-ink); opacity: .8; }
 .coll { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.ccard .cc-act { display: flex; gap: 4px; margin-top: 5px; }
-.ccard .cc-act button, .ccard .cc-act a { min-width: 28px; height: 26px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--outline); border-radius: 9px; background: var(--bg-soft, var(--panel)); color: var(--ink); font: 700 11px inherit; text-decoration: none; cursor: pointer; }
+.ccard .cc-act { display: flex; gap: 3px; margin-top: auto; padding-top: 5px; align-self: stretch; }
+.ccard .cc-act button, .ccard .cc-act a { flex: 1 1 0; min-width: 0; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--outline); border-radius: 9px; background: var(--bg-soft, var(--panel)); color: var(--ink); font: 700 11px inherit; text-decoration: none; cursor: pointer; }
 .cc-info { grid-column: 1 / -1; padding: 10px 12px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); font-size: 12px; }
 .cc-info .cc-first { margin-bottom: 6px; }
-.ccard { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 5px 8px; border: 3px solid var(--outline); border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 2px 2px 0 var(--outline); font: inherit; text-align: center; overflow: hidden; }
+.ccard { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 0 5px 8px; border: 3px solid var(--outline); border-radius: 14px; background: color-mix(in srgb, var(--rc) 30%, var(--panel)); color: var(--ink); box-shadow: 2px 2px 0 var(--outline); font: inherit; text-align: center; overflow: hidden; }
+.ccard.empty { background: var(--panel); }
+.rar-i { width: 22px; height: 22px; margin-left: 6px; padding: 0; border: 2px solid var(--outline); border-radius: 50%; background: var(--panel); color: var(--ink); font: 700 12px/1 Georgia, serif; font-style: italic; vertical-align: 2px; cursor: pointer; }
+.rar-help { margin: 8px 0 0; padding: 8px 10px; border: 2px dashed var(--outline); border-radius: 12px; font-size: 11.5px; }
+.rar-help[hidden] { display: none; }
 .ccard .cc-r { align-self: stretch; margin: 0 -5px 4px; padding: 2px 0; background: var(--rc); color: #2b1f4a; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 .ccard .cc-ic { font-size: 22px; line-height: 1.1; }
 .ccard b { font-size: 11.5px; line-height: 1.2; overflow-wrap: anywhere; }
@@ -558,7 +567,7 @@ body.sheet-open #cellcard { display: none; }
   var tilesLoaded = 0, tilesFailed = 0;
   var AREA_M2 = 2150, lastKm2 = 0, lastLevel = -1;
   var selected = null, current = null, lastResult = "";
-  var rankScope = "all", rankSport = "all", listSport = "all";
+  var rankScope = "all", rankSport = "all", listSport = "all", rankPeriod = "all";
 
   function loadState() {
     try {
@@ -1501,9 +1510,40 @@ body.sheet-open #cellcard { display: none; }
       return apiCall("PUT", "/map", { enc: p.enc === "gzip-b64" ? "gzip-b64" : "list", data: p.data, cells: ids.length, stats: st });
     }).then(function () { mapBusy = false; if (acct) { acct.mapSig = sig; saveAcct(); } }, function () { mapBusy = false; });
   }
+  var feed = null, feedAll = false;
+  function loadFeed() {
+    if (!acct) return Promise.resolve();
+    return apiCall("GET", "/feed").then(function (r) { feed = r.events || []; if (current === "friends") render(); }, function () { feed = feed || []; });
+  }
+  function feedWhen(t) {
+    var d = Math.floor(Date.now() / 1000) - t;
+    if (d < 3600) return "il y a " + Math.max(1, Math.round(d / 60)) + " min";
+    if (d < 86400) return "il y a " + Math.round(d / 3600) + " h";
+    if (d < 2 * 86400) return "hier";
+    if (d < 7 * 86400) return "il y a " + Math.floor(d / 86400) + " jours";
+    return "le " + new Date(t * 1000).toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  }
+  function feedText(e) {
+    var who = e.me ? "Tu" : '<b>' + esc(e.pseudo) + '</b>', d = e.data || {}, n = d.n || 0, s = n > 1 ? "s" : "";
+    if (e.kind === "cells") return ["🗺️", who + (e.me ? " as" : " a") + " découvert " + fmt(n, 0) + (n > 1 ? " nouveaux hexagones" : " nouvel hexagone") + (d.km2 ? " (+" + fmtKm2(d.km2) + " km²)" : "")];
+    if (e.kind === "summits") return ["▲", who + (e.me ? " as" : " a") + " atteint " + fmt(n, 0) + " nouveau" + (n > 1 ? "x" : "") + " sommet" + s + (d.topEle ? " · plus haut sommet : " + fmt(d.topEle, 0) + " m" : "")];
+    if (e.kind === "landmarks") return ["📍", who + (e.me ? " as" : " a") + " visité " + fmt(n, 0) + " nouveau" + (n > 1 ? "x" : "") + " lieu" + (n > 1 ? "x" : "") + " remarquable" + s];
+    if (e.kind === "level") { var lv = d.level || 0; return ["🏆", who + (e.me ? " passes" : " passe") + " au niveau " + lv + (TROPHIES[lv - 1] ? " · " + esc(TROPHIES[lv - 1].name) : "")]; }
+    if (e.kind === "terr") return ["👑", who + (e.me ? " as" : " a") + " un territoire d’un seul tenant de " + fmt(d.km2 || 0, 0) + " km²"];
+    return null;
+  }
+  function feedHTML() {
+    if (!feed) return '<h3>Quoi de neuf</h3><div class="empty-line">Chargement…</div>';
+    var items = feed.map(function (e) { var t = feedText(e); return t ? { ic: t[0], tx: t[1], at: e.at, me: e.me } : null; }).filter(Boolean);
+    if (!items.length) return '<h3>Quoi de neuf</h3><div class="empty-line">Rien de neuf pour l’instant : les progrès de tes amis (nouveaux hexagones, sommets, lieux, niveaux) apparaîtront ici.</div>';
+    var shown = feedAll ? items : items.slice(0, 6);
+    return '<h3>Quoi de neuf</h3><div class="feed">' + shown.map(function (x) {
+      return '<div class="fitem' + (x.me ? ' me' : '') + '"><span class="fi-ic">' + x.ic + '</span><span class="fi-t">' + x.tx + '<small>' + feedWhen(x.at) + '</small></span></div>';
+    }).join("") + '</div>' + (items.length > 6 ? '<button class="linkbtn" id="feedmore">' + (feedAll ? "Voir moins" : "Voir tout (" + items.length + ")") + '</button>' : '');
+  }
   function loadFriends() {
     if (!acct) return Promise.resolve();
-    friendsAt = Date.now();
+    friendsAt = Date.now(); loadFeed();
     return apiCall("GET", "/friends").then(function (r) { friendsErr = ""; setFriends(r); scheduleMapPush(3000); }, function (e) {
       friendsErr = e.status === 404 ? "Les amis arrivent bientôt : le serveur doit encore être mis à jour." : "Liste d’amis indisponible : " + e.message + ".";
       if (current === "friends" || current === "rank") render();
@@ -1557,12 +1597,13 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
         '<button class="linkbtn" data-facc="' + esc(f.id) + '">Accepter</button><button class="del" data-frem="' + esc(f.id) + '">Refuser</button></div></div>';
     }).join("");
+    if (friends.friends.length) h += feedHTML();
     h += '<h3>Mes amis</h3>' + (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
     if (friends.outgoing.length) h += '<h3>Invitations envoyées</h3>' + friends.outgoing.map(function (f) {
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">En attente de réponse</span></span><button class="del" data-frem="' + esc(f.id) + '">Annuler</button></div></div>';
     }).join("");
     var n = shareCount(), set = n && homeSet() ? sharedCells() : null;
-    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Entre amis, les cartes sont partagées par défaut ; décoche « Partager ma carte » pour la cacher à un ami. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces ni tes dates.' + (SHARE_STRAVA ? '' : ' Les sorties importées depuis Strava ne sont pas partagées.') +
+    h += '<h3>Ce que tes amis voient</h3><p class="note" style="margin:0 0 10px">Entre amis, les cartes sont partagées par défaut ; décoche « Partager ma carte » pour la cacher à un ami. Un ami voit tes hexagones et des compteurs (km², sorties, kilomètres, sommets, lieux), jamais tes traces. Quand ta carte s’agrandit, tes amis le voient dans « Quoi de neuf ».' + (SHARE_STRAVA ? '' : ' Les sorties importées depuis Strava ne sont pas partagées.') +
       (set ? ' Actuellement : <b>' + fmt(set.size, 0) + ' hexagones</b> partagés avec ' + n + ' ami' + (n > 1 ? "s" : "") + '.' : '') + '</p>' +
       (realActs().length && !sharedActs().length ? '<p class="note" style="margin:0 0 10px"><b>Ta carte partagée est vide :</b> toutes tes sorties viennent de la synchronisation Strava, qui n’est pas partagée. Seules les sorties importées depuis un fichier (GPX, TCX, FIT) le sont.</p>' : '') +
       homeHTML();
@@ -1587,6 +1628,7 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
+    var fm = $("feedmore"); if (fm) fm.addEventListener("click", function () { feedAll = !feedAll; render(); });
     document.querySelectorAll("[data-fstats]").forEach(function (b) { b.addEventListener("click", function () { openFriendStats(b.dataset.fstats); }); });
     var hr = $("homer");
     if (hr) hr.addEventListener("change", function () { if (S.home && !S.home.none) { S.home.r = +hr.value; save(); scheduleMapPush(1500); render(); } });
@@ -2741,7 +2783,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v89b";
+  var BUILD = "31/10/2026 · v90";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3009,11 +3051,12 @@ body.sheet-open #cellcard { display: none; }
   function collTabHTML(isPeak) {
     var list = isPeak ? summitList().sort(function (a, b) { return (b.ele || 0) - (a.ele || 0); }) : landmarkList(), byR = [0, 0, 0, 0, 0];
     list.forEach(function (p) { byR[rarityOf(p, isPeak)]++; });
-    var h = '<div class="box"><h3>' + (isPeak ? "Sommets atteints" : "Lieux remarquables") + ' (' + list.length + ')</h3><div class="cc-sum">' + RARITY.map(function (r, i) {
+    var help = isPeak ? '<b>Rareté d’un sommet : son altitude.</b><br>Commune : moins de 1 000 m · Peu commune : 1 000 à 2 000 m · Rare : 2 000 à 3 000 m · Épique : 3 000 à 4 000 m · Légendaire : 4 000 m et plus.'
+      : '<b>Rareté d’un lieu : son type.</b><br>Légendaire : aucun pour l’instant · Épique : glacier, source chaude · Rare : cascade, grotte · Peu commune : château ou fort, site archéologique, phare · Commune : les autres (édifices religieux, belvédères, monuments…).';
+    var h = '<div class="box"><h3>' + (isPeak ? "Sommets atteints" : "Lieux remarquables") + ' (' + list.length + ')<button class="rar-i" id="rarinfo" aria-label="Comment la rareté est définie" aria-expanded="false">i</button></h3><p class="rar-help" id="rarhelp" hidden>' + help + '</p><div class="cc-sum">' + RARITY.map(function (r, i) {
       return '<span style="--rc:' + r.c + '"><b>' + byR[i] + '</b> ' + r.n.toLowerCase() + (byR[i] > 1 && i !== 4 ? "s" : "") + '</span>';
     }).join("") + '</div>' +
-      (isPeak && list.length ? '<p class="note" style="margin:6px 0 0">Point culminant : ' + esc(list[0].name) + (list[0].ele ? ' (' + fmt(list[0].ele, 0) + ' m)' : '') + '. Plus un sommet est haut, plus sa carte est rare.</p>'
-        : !isPeak ? '<p class="note" style="margin:6px 0 0">Glaciers et sources chaudes sont les plus rares, puis cascades et grottes, puis châteaux, sites archéologiques et phares.</p>' : '') + '</div>';
+      (isPeak && list.length ? '<p class="note" style="margin:6px 0 0">Point culminant : ' + esc(list[0].name) + (list[0].ele ? ' (' + fmt(list[0].ele, 0) + ' m)' : '') + '.</p>' : '') + '</div>';
     if (!list.length) h += '<div class="empty-line">' + (isPeak
       ? 'Aucun sommet pour l’instant. Passe à moins de ' + SUMMIT_REACH_M + ' m d’un sommet nommé : un cercle d’exploration se débloque, de ' + SUMMIT_BASE_M + ' m de rayon plus ' + SUMMIT_BONUS_M + ' m par tranche de ' + SUMMIT_ALT_STEP + ' m d’altitude.'
       : 'Aucun lieu pour l’instant. Passe à moins de ' + LANDMARK_REACH_M + ' m d’un monument, d’un château, d’une cascade ou d’un site historique référencé sur Wikipédia : un cercle de ' + LANDMARK_R + ' m se débloque.') + '</div>';
@@ -3822,7 +3865,9 @@ body.sheet-open #cellcard { display: none; }
       '<div class="kpi"><b>' + fmtKm2(st.km2 || 0) + '</b><span>km² découverts</span>' + cmp(0, fmtKm2(mine.km2)) + '</div>' +
       '<div class="kpi"><b>' + fmt(st.cells || 0, 0) + '</b><span>hexagones</span>' + cmp(0, fmt(mine.cells, 0)) + '</div>' +
       '<div class="kpi"><b>' + fmt(st.acts || 0, 0) + '</b><span>sorties</span>' + cmp(0, fmt(mine.acts, 0)) + '</div>' +
-      '<div class="kpi"><b>' + fmt(st.distKm || 0, 0) + '</b><span>km parcourus</span>' + cmp(0, fmt(mine.distKm, 0)) + '</div></div></div>';
+      '<div class="kpi"><b>' + fmt(st.distKm || 0, 0) + '</b><span>km parcourus</span>' + cmp(0, fmt(mine.distKm, 0)) + '</div>' +
+      '<div class="kpi wide"><b>' + (st.terr !== undefined ? fmtKm2(st.terr) : "—") + '</b><span>km² d’un seul tenant · plus grande zone explorée continue</span>' + cmp(0, fmtKm2(terrInfo.km2 || 0)) +
+      (st.terr === undefined ? '<small class="fs-me">Disponible dès que ' + esc(f.pseudo) + ' aura ouvert la dernière version de l’appli.</small>' : '') + '</div></div></div>';
     if (!st.bySport) return html + '<p class="note">' + esc(f.pseudo) + ' n’a pas encore la dernière version de l’appli : le détail (sports, mois, paliers, records) apparaîtra dès sa prochaine ouverture.</p>' + backBtn();
     var months = Object.keys(st.months || {}).sort().slice(-6);
     if (months.length) {
@@ -3841,7 +3886,7 @@ body.sheet-open #cellcard { display: none; }
       '<div class="row"><span class="main"><span class="t" style="display:block">Plus grande découverte</span><span class="s" style="display:block">toi : +' + fmtKm2(mine.bestKm2) + ' km²</span></span><span class="v">+' + fmtKm2(st.bestKm2 || 0) + '<small>km²</small></span></div>' +
       (st.topEle ? '<div class="row"><span class="main"><span class="t" style="display:block">Plus haut sommet atteint</span><span class="s" style="display:block">toi : ' + (mine.topEle ? fmt(mine.topEle, 0) + ' m' : 'aucun') + '</span></span><span class="v">' + fmt(st.topEle, 0) + '<small>m</small></span></div>' : '') +
       '<div class="row"><span class="main"><span class="t" style="display:block">Sommets et lieux</span><span class="s" style="display:block">toi : ' + fmt(mine.summits, 0) + ' ▲ · ' + fmt(mine.landmarks, 0) + ' lieux</span></span><span class="v">' + fmt(st.summits || 0, 0) + ' ▲ · ' + fmt(st.landmarks || 0, 0) + '<small>lieux</small></span></div>' +
-      (st.terr ? '<div class="row"><span class="main"><span class="t" style="display:block">Territoire d’un seul tenant</span><span class="s" style="display:block">toi : ' + fmtKm2(terrInfo.km2 || 0) + ' km²</span></span><span class="v">' + fmtKm2(st.terr) + '<small>km²</small></span></div>' : '') + '</div>';
+      '</div>';
     if (st.mastery && st.mastery.length) html += '<div class="box"><h3>Maîtrise des hexagones</h3>' + MASTERY.slice(1).map(function (m, i) {
       return '<div class="row"><span class="main"><span class="t" style="display:block">' + m.ic + ' ' + m.name + '</span><span class="s" style="display:block">toi : ' + fmt(masteryInfo.exact[i + 1] || 0, 0) + '</span></span><span class="v">' + fmt(st.mastery[i] || 0, 0) + '<small>hexagones</small></span></div>';
     }).join("") + '</div>';
@@ -3995,17 +4040,19 @@ body.sheet-open #cellcard { display: none; }
   }
   function viewRank() {
     if (!acct) return "";
-    var scope = '<div class="seg">' + [["all", "Tous les joueurs"], ["friends", "Mes amis"]].map(function (x) { return '<button data-rscope="' + x[0] + '" aria-pressed="' + (rankScope === x[0]) + '">' + x[1] + '</button>'; }).join("") + '</div>';
+    var scope = '<div class="seg">' + [["all", "Tous les joueurs"], ["friends", "Mes amis"]].map(function (x) { return '<button data-rscope="' + x[0] + '" aria-pressed="' + (rankScope === x[0]) + '">' + x[1] + '</button>'; }).join("") + '</div>' +
+      '<div class="seg">' + [["all", "Depuis le début"], ["week", "Cette semaine"]].map(function (x) { return '<button data-rperiod="' + x[0] + '" aria-pressed="' + (rankPeriod === x[0]) + '">' + x[1] + '</button>'; }).join("") + '</div>';
     var sport = '<div class="field"><label for="rsport">Sport</label><select id="rsport"><option value="all">Tous les sports</option>' + Object.keys(SPORTS).map(function (k) { return '<option value="' + k + '"' + (rankSport === k ? " selected" : "") + '>' + sl(k) + '</option>'; }).join("") + '</select></div>';
     var optOut = '<label class="gradechk" style="margin:14px 0 0"><input type="checkbox" id="rankin"' + (S.rankOptOut ? "" : " checked") + '><span>Apparaître dans le classement</span></label>' +
       '<p class="note">Tous les joueurs voient ton pseudo, ton département et ta surface explorée ; tes amis voient aussi ta ville. Aucune position ni carte n’est montrée.</p>';
     if (boardErr) return scope + sport + '<p class="note">' + esc(boardErr) + '</p>' + optOut;
     if (!board || typeof h3 === "undefined") return scope + sport + '<div class="empty-line">Chargement…</div>' + optOut;
     var mine = myScore(), meId = acct.user && acct.user.id;
-    var rows = board.filter(function (p) { return !p.me && p.id !== meId; }).map(function (p) { return { id: p.id, name: p.pseudo, place: p.place, friend: rankRel(p.id, p.friend) === "ami", km2: p.km2, by: p.bySport || {} }; });
-    var meRow = { name: S.name || "Moi", place: S.city ? S.city + (S.dept ? " · " + S.dept : "") : S.dept, me: true, km2: mine.km2, by: mine.bySport };
+    var rows = board.filter(function (p) { return !p.me && p.id !== meId; }).map(function (p) { return { id: p.id, name: p.pseudo, place: p.place, friend: rankRel(p.id, p.friend) === "ami", km2: p.km2, by: p.bySport || {}, wk: p.weekKm2 || 0, wby: p.weekBySport || {} }; });
+    var srvMe = board.filter(function (p) { return p.me || p.id === meId; })[0] || {};
+    var meRow = { name: S.name || "Moi", place: S.city ? S.city + (S.dept ? " · " + S.dept : "") : S.dept, me: true, km2: mine.km2, by: mine.bySport, wk: srvMe.weekKm2 || 0, wby: srvMe.weekBySport || {} };
     rows.push(meRow);
-    var val = function (x) { return rankSport === "all" ? (x.km2 || 0) : ((x.by && x.by[rankSport]) || 0); };
+    var wk = rankPeriod === "week", val = function (x) { return rankSport === "all" ? ((wk ? x.wk : x.km2) || 0) : (((wk ? x.wby : x.by) || {})[rankSport] || 0); };
     rows = rows.filter(function (x) { return (rankScope !== "friends" || x.friend || x.me) && (x.me || rankSport === "all" || val(x) > 0); });   // filtres cumulables : amis et sport
     rows.sort(function (a, b) { return val(b) - val(a) || (a.me ? -1 : b.me ? 1 : a.name.localeCompare(b.name)); });
     rows.forEach(function (x) { var v = val(x); x.r = 1 + rows.filter(function (y) { return val(y) > v; }).length; });   // ex æquo : même rang
@@ -4019,13 +4066,14 @@ body.sheet-open #cellcard { display: none; }
     }
     function row(x) {
       return '<div class="row' + (x.me ? ' me' : ' rrow') + '"' + (x.me ? '' : ' role="button" tabindex="0" data-rpl="' + esc(x.id) + '" aria-expanded="' + (rankOpen === String(x.id)) + '"') + '><span class="rank-n">' + x.r + '</span><span class="main"><span class="t" style="display:block">' + esc(x.name) + (x.me ? " (toi)" : x.friend ? " · ami" : "") + rankLevel(x.km2) + '</span>' +
-        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + fmtKm2(val(x)) + '<small>km²</small></span></div>' + act(x);
+        (x.place ? '<span class="s" style="display:block">' + esc(x.place) + '</span>' : '') + '</span><span class="v">' + (wk ? "+" : "") + fmtKm2(val(x)) + '<small>km²' + (wk ? " cette semaine" : "") + '</small></span></div>' + act(x);
     }
     var top = rows.slice(0, RANK_TOP), me = rows.filter(function (x) { return x.me; })[0];
     var list = top.map(row).join("") + (me && me.r > RANK_TOP && top.indexOf(me) < 0 ? '<div class="s" style="text-align:center;color:var(--muted);padding:4px 0">…</div>' + row(me) : "");
     var alone = rows.length === 1 ? '<div class="empty-line">' + (rankScope === "friends" ? "Aucun ami classé" + (rankSport === "all" ? "" : " dans ce sport") + " pour l’instant." : "Personne d’autre n’est encore classé" + (rankSport === "all" ? "." : " dans ce sport.")) + '</div>' +
       (rankScope === "friends" ? '<button class="btn ghost block" id="rankfriends">Inviter des amis</button>' : '') : '';
-    return scope + sport + list + alone + (S.rankOptOut ? '<p class="note"><b>Tu n’apparais pas dans le classement :</b> ta ligne n’est visible que par toi.</p>' : '') + optOut;
+    var wkNote = wk ? '<p class="note" style="margin:0 0 8px">Surface gagnée depuis lundi : le classement repart de zéro chaque semaine.</p>' : '';
+    return scope + sport + wkNote + list + alone + (S.rankOptOut ? '<p class="note"><b>Tu n’apparais pas dans le classement :</b> ta ligne n’est visible que par toi.</p>' : '') + optOut;
   }
 
   function bindSheet() {
@@ -4082,6 +4130,7 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     document.querySelectorAll("[data-rscope]").forEach(function (b) { b.addEventListener("click", function () { rankScope = b.dataset.rscope; render(); }); });
+    document.querySelectorAll("[data-rperiod]").forEach(function (b) { b.addEventListener("click", function () { rankPeriod = b.dataset.rperiod; render(); }); });
     document.querySelectorAll("[data-rpl]").forEach(function (r) {
       function tog() { var id = r.dataset.rpl; rankOpen = rankOpen === id ? null : id; render(); }
       r.addEventListener("click", tog);
@@ -4100,6 +4149,7 @@ body.sheet-open #cellcard { display: none; }
     var rs = $("rescanBtn"); if (rs) rs.addEventListener("click", recomputeAll);
     document.querySelectorAll("[data-go]").forEach(function (b) { b.addEventListener("click", function () { goToPoi(poiIdx[b.dataset.go]); }); });
     document.querySelectorAll("[data-succ]").forEach(function (b) { b.addEventListener("click", function () { succTab = b.dataset.succ; render(); }); });
+    var ri = $("rarinfo"); if (ri) ri.addEventListener("click", function () { var hp = $("rarhelp"); hp.hidden = !hp.hidden; ri.setAttribute("aria-expanded", String(!hp.hidden)); });
     document.querySelectorAll("[data-info]").forEach(function (b) { b.addEventListener("click", function () {
       var key = b.dataset.info, el = $("info-" + key);
       if (!el) return;
