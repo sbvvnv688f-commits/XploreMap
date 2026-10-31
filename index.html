@@ -74,6 +74,11 @@ button { cursor: pointer; }
   background: var(--panel); border: 3px solid var(--outline); border-radius: 999px;
   box-shadow: 3px 3px 0 var(--outline); font-weight: 600; font-size: 13.5px;
 }
+#newsBtn { top: calc(env(safe-area-inset-top, 0px) + 66px); left: 12px; display: flex; align-items: center; gap: 4px; padding: 5px 12px; background: var(--panel); border: 2.5px solid var(--outline); border-radius: 999px; box-shadow: 2px 2px 0 var(--outline); font-weight: 600; font-size: 12px; color: var(--ink); }
+#newsBtn[hidden], #newsPop[hidden], body.friend-view #newsBtn, body.friend-view #newsPop, body.cq-on #newsBtn, body.cq-on #newsPop { display: none; }
+#newsBtn .tab-badge { top: -8px; left: auto; right: -8px; }
+#newsPop { top: calc(env(safe-area-inset-top, 0px) + 104px); left: 12px; z-index: 30; width: min(340px, calc(100vw - 24px)); max-height: 55vh; overflow-y: auto; padding: 10px 12px; background: var(--panel); border: 3px solid var(--outline); border-radius: 18px; box-shadow: 3px 3px 0 var(--outline); }
+#newsPop h3 { margin-top: 0; }
 #profileBtn:active, #ctrl button:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--outline); }
 .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--pink); color: var(--on-accent); border: 2.5px solid var(--outline); display: grid; place-items: center; font-weight: 700; font-size: 13.5px; }
 #chip {
@@ -542,6 +547,8 @@ body.sheet-open #cellcard { display: none; }
 </div>
 
 <button class="float" id="profileBtn" aria-label="Ouvrir le profil"><span class="avatar" id="avatarMini">E</span>Profil</button>
+<button class="float" id="newsBtn" hidden aria-label="Quoi de neuf" aria-expanded="false">🔔 Quoi de neuf<b class="tab-badge" id="newsBadge" hidden></b></button>
+<div class="float" id="newsPop" hidden role="dialog" aria-label="Quoi de neuf"></div>
 
 <div class="float" id="chip" aria-live="polite"><b id="chipKm2">0,000</b> <span>km²</span><small id="chipCells">0 hexagone</small></div>
 
@@ -665,7 +672,7 @@ body.sheet-open #cellcard { display: none; }
         S.home = hm && hm.none === true ? { none: true } : hm && isFinite(hm.lat) && isFinite(hm.lng) && hm.r > 0 ? { lat: +hm.lat, lng: +hm.lng, r: Math.min(5000, +hm.r), auto: hm.auto === true } : null;
         S.photo = typeof o.photo === "string" && o.photo.indexOf("data:image/") === 0 ? o.photo : "";
         S.icon = Number.isInteger(o.icon) && o.icon >= 0 && o.icon < 8 ? o.icon : 0;
-        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true; S.retroSeen = typeof o.retroSeen === "string" ? o.retroSeen : "";
+        S.onboarded = !!o.onboarded; S.guideDone = o.guideDone === true; S.feedSeen = +o.feedSeen || 0; S.retroSeen = typeof o.retroSeen === "string" ? o.retroSeen : "";
         S.goals = Array.isArray(o.goals) ? o.goals.filter(function (g) { return g && GOAL_TYPES[g.type] && GOAL_PERIODS[g.period] && g.target > 0; }) : [];
         S.unlocked = Array.isArray(o.unlocked) ? o.unlocked : null;
         S.colorMode = o.colorMode === "sport" || o.colorMode === "age" ? o.colorMode : "uniform";
@@ -1658,8 +1665,31 @@ body.sheet-open #cellcard { display: none; }
   var feed = null, feedAll = false;
   function loadFeed() {
     if (!acct) return Promise.resolve();
-    return apiCall("GET", "/feed").then(function (r) { feed = r.events || []; if (current === "friends") render(); }, function () { feed = feed || []; });
+    return apiCall("GET", "/feed").then(function (r) { feed = r.events || []; updateNews(); if (!$("newsPop").hidden) showNews(); }, function () { feed = feed || []; updateNews(); });
   }
+  function updateNews() {   // bulle visible dès qu’on a des amis ; pastille = nouveautés de tes amis pas encore vues
+    var btn = $("newsBtn"), bd = $("newsBadge"); if (!btn) return;
+    btn.hidden = !acct || !feed || !((friends && friends.friends.length) || feed.length);
+    var n = feed ? feed.filter(function (e) { return !e.me && e.at > (S.feedSeen || 0) && feedText(e); }).length : 0;
+    bd.textContent = n > 9 ? "9+" : n; bd.hidden = !n;
+    btn.setAttribute("aria-label", "Quoi de neuf" + (n ? " : " + n + " nouveauté" + (n > 1 ? "s" : "") : ""));
+  }
+  function showNews() {
+    var pop = $("newsPop"); pop.innerHTML = feedHTML() + '<div class="drawer-sec"><button class="btn ghost block" id="newsfriends">Voir mes amis</button></div>';
+    var fm = $("feedmore"); if (fm) fm.addEventListener("click", function () { feedAll = !feedAll; showNews(); });
+    $("newsfriends").addEventListener("click", function () { closeNews(); openTab("friends"); });
+  }
+  function toggleNews() {
+    var pop = $("newsPop");
+    if (!pop.hidden) { closeNews(); return; }
+    closeSheet(); closeDrawer(); showNews(); pop.hidden = false; $("newsBtn").setAttribute("aria-expanded", "true");
+    var last = (feed || []).reduce(function (m, e) { return Math.max(m, e.at || 0); }, 0);
+    if (last > (S.feedSeen || 0)) { S.feedSeen = last; save(); }
+    updateNews();
+  }
+  function closeNews() { var pop = $("newsPop"); if (pop && !pop.hidden) { pop.hidden = true; $("newsBtn").setAttribute("aria-expanded", "false"); } }
+  $("newsBtn").addEventListener("click", toggleNews);
+  $("cv").addEventListener("pointerdown", closeNews);
   function feedWhen(t) {
     var d = Math.floor(Date.now() / 1000) - t;
     if (d < 3600) return "il y a " + Math.max(1, Math.round(d / 60)) + " min";
@@ -1695,6 +1725,7 @@ body.sheet-open #cellcard { display: none; }
     });
   }
   function setFriends(r) {
+    setTimeout(updateNews, 0);
     friends = { friends: r.friends || [], incoming: r.incoming || [], outgoing: r.outgoing || [] };
     var b = $("friendBadge"), n = friends.incoming.length; if (b) { b.textContent = n; b.hidden = !n; }
     if (current === "friends" || current === "rank") render();
@@ -1742,7 +1773,6 @@ body.sheet-open #cellcard { display: none; }
       return '<div class="frow"><div class="frow-top"><span class="main"><span class="t" style="display:block">' + esc(f.pseudo) + '</span><span class="s" style="display:block">' + esc(placeLabel(f)) + '</span></span>' +
         '<button class="linkbtn" data-facc="' + esc(f.id) + '">Accepter</button><button class="del" data-frem="' + esc(f.id) + '">Refuser</button></div></div>';
     }).join("");
-    if (friends.friends.length) h += feedHTML();
     h += '<h3>Mes amis</h3>' + (friends.friends.length ? friends.friends.map(friendRowHTML).join("") : '<div class="empty-line">Aucun ami pour l’instant : invite quelqu’un avec son pseudo.</div>');
     if (friends.friends.some(function (f) { return f.theyShare && f.map; })) h += '<div class="drawer-sec"><button class="btn block" id="cqgo">👑 Mode conquête</button></div><p class="note" style="margin-top:-4px">Chaque hexagone prend la couleur de celui qui y a le plus haut palier (le plus de jours de visite), entre toi et tes amis.</p>';
     if (friends.outgoing.length) h += '<h3>Invitations envoyées</h3>' + friends.outgoing.map(function (f) {
@@ -1774,7 +1804,6 @@ body.sheet-open #cellcard { display: none; }
       });
     });
     document.querySelectorAll("[data-fview]").forEach(function (b) { b.addEventListener("click", function () { openFriendMap(b.dataset.fview); }); });
-    var fm = $("feedmore"); if (fm) fm.addEventListener("click", function () { feedAll = !feedAll; render(); });
     var cq = $("cqgo"); if (cq) cq.addEventListener("click", startConquest);
     document.querySelectorAll("[data-fstats]").forEach(function (b) { b.addEventListener("click", function () { openFriendStats(b.dataset.fstats); }); });
     var hr = $("homer");
@@ -1885,7 +1914,7 @@ body.sheet-open #cellcard { display: none; }
       best.forEach(function (b, c) { if (b[1] < 0) tie.push(c); else own[b[1]].push(c); });
       conquest = { players: players.map(function (p, i) { return { name: p.name, me: !!p.me, color: CQ_COLORS[i % CQ_COLORS.length], n: own[i].length, rings: ringsOf(own[i]) }; }) };
       if (tie.length) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie.length, rings: ringsOf(tie) });
-      closeSheet(); showConquestBar(); draw();
+      closeSheet(); closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
     });
   }
   function showConquestBar() {
@@ -1897,7 +1926,7 @@ body.sheet-open #cellcard { display: none; }
   }
   function exitConquest(silent) {
     if (!conquest) return;
-    conquest = null;
+    conquest = null; document.body.classList.remove("cq-on");
     if (!friendView) { $("fvbar").hidden = true; $("fvbar").innerHTML = ""; }
     if (!silent) draw();
   }
@@ -3056,7 +3085,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v94";
+  var BUILD = "31/10/2026 · v94b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4181,6 +4210,7 @@ body.sheet-open #cellcard { display: none; }
   var TITLES = { year: "Mon année", fstats: "Statistiques", guide: "Bienvenue sur Xplr", add: "Ajouter une course", list: "Courses réalisées", stats: "Mes statistiques", goals: "Carnet d’exploration", friends: "Amis", rank: "Classement" };
   function openTab(k) {
     if (selected !== null) { selected = null; cellPickedSel = false; requestDraw(); }   // trace affichée : effacée dès qu’on change de menu
+    closeNews();
     if (terrHL) { terrHL = false; requestDraw(); }   // territoire surligné : même règle
     if (conquest) exitConquest();
     if (current === k) { closeSheet(); return; }
@@ -4328,11 +4358,12 @@ body.sheet-open #cellcard { display: none; }
   window.addEventListener("resize", function () { if (tuto) tutoRender(); });
   /* ---- notifications (Web Push) ---- */
   var pushState = { sub: null, prefs: null, checked: false, busy: false }, PUSH_LABELS = [["strava", "Nouvelle sortie Strava à valider"], ["invite", "Invitations d’amis"], ["rank", "Un ami te dépasse au classement"], ["feed", "Progrès de tes amis"]];
+  function swReady() { return Promise.race([navigator.serviceWorker.ready, new Promise(function (res, rej) { setTimeout(function () { rej(new Error("service de l’appli pas encore prêt, réessaie dans un instant")); }, 4000); })]); }
   function pushSupported() { return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
   function isIOS() { return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1); }
   function refreshPush() {   // abonnement de cet appareil et préférences enregistrées
     if (!pushSupported() || !acct) return Promise.resolve();
-    return navigator.serviceWorker.ready.then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
+    return swReady().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
       pushState.sub = sub; pushState.checked = true;
       if (!sub) return;
       return apiCall("GET", "/push").then(function (r) { var m = (r.subs || []).filter(function (x) { return x.endpoint === sub.endpoint; })[0]; pushState.prefs = m ? m.prefs : null; });
@@ -4354,7 +4385,7 @@ body.sheet-open #cellcard { display: none; }
     if (pushState.busy) return; pushState.busy = true;
     Notification.requestPermission().then(function (perm) {
       if (perm !== "granted") throw new Error("autorisation refusée");
-      return Promise.all([apiCall("GET", "/push"), navigator.serviceWorker.ready]);
+      return Promise.all([apiCall("GET", "/push"), swReady()]);
     }).then(function (v) {
       if (!v[0].key) throw new Error("serveur pas encore prêt");
       return v[1].pushManager.getSubscription().then(function (old) { return old || v[1].pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(v[0].key) }); });
