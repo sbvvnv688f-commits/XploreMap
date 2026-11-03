@@ -1969,6 +1969,7 @@ body.sheet-open #cellcard { display: none; }
       conquest = { lat: lat, lng: lng, ids: ids2, own: own, players: players.map(function (p, i) { return { name: p.name, me: !!p.me, color: CQ_COLORS[i % CQ_COLORS.length], n: cnt[i], rings: ringsOf(coarse[i]) }; }) };
       conquest.colors = conquest.players.map(function (p) { return p.color; });
       if (tie) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie, rings: ringsOf(coarse[players.length]) });
+      if (friendView) exitFriendView();   // la conquête se joue sur ta carte : on quitte d’abord celle de l’ami
       closeSheet(); closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
     });
   }
@@ -2000,6 +2001,7 @@ body.sheet-open #cellcard { display: none; }
     if (!conquest) return;
     conquest = null; document.body.classList.remove("cq-on");
     if (!friendView) { $("fvbar").hidden = true; $("fvbar").innerHTML = ""; }
+    else { var bx = $("fvbar"); if (bx && !bx.querySelector("#fvclose")) { bx.hidden = true; bx.innerHTML = ""; exitFriendView(); } }   // sécurité : jamais de bandeau sans bouton de sortie
     if (!silent) draw();
   }
   function exitFriendView() {
@@ -3161,7 +3163,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "31/10/2026 · v95";
+  var BUILD = "03/11/2026 · v95b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
