@@ -2372,20 +2372,33 @@ body.sheet-open #cellcard { display: none; }
   }
 
   /* ================= interactions carte ================= */
-  var pointers = new Map(), lastDist = 0;
-  cv.addEventListener("pointerdown", function (e) { cv.setPointerCapture(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]); lastDist = 0; });
-  cv.addEventListener("pointerup", function (e) { pointers.delete(e.pointerId); });
-  cv.addEventListener("pointercancel", function (e) { pointers.delete(e.pointerId); });
+  var pointers = new Map(), pinch = null;   // pinch : distance et milieu des deux doigts au dernier mouvement
+  function pinchRef() {
+    if (pointers.size < 2) return null;
+    var ps = Array.from(pointers.values());
+    return { d: Math.max(1, Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1])), x: (ps[0][0] + ps[1][0]) / 2, y: (ps[0][1] + ps[1][1]) / 2 };
+  }
+  function dropPointer(e) { if (pointers.delete(e.pointerId)) pinch = pinchRef(); }
+  function clampView() { view.cx = Math.max(0, Math.min(1, view.cx)); view.cy = Math.max(0, Math.min(1, view.cy)); }
+  cv.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary) pointers.clear();   // premier contact : aucun doigt ne peut rester d’un geste précédent mal terminé
+    clearTimeout(flyTimer);   // le geste prend la main sur une animation de recentrage
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* pointeur déjà relâché */ }
+    pointers.set(e.pointerId, [e.clientX, e.clientY]); pinch = pinchRef();
+  });
+  cv.addEventListener("pointerup", dropPointer);
+  cv.addEventListener("pointercancel", dropPointer);
+  cv.addEventListener("lostpointercapture", dropPointer);
   cv.addEventListener("pointermove", function (e) {
     if (!pointers.has(e.pointerId)) return;
     var prev = pointers.get(e.pointerId); pointers.set(e.pointerId, [e.clientX, e.clientY]);
     if (pointers.size === 1) { var k = worldScale(); view.cx -= (e.clientX - prev[0]) / k; view.cy -= (e.clientY - prev[1]) / k; }
-    else if (pointers.size === 2) {
-      var ps = Array.from(pointers.values()), d = Math.hypot(ps[0][0] - ps[1][0], ps[0][1] - ps[1][1]);
-      if (lastDist) zoomBy(Math.log2(d / lastDist), (ps[0][0] + ps[1][0]) / 2, (ps[0][1] + ps[1][1]) / 2);
-      lastDist = d;
+    else {   // deux doigts : la carte suit leur milieu et s’agrandit autour de lui
+      var p = pinchRef();
+      if (pinch) { var k2 = worldScale(); view.cx -= (p.x - pinch.x) / k2; view.cy -= (p.y - pinch.y) / k2; zoomBy(Math.log2(p.d / pinch.d), p.x, p.y); }
+      pinch = p;
     }
-    markMoving(); requestDraw();
+    clampView(); markMoving(); requestDraw();
   });
   function zoomBy(dz, px, py) {
     var before = unproject(px, py);
@@ -2393,7 +2406,13 @@ body.sheet-open #cellcard { display: none; }
     var after = toScreen(before[0], before[1]), k = worldScale();
     view.cx += (after[0] - px) / k; view.cy += (after[1] - py) / k;
   }
-  cv.addEventListener("wheel", function (e) { e.preventDefault(); zoomBy(-e.deltaY * 0.0015, e.clientX, e.clientY); markMoving(); requestDraw(); }, { passive: false });
+  cv.addEventListener("wheel", function (e) {
+    e.preventDefault(); clearTimeout(flyTimer);
+    var dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? H : 1);   // lignes ou pages ramenées en pixels
+    var dz = Math.max(-0.75, Math.min(0.75, -dy * (e.ctrlKey ? 0.01 : 0.0015)));   // ctrlKey : pincement sur pavé tactile
+    zoomBy(dz, e.clientX, e.clientY); clampView(); markMoving(); requestDraw();
+  }, { passive: false });
+  ["gesturestart", "gesturechange"].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false }); });   // iPhone : pas de zoom de la page entière
   $("zin").addEventListener("click", function () { zoomBy(1, W / 2, H / 2); draw(); });
   $("zout").addEventListener("click", function () { zoomBy(-1, W / 2, H / 2); draw(); });
   $("fit").addEventListener("click", function () { selected = null; if (friendView) fitCells(friendView.cells); else if (S.activities.length) fitAll(); });
@@ -3163,7 +3182,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "03/11/2026 · v95b";
+  var BUILD = "03/11/2026 · v96";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3318,6 +3337,7 @@ body.sheet-open #cellcard { display: none; }
   if (window.__TEST) window.__xplr = {   // point d’accès réservé aux tests automatiques
     mpp: function () { return aggInfo().mpp; },
     view: function (lat, lng, z) { view.cx = mercX(lng); view.cy = mercY(lat); view.z = z; draw(); },
+    getView: function () { return [view.cx, view.cy, view.z, worldScale(), pointers.size]; },
     levels: function () { return Object.keys(pyr.lv).length; },
     setPeriod: function (p) { setFilter(p, sportF); },
     setSport: function (s) { setFilter(periodF, s); },
@@ -4251,7 +4271,7 @@ body.sheet-open #cellcard { display: none; }
   });
   document.addEventListener("pointerdown", function (e) { var t = e.target; if (!(t && t.closest && t.closest(".menu, #bmBtn, #filterBtn"))) closeMenus(); });
   var downPt = null;
-  cv.addEventListener("pointerdown", function (e) { downPt = [e.clientX, e.clientY]; });
+  cv.addEventListener("pointerdown", function (e) { downPt = e.isPrimary || e.pointerType === "" ? [e.clientX, e.clientY] : null; });   // un deuxième doigt (pincement) annule le toucher
   cv.addEventListener("click", function (e) { if (downPt && Math.hypot(e.clientX - downPt[0], e.clientY - downPt[1]) < 6) hitPeak(e.clientX, e.clientY); });
   var dragDepth = 0;
   window.addEventListener("dragenter", function (e) {
