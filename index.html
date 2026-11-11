@@ -1968,29 +1968,22 @@ body.sheet-open #cellcard { display: none; }
         return '<div class="cq-row' + (p.me ? ' me' : '') + '"><span class="rank-n">' + (p.tie ? '' : ++rk) + '</span><i class="lg" style="background:' + p.color + '"></i><span class="t">' + esc(p.tie ? "Égalité parfaite" : p.name) + '</span><span class="v">' + fmt(p.n, 0) + ' hex · ' + fmtKm2(p.n * AREA_M2 / 1e6) + ' km²</span></div>';
       }).join("") + '</div>' +
         (old.length ? '<p class="note">Carte' + (old.length > 1 ? 's' : '') + ' de ' + old.map(function (p) { return esc(p.name); }).join(", ") + ' publiée' + (old.length > 1 ? 's' : '') + ' avec une ancienne version d’Xplr : jours estimés d’après les paliers, sans date de première visite. Ce sera exact dès sa prochaine ouverture d’Xplr.</p>' : '') +
-        '<div class="cq-btns"><button class="btn" id="cqshow">🗺️ Voir sur la carte</button><button class="btn ghost" id="cqstop">Arrêter</button></div>';
+        '<div class="cq-btns"><button class="btn" id="cqshow">🗺️ Voir sur la carte</button><button class="btn ghost" id="cqstop">Masquer</button></div>';
     }
-    var sel = Array.isArray(S.cqSel) ? S.cqSel.filter(function (id) { return fl.some(function (f) { return f.id === id; }); }) : [];
-    if (!sel.length) sel = fl.slice().sort(function (a, b) { return ((b.map.stats || {}).km2 || 0) - ((a.map.stats || {}).km2 || 0); }).slice(0, 3).map(function (f) { return f.id; });
-    h += '<h3>Qui affronter ?</h3><div class="cq-pick">' + fl.map(function (f) {
-      return '<label class="gradechk"><input type="checkbox" data-cqf="' + esc(f.id) + '"' + (sel.indexOf(f.id) >= 0 ? ' checked' : '') + '><span>' + esc(f.pseudo) + ' <small>' + fmtKm2((f.map.stats || {}).km2 || 0) + ' km²</small></span></label>';
-    }).join("") + '<button class="btn block" id="cqrun">👑 ' + (conquest ? 'Relancer la conquête' : 'Lancer la conquête') + '</button></div>';
+    if (!conquest) h += '<div class="empty-line">Chargement des cartes de tes ' + fl.length + ' ami' + (fl.length > 1 ? 's' : '') + '…</div>';
     return h;
   }
-  function bindConquest() {
-    var run = $("cqrun"); if (run) run.addEventListener("click", function () {
-      var ids = Array.prototype.map.call(document.querySelectorAll("[data-cqf]:checked"), function (c) { return c.dataset.cqf; });
-      if (!ids.length) { toast("Choisis au moins un ami."); return; }
-      S.cqSel = ids; save(); startConquest(ids);
-    });
+  var cqBusy = false;
+  function bindConquest() {   // tous les amis qui partagent leur carte, sans choix
+    if (!conquest && !cqBusy && friends && friends.friends.some(function (f) { return f.theyShare && f.map; })) { cqBusy = true; startConquest(null, true); }
     var sh = $("cqshow"); if (sh) sh.addEventListener("click", closeSheet);
-    var st = $("cqstop"); if (st) st.addEventListener("click", function () { exitConquest(); render(); });
+    var st = $("cqstop"); if (st) st.addEventListener("click", function () { exitConquest(); });
     var fr = $("cqfriends"); if (fr) fr.addEventListener("click", function () { openTab("friends"); });
   }
-  function startConquest(ids) {
+  function startConquest(ids, stay) {   // stay : on reste dans l’onglet Conquête pour voir le résultat
     var fl = (friends ? friends.friends : []).filter(function (f) { return f.theyShare && f.map && (!ids || ids.indexOf(f.id) >= 0); });
-    if (!fl.length) { toast("Aucun ami ne te partage encore sa carte."); return; }
-    toast("Chargement des cartes de tes amis…");
+    if (!fl.length) { cqBusy = false; toast("Aucun ami ne te partage encore sa carte."); return; }
+    if (!stay) toast("Chargement des cartes de tes amis…");
     Promise.all(fl.map(function (f) {
       return apiCall("GET", "/friends/map?id=" + encodeURIComponent(f.id)).then(function (r) { return r.map ? readFriendMap(r.map).then(function (m) { return { name: f.pseudo, levels: m.levels, days: m.days, first: m.first }; }) : null; }, function () { return null; });
     })).then(function (maps) {
@@ -2017,8 +2010,11 @@ body.sheet-open #cellcard { display: none; }
       conquest = { lat: lat, lng: lng, ids: ids2, own: own, players: players.map(function (p, i) { return { name: p.name, me: !!p.me, old: !!p.old, color: CQ_COLORS[i % CQ_COLORS.length], n: cnt[i], rings: ringsOf(coarse[i]) }; }) };
       conquest.colors = conquest.players.map(function (p) { return p.color; });
       if (tie) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie, rings: ringsOf(coarse[players.length]) });
+      cqBusy = false;
+      if (stay && current !== "conquest") { conquest = null; return; }   // onglet quitté pendant le chargement
       if (friendView) exitFriendView();   // la conquête se joue sur ta carte : on quitte d’abord celle de l’ami
-      closeSheet(); closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
+      if (stay) render(); else closeSheet();
+      closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
     });
   }
   function drawConquest(ag) {   // de près : hexagones visibles ; de loin : zones regroupées
@@ -2048,6 +2044,7 @@ body.sheet-open #cellcard { display: none; }
   function exitConquest(silent) {
     if (!conquest) return;
     conquest = null; document.body.classList.remove("cq-on");
+    if (current === "conquest") closeSheet();   // sinon l’onglet relancerait aussitôt le calcul
     if (!friendView) { $("fvbar").hidden = true; $("fvbar").innerHTML = ""; }
     else { var bx = $("fvbar"); if (bx && !bx.querySelector("#fvclose")) { bx.hidden = true; bx.innerHTML = ""; exitFriendView(); } }   // sécurité : jamais de bandeau sans bouton de sortie
     if (!silent) draw();
@@ -3230,7 +3227,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "11/11/2026 · v97";
+  var BUILD = "11/11/2026 · v97b";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -4476,7 +4473,7 @@ body.sheet-open #cellcard { display: none; }
     { ic: "📊", t: "Tes statistiques", sel: ".tab[data-tab=stats]", x: function () { return "Onglet Stats : surface, sorties et kilomètres, ton plus grand territoire d’un seul tenant (bouche les trous pour l’agrandir), le territoire gagné par mois et par sport, tes records, et « Mon année » pour une rétrospective à partager."; } },
     { ic: "🏆", t: "Niveaux", sel: "#chip", x: function () { return "Ta surface te fait monter de niveau : " + TROPHIES[0].name + " à " + TROPHIES[0].km + " km², puis " + TROPHIES[1].name + ", " + TROPHIES[2].name + "… jusqu’à " + TROPHIES[TROPHIES.length - 1].name + " à " + fmt(TROPHIES[TROPHIES.length - 1].km, 0) + " km². Ton niveau apparaît dans ton profil et dans le classement."; } },
     { ic: "👥", t: "Tes amis", sel: ".tab[data-tab=friends]", x: function () { return "Onglet Amis : invite quelqu’un avec son pseudo. Entre amis, vous voyez vos cartes et vos statistiques, jamais vos traces, et « Quoi de neuf » montre vos progrès. Sur la carte d’un ami, ⚖️ compare vos territoires. Ta zone domicile reste toujours cachée. Le volet Classement : tous les joueurs ou tes amis seulement, par sport, depuis le début ou cette semaine (remise à zéro chaque lundi) ; touche un joueur pour lui envoyer une demande d’ami."; } },
-    { ic: "👑", t: "La conquête", sel: ".tab[data-tab=conquest]", x: function () { return "Onglet Conquête : choisis les amis à affronter. Chaque hexagone revient à celui qui y est passé le plus de jours différents ; à égalité, au premier qui l’a visité. La carte se colore aux couleurs de chacun et tu vois sur combien d’hexagones tu règnes."; } },
+    { ic: "👑", t: "La conquête", sel: ".tab[data-tab=conquest]", x: function () { return "Onglet Conquête : toi contre tous tes amis qui te partagent leur carte. Chaque hexagone revient à celui qui y est passé le plus de jours différents ; à égalité, au premier qui l’a visité. La carte se colore aux couleurs de chacun et tu vois sur combien d’hexagones tu règnes."; } },
     { ic: "⚙️", t: "Profil et réglages", sel: "#profileBtn", x: function () { return "Profil : ton pseudo, ta photo et tes trophées. Réglages : apparence claire ou sombre, notifications (nouvelle sortie Strava, invitations, classement), ce tutoriel et la mise à jour de l’appli. Tes données sont sauvegardées automatiquement sur ton compte."; } },
     { ic: "🚀", t: "À toi de jouer !", x: function () { return realActs().length ? "Bonne exploration ! Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages." : "Ajoute ta première sortie et regarde ton territoire se colorier. Tu peux revoir ce tutoriel à tout moment dans Profil → Réglages."; }, end: true }
   ];
