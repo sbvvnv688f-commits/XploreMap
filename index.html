@@ -2022,21 +2022,24 @@ body.sheet-open #cellcard { display: none; }
   }
   function drawConquest(ag) {   // de près : hexagones visibles ; de loin : zones regroupées
     cqLegend();
-    if (ag.mpp > 12) { conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); return; }
+    var coarse = function () { conquest.coarseOn = true; conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); };
+    if (ag.mpp > FINAL_MAX_MPP) { coarse(); return; }
     var tl = unproject(0, 0), br = unproject(W, H), la0 = br[0], la1 = tl[0], lo0 = tl[1], lo1 = br[1], groups = {}, tot = 0;
-    for (var i = 0; i < conquest.ids.length && tot < 40000; i++) {
+    for (var i = 0; i < conquest.ids.length; i++) {
       var a = conquest.lat[i], b = conquest.lng[i];
       if (a < la0 || a > la1 || b < lo0 || b > lo1) continue;
-      var o = conquest.own[i]; (groups[o] || (groups[o] = [])).push(conquest.ids[i]); tot++;
+      if (++tot > 40000) { coarse(); return; }   // trop d’hexagones à l’écran : zones regroupées
+      var o = conquest.own[i]; (groups[o] || (groups[o] = [])).push(conquest.ids[i]);
     }
-    var tinySave = tinyHex; tinyHex = false;
+    conquest.coarseOn = false;
+    var hexPx = 49 / ag.mpp, tinySave = tinyHex, tinySSave = tinyS; tinyHex = hexPx < 6; tinyS = Math.max(1.4, hexPx * 1.05);   // petits : carrés simples
     ctx.save();
     Object.keys(groups).forEach(function (o) {
       var P = buildCellsPath(ctx, groups[o]);
-      ctx.globalAlpha = 0.5; ctx.fillStyle = +o < 0 ? CQ_TIE : conquest.colors[+o]; ctx.fill(P);
-      ctx.globalAlpha = 0.8; ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = 0.8; ctx.stroke(P);
+      ctx.globalAlpha = tinyHex ? 0.8 : 0.5; ctx.fillStyle = +o < 0 ? CQ_TIE : conquest.colors[+o]; ctx.fill(P);
+      if (!tinyHex) { ctx.globalAlpha = 0.8; ctx.strokeStyle = "rgba(43,31,74,0.6)"; ctx.lineWidth = 0.8; ctx.stroke(P); }
     });
-    ctx.restore(); tinyHex = tinySave;
+    ctx.restore(); tinyHex = tinySave; tinyS = tinySSave;
   }
   function showConquestBar() {
     var bar = $("fvbar"), me = conquest.players[0];
@@ -3232,9 +3235,9 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "11/11/2026 · v99";
+  var BUILD = "11/11/2026 · v100";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
-  var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
+  var FINAL_MAX_MPP = 62.5, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
     var lat = unproject(W / 2, H / 2)[0], mpp = 40075016.7 * Math.cos(Math.max(-80, Math.min(80, lat)) * Math.PI / 180) / worldScale();
     if (!force) {   // hystérésis : le rendu fin se prolonge de 6 % au-delà du seuil quand on dézoome (pas de va-et-vient), mais il apparaît exactement au seuil quand on zoome
@@ -3363,8 +3366,8 @@ body.sheet-open #cellcard { display: none; }
     });
     c.globalAlpha = 1;
   }
-  function farWeights(mpp) {   // rendu final jusqu’à 25 m/px, fondu vers l’empreinte dosée jusqu’à 40 m/px, puis vers les hexagones dosés autour de FOOT_MAX_MPP (± 30 %)
-    var fin = 1 - smooth(Math.log(mpp / FINAL_MAX_MPP) / Math.log(40 / FINAL_MAX_MPP)), hw = smooth((Math.log(mpp / FOOT_MAX_MPP) / Math.log(1.3) + 1) / 2);
+  function farWeights(mpp) {   // v100 : rendu final jusqu’à 62,5 m/px (l’échelle passe de 5 km à 2 km), fondu vers l’empreinte dosée jusqu’à 100 m/px, puis vers les hexagones dosés autour de FOOT_MAX_MPP (± 30 %)
+    var fin = 1 - smooth(Math.log(mpp / FINAL_MAX_MPP) / Math.log(1.6)), hw = smooth((Math.log(mpp / FOOT_MAX_MPP) / Math.log(1.3) + 1) / 2);
     return { fin: fin, foot: (1 - fin) * (1 - hw), hex: (1 - fin) * hw };
   }
   function drawFar(ag, onImg) {
@@ -3388,6 +3391,8 @@ body.sheet-open #cellcard { display: none; }
     mpp: function () { return aggInfo().mpp; },
     view: function (lat, lng, z) { view.cx = mercX(lng); view.cy = mercY(lat); view.z = z; draw(); },
     mine: function () { return Array.from(cells.keys()).sort().map(function (c) { return [c, cellDays(c), cellFirst(c)]; }); },
+    weights: function () { var ag = aggInfo(); return ag.wAgg > 0 ? farWeights(ag.mpp) : { fine: 1 }; },
+    scale: function () { return document.getElementById("scalebar").textContent; },
     cqTap: function (x, y) { return cqTap(x, y); },
     cqLeg: function () { var e = document.getElementById("cqleg"); return e ? e.textContent : null; },
     cq: function () { if (!conquest) return null; var o = {}; conquest.ids.forEach(function (c, i) { var w = conquest.own[i]; o[c] = w < 0 ? "=" : conquest.players[w].name; }); return o; },
@@ -3780,7 +3785,7 @@ body.sheet-open #cellcard { display: none; }
   function hideTip() { clearTimeout(tipTimer); var el = $("cqtip"); if (el) el.hidden = true; }
   function cqTap(x, y) {   // conquête : à qui appartient la couleur touchée
     var ll = unproject(x, y), o;
-    if (aggInfo().mpp > 12) o = conquest.byPar.get(h3.latLngToCell(ll[0], ll[1], 8));
+    if (conquest.coarseOn) o = conquest.byPar.get(h3.latLngToCell(ll[0], ll[1], 8));   // zones regroupées affichées
     else {
       if (!conquest.idx) { conquest.idx = new Map(); conquest.ids.forEach(function (c, j) { conquest.idx.set(c, j); }); }   // accès direct, construit une fois
       var i = conquest.idx.get(h3.latLngToCell(ll[0], ll[1], RES)); o = i === undefined ? undefined : conquest.own[i];
