@@ -2020,18 +2020,42 @@ body.sheet-open #cellcard { display: none; }
     var el = $("cqleg"); if (!el) return;
     el.innerHTML = ps.length ? ps.map(function (x) { return '<i class="lg" style="background:' + x.p.color + '"></i>' + esc(x.p.tie ? "égalité" : x.p.name); }).join(" · ") : "Aucun territoire dans cette partie de la carte";
   }
-  function drawConquest(ag) {   // de près : hexagones visibles ; de loin : zones regroupées
-    cqLegend();
-    var coarse = function () { conquest.coarseOn = true; conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); };
-    if (ag.mpp > FINAL_MAX_MPP) { coarse(); return; }
+  function cqGather(ag) {   // hexagones visibles par joueur ; null : zones regroupées (de loin, ou plus de 40 000 hexagones à l’écran)
+    conquest.coarseOn = true;
+    if (ag.mpp > FINAL_MAX_MPP) return null;
     var tl = unproject(0, 0), br = unproject(W, H), la0 = br[0], la1 = tl[0], lo0 = tl[1], lo1 = br[1], groups = {}, tot = 0;
     for (var i = 0; i < conquest.ids.length; i++) {
       var a = conquest.lat[i], b = conquest.lng[i];
       if (a < la0 || a > la1 || b < lo0 || b > lo1) continue;
-      if (++tot > 40000) { coarse(); return; }   // trop d’hexagones à l’écran : zones regroupées
+      if (++tot > 40000) return null;
       var o = conquest.own[i]; (groups[o] || (groups[o] = [])).push(conquest.ids[i]);
     }
     conquest.coarseOn = false;
+    return groups;
+  }
+  function cqTiny(ag, fn) {   // petits hexagones : carrés simples, comme le rendu final
+    var hexPx = 49 / ag.mpp, ts = tinyHex, tss = tinyS; tinyHex = hexPx < 6; tinyS = Math.max(1.4, hexPx * 1.05);
+    try { fn(); } finally { tinyHex = ts; tinyS = tss; }
+  }
+  function cqMask(ag, groups) {   // masque de l’imagerie : les mêmes formes que les couleurs de la conquête
+    return function (c) {
+      c.fillStyle = "#000";
+      if (!groups) {
+        conquest.players.forEach(function (p) {
+          if (!p.rings || !p.rings.length) return;
+          var P = new Path2D();
+          p.rings.forEach(function (r) { r.forEach(function (ll, j) { var q = toScreen(ll[0], ll[1]); if (j) P.lineTo(q[0], q[1]); else P.moveTo(q[0], q[1]); }); P.closePath(); });
+          c.fill(P, "evenodd");
+        });
+        return;
+      }
+      cqTiny(ag, function () { Object.keys(groups).forEach(function (o) { c.fill(buildCellsPath(c, groups[o])); }); });
+    };
+  }
+  function drawConquest(ag, groups) {   // de près : hexagones visibles ; de loin : zones regroupées
+    cqLegend();
+    if (groups === undefined) groups = cqGather(ag);
+    if (!groups) { conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); return; }
     var hexPx = 49 / ag.mpp, tinySave = tinyHex, tinySSave = tinyS; tinyHex = hexPx < 6; tinyS = Math.max(1.4, hexPx * 1.05);   // petits : carrés simples
     ctx.save();
     Object.keys(groups).forEach(function (o) {
@@ -2368,8 +2392,9 @@ body.sheet-open #cellcard { display: none; }
     var hexPx = 49 / ag.mpp, light = moving && hexPx < 14;   // en mouvement, hexagones assez petits : carrés simples, pas de contours de grade
     tinyHex = ag.wFine > 0 && (hexPx < 6 || light); tinyS = Math.max(1.4, hexPx * 1.05);
     var cqOnly = !!conquest && !friendView;   // conquête : relief et couleurs des joueurs seulement
-    if (cqOnly) vis = [];
-    var onImg = drawTiles(cqOnly ? [] : ag.wAgg > 0 ? farMask(ag) : vis);
+    var cqG = null;
+    if (cqOnly) { vis = []; cqG = cqGather(ag); }
+    var onImg = drawTiles(cqOnly ? cqMask(ag, cqG) : ag.wAgg > 0 ? farMask(ag) : vis);   // conquête : imagerie sous les territoires de tous les joueurs
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
     fillCells(vis, onImg, ag.wFine);
@@ -2383,7 +2408,7 @@ body.sheet-open #cellcard { display: none; }
     if (ag.wAgg > 0 && !cqOnly) drawFar(ag, onImg);
     if (!friendView && terrHL) drawTerritory();
     if (friendView && cmp) { drawRings(cmp.mineR, CMP_MINE, 0.42); drawRings(cmp.commonR, CMP_COMMON, 0.5); }
-    if (!friendView && conquest) drawConquest(ag);
+    if (!friendView && conquest) drawConquest(ag, cqG);
     if (!friendView && glow && ag.wFine > 0 && vis.length) drawGlow(vis);
     if (!friendView) drawOverlays();   // carte d’un ami : ni sommets, ni lieux, ni traces
     if (homePick) drawHomeCircle();
@@ -3235,7 +3260,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "11/11/2026 · v100";
+  var BUILD = "11/11/2026 · v101";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 62.5, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3391,6 +3416,7 @@ body.sheet-open #cellcard { display: none; }
     mpp: function () { return aggInfo().mpp; },
     view: function (lat, lng, z) { view.cx = mercX(lng); view.cy = mercY(lat); view.z = z; draw(); },
     mine: function () { return Array.from(cells.keys()).sort().map(function (c) { return [c, cellDays(c), cellFirst(c)]; }); },
+    imagery: function () { draw(); var d = mctx.getImageData(0, 0, maskCv.width, maskCv.height).data, n = 0; for (var i = 3; i < d.length; i += 4) if (d[i] > 0) n++; return n; },
     weights: function () { var ag = aggInfo(); return ag.wAgg > 0 ? farWeights(ag.mpp) : { fine: 1 }; },
     scale: function () { return document.getElementById("scalebar").textContent; },
     cqTap: function (x, y) { return cqTap(x, y); },
