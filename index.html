@@ -287,6 +287,7 @@ svg.chart { width: 100%; height: auto; display: block; background: var(--panel);
 .yr-hero b { display: block; font-size: 40px; line-height: 1.1; }
 .yr-hero span { font-size: 12px; }
 .notif-row { display: flex; margin: 6px 0; }
+body.cq-on #glWrap, body.cq-on #gradeBox { display: none !important; }   /* conquête : pas de légende des grades */
 .seg-ftab button { flex: 1 1 0; font-size: 13.5px; padding: 8px 6px; }
 .cq-res { border: 2.5px solid var(--outline); border-radius: 14px; background: var(--panel); padding: 4px 10px; margin-bottom: 10px; }
 .cq-row { display: flex; align-items: center; gap: 4px; padding: 7px 0; border-bottom: 1px dashed var(--muted); font-size: 13.5px; }
@@ -2005,10 +2006,10 @@ body.sheet-open #cellcard { display: none; }
         if (o < 0) tie++; else cnt[o]++;
         var pc = h3.cellToParent(c, 8), v = par.get(pc); if (!v) par.set(pc, v = {}); v[o] = (v[o] || 0) + 1;
       });
-      var coarse = players.map(function () { return []; }).concat([[]]);
-      par.forEach(function (v, pc) { var bo = null, bn = 0; Object.keys(v).forEach(function (o) { if (v[o] > bn) { bn = v[o]; bo = +o; } }); coarse[bo < 0 ? players.length : bo].push(pc); });
+      var coarse = players.map(function () { return []; }).concat([[]]), byPar = new Map();
+      par.forEach(function (v, pc) { var bo = null, bn = 0; Object.keys(v).forEach(function (o) { if (v[o] > bn) { bn = v[o]; bo = +o; } }); coarse[bo < 0 ? players.length : bo].push(pc); byPar.set(pc, bo); });
       conquest = { lat: lat, lng: lng, ids: ids2, own: own, players: players.map(function (p, i) { return { name: p.name, me: !!p.me, old: !!p.old, color: CQ_COLORS[i % CQ_COLORS.length], n: cnt[i], rings: ringsOf(coarse[i]) }; }) };
-      conquest.colors = conquest.players.map(function (p) { return p.color; });
+      conquest.colors = conquest.players.map(function (p) { return p.color; }); conquest.byPar = byPar;
       if (tie) conquest.players.push({ name: "égalité", tie: true, color: CQ_TIE, n: tie, rings: ringsOf(coarse[players.length]) });
       cqBusy = false;
       if (stay && current !== "conquest") { conquest = null; return; }   // onglet quitté pendant le chargement
@@ -2017,7 +2018,22 @@ body.sheet-open #cellcard { display: none; }
       closeNews(); document.body.classList.add("cq-on"); showConquestBar(); draw();
     });
   }
+  function cqLegend() {   // joueurs présents dans la partie visible de la carte
+    var tl = unproject(0, 0), br = unproject(W, H), la0 = br[0], la1 = tl[0], lo0 = tl[1], lo1 = br[1], seen = {}, n = 0, all = conquest.colors.length + 1;
+    for (var i = 0; i < conquest.ids.length && n < all; i++) {
+      var a = conquest.lat[i], b = conquest.lng[i];
+      if (a < la0 || a > la1 || b < lo0 || b > lo1) continue;
+      var o = conquest.own[i]; if (!seen[o]) { seen[o] = 1; n++; }
+    }
+    var ps = conquest.players.map(function (p, i) { return { p: p, o: p.tie ? -1 : i }; }).filter(function (x) { return seen[x.o]; });
+    var key = ps.map(function (x) { return x.o; }).join(",");
+    if (key === conquest.legKey) return;
+    conquest.legKey = key;
+    var el = $("cqleg"); if (!el) return;
+    el.innerHTML = ps.length ? ps.map(function (x) { return '<i class="lg" style="background:' + x.p.color + '"></i>' + esc(x.p.tie ? "égalité" : x.p.name); }).join(" · ") : "Aucun territoire dans cette partie de la carte";
+  }
   function drawConquest(ag) {   // de près : hexagones visibles ; de loin : zones regroupées
+    cqLegend();
     if (ag.mpp > 12) { conquest.players.forEach(function (p) { drawRings(p.rings, p.color, 0.45); }); return; }
     var tl = unproject(0, 0), br = unproject(W, H), la0 = br[0], la1 = tl[0], lo0 = tl[1], lo1 = br[1], groups = {}, tot = 0;
     for (var i = 0; i < conquest.ids.length && tot < 40000; i++) {
@@ -2036,9 +2052,8 @@ body.sheet-open #cellcard { display: none; }
   }
   function showConquestBar() {
     var bar = $("fvbar"), me = conquest.players[0];
-    bar.innerHTML = '<div class="fv-box cq-box"><div class="fv-t"><b>👑 Conquête · tu règnes sur ' + fmt(me.n, 0) + ' hexagone' + (me.n > 1 ? "s" : "") + '</b><small>' +
-      conquest.players.slice().sort(function (a, b) { return b.n - a.n; }).map(function (p) { return '<i class="lg" style="background:' + p.color + '"></i>' + esc(p.name) + ' ' + fmt(p.n, 0); }).join(" · ") +
-      '</small></div></div><button class="btn" id="cqclose">Quitter</button>';
+    bar.innerHTML = '<div class="fv-box cq-box"><div class="fv-t"><b>👑 Conquête · tu règnes sur ' + fmt(me.n, 0) + ' hexagone' + (me.n > 1 ? "s" : "") + '</b><small id="cqleg"></small></div></div><button class="btn" id="cqclose">Quitter</button>';
+    conquest.legKey = null;   // légende remplie au prochain dessin, selon la partie visible
     bar.hidden = false; $("cqclose").addEventListener("click", function () { exitConquest(); });
   }
   function exitConquest(silent) {
@@ -2361,7 +2376,9 @@ body.sheet-open #cellcard { display: none; }
     if (vis.length > FINE_MAX_CELLS) { ag = aggInfo(true); vis = []; }   // trop d’hexagones à l’écran : bascule en vue agrégée pour rester fluide
     var hexPx = 49 / ag.mpp, light = moving && hexPx < 14;   // en mouvement, hexagones assez petits : carrés simples, pas de contours de grade
     tinyHex = ag.wFine > 0 && (hexPx < 6 || light); tinyS = Math.max(1.4, hexPx * 1.05);
-    var onImg = drawTiles(ag.wAgg > 0 ? farMask(ag) : vis);
+    var cqOnly = !!conquest && !friendView;   // conquête : relief et couleurs des joueurs seulement
+    if (cqOnly) vis = [];
+    var onImg = drawTiles(cqOnly ? [] : ag.wAgg > 0 ? farMask(ag) : vis);
     if (!onImg) drawGraticule();
     var pxPerCell = worldScale() * (50 / 40075016.7);
     fillCells(vis, onImg, ag.wFine);
@@ -2372,7 +2389,7 @@ body.sheet-open #cellcard { display: none; }
     }
     ctx.globalAlpha = 1;
     if (S.gradeOutlines && ag.wFine > 0 && vis.length && !light) drawGrades(vis, ag);   // contours visibles dès que les hexagones fins sont affichés (échelle de 500 m)
-    if (ag.wAgg > 0) drawFar(ag, onImg);
+    if (ag.wAgg > 0 && !cqOnly) drawFar(ag, onImg);
     if (!friendView && terrHL) drawTerritory();
     if (friendView && cmp) { drawRings(cmp.mineR, CMP_MINE, 0.42); drawRings(cmp.commonR, CMP_COMMON, 0.5); }
     if (!friendView && conquest) drawConquest(ag);
@@ -3227,7 +3244,7 @@ body.sheet-open #cellcard { display: none; }
      (niveaux H3 11 à 3, chacun tiré du précédent) se construit en tâche de fond par tranches de 10 ms,
      et seules les cases à l’écran du niveau utile sont lues. */
   var EDGE_M = { 11: 24.9, 10: 65.9, 9: 174.4, 8: 461.4, 7: 1220.6, 6: 3229.5, 5: 8544.4, 4: 22606.4, 3: 59810.9, 2: 158244.7, 1: 418676, 0: 1107712 };
-  var BUILD = "11/11/2026 · v97b";
+  var BUILD = "11/11/2026 · v98";
   var FINE_MAX_MPP = 9.5, FINE_MAX_CELLS = 40000, tinyHex = false, tinyS = 1.5;   // hexagones fins, sans teinte, jusqu’à environ 9,5 m par pixel (échelle de 500 m sur un téléphone)
   var FINAL_MAX_MPP = 25, FOOT_MAX_MPP = 300, MIN_AGG_RES = 3, FOOT_FLOOR = 0.7;   // rendu final jusqu’à 25 m par pixel (échelle de 2 km, sans contours de grade), empreinte dosée jusqu’à ~300 m par pixel (20 km), puis hexagones dosés jusqu’au niveau H3 3
   function aggInfo(force) {
@@ -3383,6 +3400,8 @@ body.sheet-open #cellcard { display: none; }
     mpp: function () { return aggInfo().mpp; },
     view: function (lat, lng, z) { view.cx = mercX(lng); view.cy = mercY(lat); view.z = z; draw(); },
     mine: function () { return Array.from(cells.keys()).sort().map(function (c) { return [c, cellDays(c), cellFirst(c)]; }); },
+    cqTap: function (x, y) { return cqTap(x, y); },
+    cqLeg: function () { var e = document.getElementById("cqleg"); return e ? e.textContent : null; },
     cq: function () { if (!conquest) return null; var o = {}; conquest.ids.forEach(function (c, i) { var w = conquest.own[i]; o[c] = w < 0 ? "=" : conquest.players[w].name; }); return o; },
     getView: function () { return [view.cx, view.cy, view.z, worldScale(), pointers.size]; },
     levels: function () { return Object.keys(pyr.lv).length; },
@@ -3760,8 +3779,18 @@ body.sheet-open #cellcard { display: none; }
     draw();
     return true;
   }
+  function cqTap(x, y) {   // conquête : à qui appartient la couleur touchée
+    var ll = unproject(x, y), o;
+    if (aggInfo().mpp > 12) o = conquest.byPar.get(h3.latLngToCell(ll[0], ll[1], 8));
+    else { var i = conquest.ids.indexOf(h3.latLngToCell(ll[0], ll[1], RES)); o = i < 0 ? undefined : conquest.own[i]; }
+    if (o === undefined || o === null) return false;
+    var p = o < 0 ? null : conquest.players[o];
+    var msg = !p ? "Égalité parfaite : même nombre de jours, même premier jour." : p.me ? "👑 Tu règnes ici." : "👑 " + p.name + " règne ici.";
+    toast(msg); return msg;
+  }
   function hitPeak(x, y) {
     if (friendView || homePick) return;   // carte d’un ami ou choix de la zone domicile : pas de fiches
+    if (conquest) { closePoiCard(); closeCellCard(); cqTap(x, y); return; }
     var best = null, bd = 26;
     peakHits.forEach(function (h) { var d = Math.hypot(h.x - x, h.y - y); if (d < bd) { bd = d; best = h; } });
     if (!best) {
